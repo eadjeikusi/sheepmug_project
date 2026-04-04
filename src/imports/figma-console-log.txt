@@ -1,0 +1,70 @@
+ Running frontend commit 1a279600f2ee56ba1bd4f8a230d1c84e52af87d6
+vendor-core-ade2edecaf4781c7.min.js.br:54 Statsig is not ready to log exposures, will retry in 1 seconds
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:54
+A.logExposureCallback @ 3435-1e6f92413321c0ba.min.js.br:1096
+u @ vendor-core-ade2edecaf4781c7.min.js.br:54
+vendor-core-ade2edecaf4781c7.min.js.br:54 Loaded 31 scripts (5926590b), 15 from cache (321416b)
+1709-a9e5b3918781030c.min.js.br:8 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+initialize @ 1709-a9e5b3918781030c.min.js.br:8
+g @ 1709-a9e5b3918781030c.min.js.br:8
+(anonymous) @ 3435-1e6f92413321c0ba.min.js.br:191
+vendor-core-ade2edecaf4781c7.min.js.br:54 Autosave Changes not available or already claimed by another tab undefined
+vendor-core-ade2edecaf4781c7.min.js.br:54 [import] git: 32316aad430e1702f36b927d849d2e88aab330ca, stamp: 9356B1DF1C1877B4
+vendor-core-ade2edecaf4781c7.min.js.br:54 [Fullscreen] Booting... (emscripten version 4.0.21)
+vendor-core-ade2edecaf4781c7.min.js.br:54 [GPU] graphicsAPI:"WebGPU", vendor:"Google Inc. (NVIDIA)" renderer:"ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028A0) Direct3D11 vs_5_0 ps_5_0, D3D11)" deviceArchitecture:"lovelace" deviceDescription:"" webGPUDevice:"" webGPUVendor:"nvidia" bindings:"emdawnwebgpu"
+vendor-core-ade2edecaf4781c7.min.js.br:54 [Fullscreen] Ready in 1479.1ms
+vendor-core-ade2edecaf4781c7.min.js.br:54 [FullscreenApp] calling setEditorTheme and setting preference dark
+vendor-core-ade2edecaf4781c7.min.js.br:54 [MultiplayerSession] connecting to wss://www.figma.com/api/multiplayer/yX7krmTAEdyFtlAhSMUDqK?role=editor&tracking_session_id=poW5HUijsFywipot&version=151&recentReload=0&file-load-streaming-compression&user-id=1589143762573751620&client_release=1a279600f2ee56ba1bd4f8a230d1c84e52af87d6
+vendor-core-ade2edecaf4781c7.min.js.br:54 [FullscreenApp] calling setEditorTheme and setting preference dark
+vendor-core-ade2edecaf4781c7.min.js.br:54 [Local fonts] using agent
+vendor-core-ade2edecaf4781c7.min.js.br:54 [FullscreenApp] calling setEditorTheme and setting preference dark
+vendor-core-ade2edecaf4781c7.min.js.br:11 Unrecognized feature: 'local-network-access'.
+x @ vendor-core-ade2edecaf4781c7.min.js.br:11
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oz @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oH @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oI @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oL @ vendor-core-ade2edecaf4781c7.min.js.br:11
+f5 @ vendor-core-ade2edecaf4781c7.min.js.br:11
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oB @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oE @ vendor-core-ade2edecaf4781c7.min.js.br:11
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:54
+S @ vendor-core-ade2edecaf4781c7.min.js.br:54
+O @ vendor-core-ade2edecaf4781c7.min.js.br:54
+invalid/:1 
+            
+            
+           Failed to load resource: net::ERR_FAILED
+vendor-core-ade2edecaf4781c7.min.js.br:54 [MultiplayerSession] Joining file version 106 (initial load)
+vendor-core-ade2edecaf4781c7.min.js.br:54 [devtools] Initialized LS
+/api/make/fetch_ds_code_gen_status:1 
+            
+            
+           Failed to load resource: the server responded with a status of 400 ()
+vendor-core-ade2edecaf4781c7.min.js.br:54 [devtools] Initialized LS
+vendor-core-ade2edecaf4781c7.min.js.br:54 [MultiplayerSession] connecting to wss://www.figma.com/api/multiplayer/yX7krmTAEdyFtlAhSMUDqK?role=editor&tracking_session_id=poW5HUijsFywipot&version=151&recentReload=0&file-load-streaming-compression=&user-id=1589143762573751620&client_release=1a279600f2ee56ba1bd4f8a230d1c84e52af87d6&reconnect-key=37ac54edba9db533b49f1cc868a88126460d893d&reconnect-sequence-number=1254&initialFileVersion=106&previousLoadMode=full&incremental-loading-validation=0
+vendor-core-ade2edecaf4781c7.min.js.br:54 [Fullscreen] loadtime=20.11s maxmem=47464140
+vendor-core-ade2edecaf4781c7.min.js.br:54 [MultiplayerSession] Joining file version 106 (skip_reload reconnect)
+/make/yX7krmTAEdyFtlAhSMUDqK/Sheepmug?p=f&t=BgFEpPb7RjQBgd7O-0&preview-route=%2Flogin:1 Access to image at 'https://www.gravatar.com/avatar/381984a52ecade0c995a57848eb51c67?size=240&default=https%3A%2F%2Fs3-alpha.figma.com%2Fstatic%2Fuser_e_v2.png?c=1' from origin 'https://www.figma.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+www.gravatar.com/avatar/381984a52ecade0c995a57848eb51c67?size=240&default=https%3A%2F%2Fs3-alpha.figma.com%2Fstatic%2Fuser_e_v2.png?c=1:1 
+            
+            
+           Failed to load resource: net::ERR_FAILED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 === LOGIN ATTEMPT ===
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Email: admin5@demo.com
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ✅ Login successful, session created
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Access token (first 20 chars): eyJhbGciOiJFUzI1NiIs
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Fetching user profile...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Fetching user profile with token: eyJhbGciOiJFUzI1NiIs...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Profile fetch response status: 200
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Profile fetch result: Object
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ✅ User profile loaded: admin5@demo.com
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 === LOGIN COMPLETE ===
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚠️ No organization ID available yet
+
+                
+          
+          
+          
+         Chrome is moving towards a new experience that allows users to choose to browse without third-party cookies.

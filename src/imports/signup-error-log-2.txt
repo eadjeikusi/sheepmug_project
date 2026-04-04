@@ -1,0 +1,178 @@
+🚀 SIGNUP STARTED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📝 Signup Data: {email: 'admin10@demo.com', firstName: 'Emmanuel', lastName: 'Adjei-Kusi', organizationName: 'Victpory Baptist ', phone: undefined, …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📤 Request Body: {email: 'admin10@demo.com', password: '12345678', first_name: 'Emmanuel', last_name: 'Adjei-Kusi', organization_name: 'Victpory Baptist ', …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔗 Endpoint: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/signup
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           POST https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/signup 500 (Internal Server Error)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:142
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📥 Response Status: 500
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📥 Response OK: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📥 Response Data: {success: false, error: 'Failed to create organization: permission denied for table church_orgs'}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ SIGNUP FAILED
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:161
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error from server: Failed to create organization: permission denied for table church_orgs
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:162
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Full response: {success: false, error: 'Failed to create organization: permission denied for table church_orgs'}
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:163
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ SIGNUP ERROR CAUGHT
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:171
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error type: Error
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:172
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error message: Failed to create organization: permission denied for table church_orgs
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+signup @ AuthContext.tsx:173
+await in signup
+handleSubmit @ AuthModal.tsx:57
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Full error: Error: Failed to create organization: permission denied for table church_orgs
+    at signup (AuthContext.tsx:164:15)
+    at async handleSubmit (AuthModal.tsx:57:9)

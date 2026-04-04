@@ -1,0 +1,220 @@
+[MultiplayerSession] connecting to wss://www.figma.com/api/multiplayer/yX7krmTAEdyFtlAhSMUDqK?role=editor&tracking_session_id=lztgSXhAro7wKh01&version=151&recentReload=0&file-load-streaming-compression=&user-id=1589143762573751620&client_release=5084b8a5ef0aad015649692cc3cfc7638b196e89&reconnect-key=214612e5ca52513e5eb662efac3dfb948c9c2cb6&reconnect-sequence-number=2106&initialFileVersion=106&previousLoadMode=full&incremental-loading-validation=0
+vendor-core-ade2edecaf4781c7.min.js.br:54 [MultiplayerSession] Joining file version 106 (skip_reload reconnect)
+/make/yX7krmTAEdyFtlAhSMUDqK/Sheepmug?p=f&t=unblqLsOmwoHwIV6-0&preview-route=%2Fsettings:1 Access to image at 'https://www.gravatar.com/avatar/381984a52ecade0c995a57848eb51c67?size=240&default=https%3A%2F%2Fs3-alpha.figma.com%2Fstatic%2Fuser_e_v2.png?c=1' from origin 'https://www.figma.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+www.gravatar.com/avatar/381984a52ecade0c995a57848eb51c67?size=240&default=https%3A%2F%2Fs3-alpha.figma.com%2Fstatic%2Fuser_e_v2.png?c=1:1  GET https://www.gravatar.com/avatar/381984a52ecade0c995a57848eb51c67?size=240&default=https%3A%2F%2Fs3-alpha.figma.com%2Fstatic%2Fuser_e_v2.png?c=1 net::ERR_FAILED 302 (Found)
+Image
+(anonymous) @ figma_app-8c346c91cb60aa3c.min.js.br:41
+B @ figma_app-8c346c91cb60aa3c.min.js.br:41
+g @ figma_app-8c346c91cb60aa3c.min.js.br:413
+(anonymous) @ figma_app-8c346c91cb60aa3c.min.js.br:413
+(anonymous) @ figma_app-8c346c91cb60aa3c.min.js.br:413
+aB @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oD @ vendor-core-ade2edecaf4781c7.min.js.br:11
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oB @ vendor-core-ade2edecaf4781c7.min.js.br:11
+oL @ vendor-core-ade2edecaf4781c7.min.js.br:11
+f5 @ vendor-core-ade2edecaf4781c7.min.js.br:11
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:11
+requestAnimationFrame
+(anonymous) @ vendor-core-ade2edecaf4781c7.min.js.br:63
+gQ @ 856-e6e311b392928463.min.js.br:191
+s @ 856-e6e311b392928463.min.js.br:393
+requestAnimationFrame @ 856-e6e311b392928463.min.js.br:194
+_Async_requestAnimationFrame @ compiled_wasm.js.br:2
+$wasm-function[1887] @ compiled_wasm.wasm.br:0x3eda3
+$wasm-function[2244] @ compiled_wasm.wasm.br:0x66571
+$wasm-function[5036] @ compiled_wasm.wasm.br:0x279d0d
+$wasm-function[40513] @ compiled_wasm.wasm.br:0x20fb174
+$wasm-function[16875] @ compiled_wasm.wasm.br:0xe45187
+$wasm-function[38265] @ compiled_wasm.wasm.br:0x1eb3383
+(anonymous) @ compiled_wasm.js.br:2
+(anonymous) @ compiled_wasm.js.br:2
+_wrapCppCall @ compiled_wasm.js.br:2
+(anonymous) @ compiled_wasm.js.br:2
+x @ 1379-7435cf66a2de8919.min.js.br:3
+_.onmessage @ 1379-7435cf66a2de8919.min.js.br:3Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ║  🔐 LOGIN FUNCTION CALLED IN AUTH CONTEXT
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📧 Email: test123@demo.com
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🔑 Password length: 8
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🌐 API URL: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🔐 Using publicAnonKey: eyJhbGciOiJIUzI1NiIs...
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ⏱️  Timestamp: 2026-03-11T17:34:08.358Z
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📤 Sending login request...
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📥 Response received!
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Status: 200 
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 OK: true
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Headers: {content-type: 'application/json'}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📦 Response data: {
+  "success": true,
+  "data": {
+    "session": {
+      "access_token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjVmODQ2OTQ0LTA2NDEtNDk2ZC1iZDIzLTJhNmEyYjM3M2M1ZiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3BvZndtbGVsd25odWttYXRiaGxnLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJiMTNkYzAwMS03NTUxLTQ1OGEtOTRjYy0yMDc4NGM3NDgwZGYiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzczMjU0MDQ5LCJpYXQiOjE3NzMyNTA0NDksImVtYWlsIjoidGVzdDEyM0BkZW1vLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWUsImZpcnN0X25hbWUiOiJUZXN0VXNlciIsImxhc3RfbmFtZSI6IlRlcyJ9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzczMjUwNDQ5fV0sInNlc3Npb25faWQiOiIxOGFiNDg5MS01ZWExLTQyNTAtYTYyYy1mMDU3NWQzN2ViY2UiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.2FRm2AyvXW5nVB92fOm4-P8lVfvDeFoiPnona21_9JMmaWece510ABvVIGtBjuqZWQMLOYoiwGzR1GsGGPtP8Q",
+      "token_type": "bearer",
+      "expires_in": 3600,
+      "expires_at": 1773254049,
+      "refresh_token": "b4twdh4hxq7p",
+      "user": {
+        "id": "b13dc001-7551-458a-94cc-20784c7480df",
+        "aud": "authenticated",
+        "role": "authenticated",
+        "email": "test123@demo.com",
+        "email_confirmed_at": "2026-03-11T17:29:22.588438Z",
+        "phone": "",
+        "confirmed_at": "2026-03-11T17:29:22.588438Z",
+        "last_sign_in_at": "2026-03-11T17:34:09.50230718Z",
+        "app_metadata": {
+          "provider": "email",
+          "providers": [
+            "email"
+          ]
+        },
+        "user_metadata": {
+          "email_verified": true,
+          "first_name": "TestUser",
+          "last_name": "Tes"
+        },
+        "identities": [
+          {
+            "identity_id": "e7b75b35-7790-4edc-83c3-d38e711936a6",
+            "id": "b13dc001-7551-458a-94cc-20784c7480df",
+            "user_id": "b13dc001-7551-458a-94cc-20784c7480df",
+            "identity_data": {
+              "email": "test123@demo.com",
+              "email_verified": false,
+              "phone_verified": false,
+              "sub": "b13dc001-7551-458a-94cc-20784c7480df"
+            },
+            "provider": "email",
+            "last_sign_in_at": "2026-03-11T17:29:22.569099Z",
+            "created_at": "2026-03-11T17:29:22.569158Z",
+            "updated_at": "2026-03-11T17:29:22.569158Z",
+            "email": "test123@demo.com"
+          }
+        ],
+        "created_at": "2026-03-11T17:29:22.545261Z",
+        "updated_at": "2026-03-11T17:34:09.514354Z",
+        "is_anonymous": false
+      },
+      "weak_password": null
+    },
+    "user": {
+      "id": "dbb92834-b846-463b-83d0-b40a8bbc4af5",
+      "auth_user_id": "b13dc001-7551-458a-94cc-20784c7480df",
+      "email": "test123@demo.com",
+      "first_name": "TestUser",
+      "last_name": "Tes",
+      "phone_number": null,
+      "organization_id": "25dfb398-8dd4-4257-b123-9fe95ccc99ed",
+      "is_super_admin": true,
+      "is_active": true,
+      "created_at": "2026-03-11T17:29:23.319251+00:00",
+      "updated_at": "2026-03-11T17:29:23.319251+00:00",
+      "organization": {
+        "id": "25dfb398-8dd4-4257-b123-9fe95ccc99ed",
+        "name": "qwadafdsasd",
+        "slug": "qwadafdsasd",
+        "created_at": "2026-03-11T17:29:23.157326+00:00",
+        "updated_at": "2026-03-11T17:29:23.157326+00:00",
+        "trial_ends_at": "2026-04-10T17:29:23.104+00:00",
+        "subscription_plan": "free",
+        "subscription_status": "trial",
+        "primary_contact_name": "TestUser Tes",
+        "primary_contact_email": "test123@demo.com",
+        "primary_contact_phone": "7853179900"
+      }
+    }
+  },
+  "message": "Login successful"
+}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ✅ Login successful!
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 User data: {id: 'dbb92834-b846-463b-83d0-b40a8bbc4af5', auth_user_id: 'b13dc001-7551-458a-94cc-20784c7480df', email: 'test123@demo.com', first_name: 'TestUser', last_name: 'Tes', …}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Session: Present
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 💾 Storing access token (first 20 chars): eyJhbGciOiJFUzI1NiIs...
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ✅ User state updated
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ║  ✅ LOGIN COMPLETED SUCCESSFULLY
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ⚙️ SETTINGS PAGE LOADED
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 👤 User from AuthContext: {id: 'dbb92834-b846-463b-83d0-b40a8bbc4af5', auth_user_id: 'b13dc001-7551-458a-94cc-20784c7480df', email: 'test123@demo.com', first_name: 'TestUser', last_name: 'Tes', …}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🔑 Auth token in localStorage: EXISTS
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📦 User in localStorage: EXISTS
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 Current Organization: null
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🌳 Branches: []
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 BRANCH FORM SUBMISSION STARTED
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 📋 Form Data: {
+  "organization_id": "25dfb398-8dd4-4257-b123-9fe95ccc99ed",
+  "name": "asdfas",
+  "location": "test12asdasdfaemo.com",
+  "address": "1602 Hillcrest Dr",
+  "city": "Manhattan",
+  "state": "KS",
+  "zip_code": "66502",
+  "phone_number": "17853179900",
+  "email": "eadjeikusi@ksu.edu",
+  "established_date": "2026-03-11",
+  "is_active": true
+}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🔄 Is Editing: false
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 Organization ID: 25dfb398-8dd4-4257-b123-9fe95ccc99ed
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🔑 Auth Token Check:
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28   - Token exists: true
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28   - Token length: 850
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28   - Token preview: eyJhbGciOiJFUzI1NiIsImtpZCI6Ij...
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 ✅ Validation passed, calling onSave...
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28  POST https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+handleSaveBranch @ Settings.tsx:401
+handleSubmit @ BranchModal.tsx:106
+y @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+ik @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+ij @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+iz @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+dP @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dM @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dG @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dk @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+iR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+d$ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+lO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lv @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28Understand this error
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Branch save response: {code: 401, message: 'Invalid JWT'}
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Response status: 401
+code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28 Branch save error: undefined
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+r @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:69
+error @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+handleSaveBranch @ Settings.tsx:422
+await in handleSaveBranch
+handleSubmit @ BranchModal.tsx:106
+y @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28
+ik @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+ij @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+iz @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+dP @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dM @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dG @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+dk @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+(anonymous) @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+SR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+iR @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+d$ @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:89
+lO @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lN @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+lv @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:77
+i @ code_components_preview_iframe-1e875785bc0d6c5a.min.js.br:28Understand this error

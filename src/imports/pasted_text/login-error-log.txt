@@ -1,0 +1,208 @@
+tatus: 401 
+code_components_prev…0d6c5a.min.js.br:28 OK: false
+code_components_prev…0d6c5a.min.js.br:28 Headers: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_prev…0d6c5a.min.js.br:28 📦 Response data: {
+  "success": false,
+  "error": "Invalid email or password"
+}
+code_components_prev…0d6c5a.min.js.br:28 ❌ Login failed!
+code_components_prev…0d6c5a.min.js.br:28 Error from server: Invalid email or password
+code_components_prev…0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_prev…0d6c5a.min.js.br:28 ║  ❌ LOGIN ERROR IN AUTH CONTEXT
+code_components_prev…0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_prev…0d6c5a.min.js.br:28 Error type: Error
+code_components_prev…0d6c5a.min.js.br:28 Error message: Invalid email or password
+code_components_prev…0d6c5a.min.js.br:28 Error stack: Error: Invalid email or password
+    at login (https://app-lznz2ftjdt7s5idnp22ui3msnlnyxwufk6zw7shciayntfmab75a.makeproxy-c.figma.site/src/app/contexts/AuthContext.tsx:98:15)
+    at async handleSubmit (https://app-lznz2ftjdt7s5idnp22ui3msnlnyxwufk6zw7shciayntfmab75a.makeproxy-c.figma.site/src/app/components/Root.tsx:45:9)
+code_components_prev…0d6c5a.min.js.br:28 Full error object: Error: Invalid email or password
+    at login (AuthContext.tsx:124:15)
+    at async handleSubmit (Root.tsx:30:9)
+code_components_prev…0d6c5a.min.js.br:28 ════════════════════════════════════════════════════════════
+code_components_prev…0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_prev…0d6c5a.min.js.br:28 ║  🔐 LOGIN FUNCTION CALLED IN AUTH CONTEXT
+code_components_prev…0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_prev…0d6c5a.min.js.br:28 📧 Email: demo15@admin.com
+code_components_prev…0d6c5a.min.js.br:28 🔑 Password length: 8
+code_components_prev…0d6c5a.min.js.br:28 🌐 API URL: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login
+code_components_prev…0d6c5a.min.js.br:28 🔐 Using publicAnonKey: eyJhbGciOiJIUzI1NiIs...
+code_components_prev…0d6c5a.min.js.br:28 ⏱️  Timestamp: 2026-03-11T17:24:43.649Z
+code_components_prev…0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_prev…0d6c5a.min.js.br:28 📤 Sending login request...
+pofwmlelwnhukmatbhlg…3d1645/auth/login:1 
+ Failed to load resource: the server responded with a status of 401 ()
+code_components_prev…0d6c5a.min.js.br:28 📥 Response received!
+code_components_prev…0d6c5a.min.js.br:28 Status: 401 
+code_components_prev…0d6c5a.min.js.br:28 OK: false
+code_components_prev…0d6c5a.min.js.br:28 Headers: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_prev…0d6c5a.min.js.br:28 📦 Response data: {
+  "success": false,
+  "error": "Invalid email or password"
+}
+code_components_prev…0d6c5a.min.js.br:28 ❌ Login failed!
+code_components_prev…0d6c5a.min.js.br:28 Error from server: Invalid email or password
+code_components_prev…0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_prev…0d6c5a.min.js.br:28 ║  ❌ LOGIN ERROR IN AUTH CONTEXT
+code_components_prev…0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_prev…0d6c5a.min.js.br:28 Error type: Error
+code_components_prev…0d6c5a.min.js.br:28 Error message: Invalid email or password
+code_components_prev…0d6c5a.min.js.br:28 Error stack: Error: Invalid email or password
+    at login (https://app-lznz2ftjdt7s5idnp22ui3msnlnyxwufk6zw7shciayntfmab75a.makeproxy-c.figma.site/src/app/contexts/AuthContext.tsx:98:15)
+    at async handleSubmit (https://app-lznz2ftjdt7s5idnp22ui3msnlnyxwufk6zw7shciayntfmab75a.makeproxy-c.figma.site/src/app/components/Root.tsx:45:9)
+code_components_prev…0d6c5a.min.js.br:28 Full error object: Error: Invalid email or password
+    at login (AuthContext.tsx:124:15)
+    at async handleSubmit (Root.tsx:30:9)
+code_components_prev…0d6c5a.min.js.br:28 ════════════════════════════════════════════════════════════
+code_components_prev…0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_prev…0d6c5a.min.js.br:28 ║  🔐 LOGIN FUNCTION CALLED IN AUTH CONTEXT
+code_components_prev…0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_prev…0d6c5a.min.js.br:28 📧 Email: admin15@demo.com
+code_components_prev…0d6c5a.min.js.br:28 🔑 Password length: 8
+code_components_prev…0d6c5a.min.js.br:28 🌐 API URL: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login
+code_components_prev…0d6c5a.min.js.br:28 🔐 Using publicAnonKey: eyJhbGciOiJIUzI1NiIs...
+code_components_prev…0d6c5a.min.js.br:28 ⏱️  Timestamp: 2026-03-11T17:24:55.796Z
+code_components_prev…0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_prev…0d6c5a.min.js.br:28 📤 Sending login request...
+code_components_prev…0d6c5a.min.js.br:28 📥 Response received!
+code_components_prev…0d6c5a.min.js.br:28 Status: 200 
+code_components_prev…0d6c5a.min.js.br:28 OK: true
+code_components_prev…0d6c5a.min.js.br:28 Headers: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 ------------------------------------------------------------
+code_components_prev…0d6c5a.min.js.br:28 📦 Response data: {
+  "success": true,
+  "data": {
+    "session": {
+      "access_token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjVmODQ2OTQ0LTA2NDEtNDk2ZC1iZDIzLTJhNmEyYjM3M2M1ZiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3BvZndtbGVsd25odWttYXRiaGxnLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJjYjUyNzFmNS0zNTk0LTRjNjgtOWU4My05N2RmODkxYmI0ZGMiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzczMjUzNDk2LCJpYXQiOjE3NzMyNDk4OTYsImVtYWlsIjoiYWRtaW4xNUBkZW1vLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWUsImZpcnN0X25hbWUiOiJFbW1hbnVlbCIsImxhc3RfbmFtZSI6IkFkamVpLUt1c2kifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc3MzI0OTg5Nn1dLCJzZXNzaW9uX2lkIjoiNmUyMjI2YTktNjE1Ny00YWIzLThhMjgtNGIzZGM5OWVhNjRmIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.Smuam3QZYm79fXghpgCPLIHNHPtj8JbPOfB-prm2PaWIMvVvdqi_5VIljbjMBNbkIUl-6QimE0bbXldCFaDg2g",
+      "token_type": "bearer",
+      "expires_in": 3600,
+      "expires_at": 1773253496,
+      "refresh_token": "62ugesdaslzi",
+      "user": {
+        "id": "cb5271f5-3594-4c68-9e83-97df891bb4dc",
+        "aud": "authenticated",
+        "role": "authenticated",
+        "email": "admin15@demo.com",
+        "email_confirmed_at": "2026-03-10T09:22:17.42492Z",
+        "phone": "",
+        "confirmed_at": "2026-03-10T09:22:17.42492Z",
+        "last_sign_in_at": "2026-03-11T17:24:56.010004341Z",
+        "app_metadata": {
+          "provider": "email",
+          "providers": [
+            "email"
+          ]
+        },
+        "user_metadata": {
+          "email_verified": true,
+          "first_name": "Emmanuel",
+          "last_name": "Adjei-Kusi"
+        },
+        "identities": [
+          {
+            "identity_id": "3004da96-836b-400e-ab20-8485174add67",
+            "id": "cb5271f5-3594-4c68-9e83-97df891bb4dc",
+            "user_id": "cb5271f5-3594-4c68-9e83-97df891bb4dc",
+            "identity_data": {
+              "email": "admin15@demo.com",
+              "email_verified": false,
+              "phone_verified": false,
+              "sub": "cb5271f5-3594-4c68-9e83-97df891bb4dc"
+            },
+            "provider": "email",
+            "last_sign_in_at": "2026-03-10T09:22:17.408227Z",
+            "created_at": "2026-03-10T09:22:17.408287Z",
+            "updated_at": "2026-03-10T09:22:17.408287Z",
+            "email": "admin15@demo.com"
+          }
+        ],
+        "created_at": "2026-03-10T09:22:17.38311Z",
+        "updated_at": "2026-03-11T17:24:56.021137Z",
+        "is_anonymous": false
+      },
+      "weak_password": null
+    },
+    "user": {
+      "id": "a2407d74-8ae6-402e-b084-9711f764ea1a",
+      "auth_user_id": "cb5271f5-3594-4c68-9e83-97df891bb4dc",
+      "email": "admin15@demo.com",
+      "first_name": "Emmanuel",
+      "last_name": "Adjei-Kusi",
+      "phone_number": null,
+      "organization_id": "4142a248-4fe4-41f8-9f0d-4b4335907545",
+      "is_super_admin": true,
+      "is_active": true,
+      "created_at": "2026-03-10T09:22:18.047514+00:00",
+      "updated_at": "2026-03-10T09:22:18.047514+00:00",
+      "organization": {
+        "id": "4142a248-4fe4-41f8-9f0d-4b4335907545",
+        "name": "Emmanuel's Church",
+        "slug": "emmanuels-church-1",
+        "created_at": "2026-03-10T09:22:17.929546+00:00",
+        "updated_at": "2026-03-10T09:22:17.929546+00:00",
+        "trial_ends_at": "2026-04-09T09:22:17.893+00:00",
+        "subscription_plan": "free",
+        "subscription_status": "trial",
+        "primary_contact_name": "Emmanuel Adjei-Kusi",
+        "primary_contact_email": "admin15@demo.com",
+        "primary_contact_phone": "7853179900"
+      }
+    }
+  },
+  "message": "Login successful"
+}
+code_components_prev…0d6c5a.min.js.br:28 ✅ Login successful!
+code_components_prev…0d6c5a.min.js.br:28 User data: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 Session: Present
+code_components_prev…0d6c5a.min.js.br:28 💾 Storing access token (first 20 chars): eyJhbGciOiJFUzI1NiIs...
+code_components_prev…0d6c5a.min.js.br:28 ✅ User state updated
+code_components_prev…0d6c5a.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_prev…0d6c5a.min.js.br:28 ║  ✅ LOGIN COMPLETED SUCCESSFULLY
+code_components_prev…0d6c5a.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_prev…0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_prev…0d6c5a.min.js.br:28 ⚙️ SETTINGS PAGE LOADED
+code_components_prev…0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_prev…0d6c5a.min.js.br:28 👤 User from AuthContext: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 🔑 Auth token in localStorage: EXISTS
+code_components_prev…0d6c5a.min.js.br:28 📦 User in localStorage: EXISTS
+code_components_prev…0d6c5a.min.js.br:28 🏢 Current Organization: null
+code_components_prev…0d6c5a.min.js.br:28 🌳 Branches: 
+Array(0)
+code_components_prev…0d6c5a.min.js.br:28 ⚙️ ============================================
+code_components_prev…0d6c5a.min.js.br:28 🏢 ============================================
+code_components_prev…0d6c5a.min.js.br:28 🏢 BRANCH FORM SUBMISSION STARTED
+code_components_prev…0d6c5a.min.js.br:28 🏢 ============================================
+code_components_prev…0d6c5a.min.js.br:28 📋 Form Data: {
+  "organization_id": "4142a248-4fe4-41f8-9f0d-4b4335907545",
+  "name": "sdfgsdf",
+  "location": "sdfgsdf",
+  "address": "sdfgsdf",
+  "city": "Manhattan",
+  "state": "KS",
+  "zip_code": "66502",
+  "phone_number": "17853179900",
+  "email": "eadjeikusi@ksu.edu",
+  "established_date": "2026-03-11",
+  "is_active": true
+}
+code_components_prev…0d6c5a.min.js.br:28 🔄 Is Editing: false
+code_components_prev…0d6c5a.min.js.br:28 🏢 Organization ID: 4142a248-4fe4-41f8-9f0d-4b4335907545
+code_components_prev…0d6c5a.min.js.br:28 🔑 Auth Token Check:
+code_components_prev…0d6c5a.min.js.br:28   - Token exists: true
+code_components_prev…0d6c5a.min.js.br:28   - Token length: 859
+code_components_prev…0d6c5a.min.js.br:28   - Token preview: eyJhbGciOiJFUzI1NiIsImtpZCI6Ij...
+code_components_prev…0d6c5a.min.js.br:28 ✅ Validation passed, calling onSave...
+code_components_prev…0d6c5a.min.js.br:28 🏢 ============================================
+pofwmlelwnhukmatbhlg…eb3d1645/branches:1 
+ Failed to load resource: the server responded with a status of 401 ()
+code_components_prev…0d6c5a.min.js.br:28 Branch save response: 
+Object
+code_components_prev…0d6c5a.min.js.br:28 Response status: 401
+code_components_prev…0d6c5a.min.js.br:28 Branch save error: undefined
+(anonymous)	@	code_components_prev…0d6c5a.min.js.br:28

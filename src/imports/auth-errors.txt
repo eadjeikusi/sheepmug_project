@@ -1,0 +1,77 @@
+code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28 
+            
+            
+           POST https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/signup 400 (Bad Request)
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+signup @ AuthContext.tsx:108
+handleSubmit @ Signup.tsx:50
+y @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+iG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+ij @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+iz @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+dP @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dM @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dk @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+SR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+iR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+d$ @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+lO @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lN @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lv @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28Understand this error
+code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28 Signup error: Error: A user with this email address has already been registered
+    at signup (AuthContext.tsx:120:15)
+    at async handleSubmit (Signup.tsx:50:7)
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+r @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:69
+error @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+signup @ AuthContext.tsx:125
+await in signup
+handleSubmit @ Signup.tsx:50
+y @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+iG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+ij @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+iz @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+dP @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dM @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dk @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+SR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+iR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+d$ @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+lO @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lN @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lv @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28Understand this error
+code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28 
+            
+            
+           GET https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/me 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+fetchUserProfile @ AuthContext.tsx:38
+login @ AuthContext.tsx:97
+await in login
+handleSubmit @ Login.tsx:25
+y @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28
+iG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+ij @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+iz @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+dP @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dM @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dk @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+dG @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+(anonymous) @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+SR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+iR @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+d$ @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:89
+lO @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lN @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+lv @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:77
+i @ code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28Understand this error
+code_components_preview_iframe-ab9bdbe29389ccb5.min.js.br:28 Failed to fetch user profile: undefined

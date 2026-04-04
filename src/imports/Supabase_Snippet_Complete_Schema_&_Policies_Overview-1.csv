@@ -1,0 +1,474 @@
+table_name,info_type,name,data_type,details,sort_order
+activity_logs,COLUMN,id,uuid,NOT NULL,1
+activity_logs,COLUMN,organization_id,uuid,NOT NULL,2
+activity_logs,COLUMN,user_id,uuid,NULL,3
+activity_logs,COLUMN,member_id,uuid,NULL,4
+activity_logs,COLUMN,action_type,character varying,NOT NULL,5
+activity_logs,COLUMN,action_description,text,NOT NULL,6
+activity_logs,COLUMN,entity_type,character varying,NULL,7
+activity_logs,COLUMN,entity_id,uuid,NULL,8
+activity_logs,COLUMN,ip_address,character varying,NULL,9
+activity_logs,COLUMN,user_agent,text,NULL,10
+activity_logs,COLUMN,changes,jsonb,NULL,11
+activity_logs,COLUMN,created_at,timestamp with time zone,NULL,12
+activity_logs,COLUMN,deleted_at,timestamp with time zone,NULL,13
+activity_logs,RLS POLICY,System can create activity logs,INSERT,RESTRICTIVE,999
+activity_logs,RLS POLICY,Users can view activity logs in their organization,SELECT,RESTRICTIVE,999
+ai_voice_notes,COLUMN,id,uuid,NOT NULL,1
+ai_voice_notes,COLUMN,organization_id,uuid,NOT NULL,2
+ai_voice_notes,COLUMN,member_id,uuid,NOT NULL,3
+ai_voice_notes,COLUMN,recorded_by_user_id,uuid,NOT NULL,4
+ai_voice_notes,COLUMN,audio_url,text,NULL,5
+ai_voice_notes,COLUMN,transcription,text,NULL,6
+ai_voice_notes,COLUMN,summary,text,NULL,7
+ai_voice_notes,COLUMN,urgency_level,USER-DEFINED,NOT NULL,8
+ai_voice_notes,COLUMN,category,USER-DEFINED,NULL,9
+ai_voice_notes,COLUMN,status,USER-DEFINED,NULL,10
+ai_voice_notes,COLUMN,assigned_to_user_id,uuid,NULL,11
+ai_voice_notes,COLUMN,is_private,boolean,NULL,12
+ai_voice_notes,COLUMN,followup_date,date,NULL,13
+ai_voice_notes,COLUMN,resolved_at,timestamp with time zone,NULL,14
+ai_voice_notes,COLUMN,created_at,timestamp with time zone,NULL,15
+ai_voice_notes,COLUMN,updated_at,timestamp with time zone,NULL,16
+ai_voice_notes,COLUMN,deleted_at,timestamp with time zone,NULL,17
+ai_voice_notes,RLS POLICY,Users can manage AI voice notes,ALL,RESTRICTIVE,999
+ai_voice_notes,RLS POLICY,Users can view AI voice notes in their organization,SELECT,RESTRICTIVE,999
+branches,COLUMN,id,uuid,NOT NULL,1
+branches,COLUMN,organization_id,uuid,NOT NULL,2
+branches,COLUMN,name,character varying,NOT NULL,3
+branches,COLUMN,location,character varying,NOT NULL,4
+branches,COLUMN,address,text,NULL,5
+branches,COLUMN,city,character varying,NULL,6
+branches,COLUMN,state,character varying,NULL,7
+branches,COLUMN,zip_code,character varying,NULL,8
+branches,COLUMN,phone_number,character varying,NULL,9
+branches,COLUMN,email,character varying,NULL,10
+branches,COLUMN,pastor_id,uuid,NULL,11
+branches,COLUMN,capacity,integer,NULL,12
+branches,COLUMN,established_date,date,NULL,13
+branches,COLUMN,is_active,boolean,NULL,14
+branches,COLUMN,created_at,timestamp with time zone,NULL,15
+branches,COLUMN,updated_at,timestamp with time zone,NULL,16
+branches,COLUMN,deleted_at,timestamp with time zone,NULL,17
+branches,RLS POLICY,Admins can delete branches,DELETE,RESTRICTIVE,999
+branches,RLS POLICY,Admins can insert branches,INSERT,RESTRICTIVE,999
+branches,RLS POLICY,Admins can update branches,UPDATE,RESTRICTIVE,999
+branches,RLS POLICY,Users can view branches in their organization,SELECT,RESTRICTIVE,999
+custom_fields,COLUMN,id,uuid,NOT NULL,1
+custom_fields,COLUMN,organization_id,uuid,NOT NULL,2
+custom_fields,COLUMN,field_name,character varying,NOT NULL,3
+custom_fields,COLUMN,field_key,character varying,NOT NULL,4
+custom_fields,COLUMN,field_type,USER-DEFINED,NOT NULL,5
+custom_fields,COLUMN,applies_to,USER-DEFINED,NOT NULL,6
+custom_fields,COLUMN,is_required,boolean,NULL,7
+custom_fields,COLUMN,placeholder,character varying,NULL,8
+custom_fields,COLUMN,default_value,text,NULL,9
+custom_fields,COLUMN,options,jsonb,NULL,10
+custom_fields,COLUMN,validation_rules,jsonb,NULL,11
+custom_fields,COLUMN,display_order,integer,NULL,12
+custom_fields,COLUMN,is_active,boolean,NULL,13
+custom_fields,COLUMN,created_at,timestamp with time zone,NULL,14
+custom_fields,COLUMN,updated_at,timestamp with time zone,NULL,15
+custom_fields,COLUMN,deleted_at,timestamp with time zone,NULL,16
+custom_fields,RLS POLICY,Admins can manage custom fields,ALL,RESTRICTIVE,999
+custom_fields,RLS POLICY,Users can view custom fields in their organization,SELECT,RESTRICTIVE,999
+event_attendance,COLUMN,id,uuid,NOT NULL,1
+event_attendance,COLUMN,event_id,uuid,NOT NULL,2
+event_attendance,COLUMN,member_id,uuid,NOT NULL,3
+event_attendance,COLUMN,check_in_time,timestamp with time zone,NULL,4
+event_attendance,COLUMN,check_out_time,timestamp with time zone,NULL,5
+event_attendance,COLUMN,attendance_status,USER-DEFINED,NOT NULL,6
+event_attendance,COLUMN,marked_by_user_id,uuid,NULL,7
+event_attendance,COLUMN,scan_method,USER-DEFINED,NULL,8
+event_attendance,COLUMN,notes,text,NULL,9
+event_attendance,COLUMN,created_at,timestamp with time zone,NULL,10
+event_attendance,COLUMN,updated_at,timestamp with time zone,NULL,11
+event_attendance,COLUMN,deleted_at,timestamp with time zone,NULL,12
+event_attendance,RLS POLICY,Users can manage event attendance,ALL,RESTRICTIVE,999
+event_attendance,RLS POLICY,Users can view event attendance,SELECT,RESTRICTIVE,999
+event_types,COLUMN,id,uuid,NOT NULL,1
+event_types,COLUMN,organization_id,uuid,NULL,2
+event_types,COLUMN,name,character varying,NOT NULL,3
+event_types,COLUMN,emoji,character varying,NULL,4
+event_types,COLUMN,color,character varying,NOT NULL,5
+event_types,COLUMN,is_default,boolean,NULL,6
+event_types,COLUMN,created_at,timestamp with time zone,NULL,7
+event_types,COLUMN,updated_at,timestamp with time zone,NULL,8
+event_types,COLUMN,deleted_at,timestamp with time zone,NULL,9
+event_types,RLS POLICY,Admins can manage event types,ALL,RESTRICTIVE,999
+event_types,RLS POLICY,Users can view event types,SELECT,RESTRICTIVE,999
+events,COLUMN,id,uuid,NOT NULL,1
+events,COLUMN,organization_id,uuid,NOT NULL,2
+events,COLUMN,branch_id,uuid,NOT NULL,3
+events,COLUMN,title,character varying,NOT NULL,4
+events,COLUMN,description,text,NULL,5
+events,COLUMN,event_type_id,uuid,NULL,6
+events,COLUMN,date,date,NOT NULL,7
+events,COLUMN,start_time,time without time zone,NOT NULL,8
+events,COLUMN,end_time,time without time zone,NULL,9
+events,COLUMN,location,character varying,NULL,10
+events,COLUMN,group_id,uuid,NULL,11
+events,COLUMN,created_by_user_id,uuid,NOT NULL,12
+events,COLUMN,max_attendees,integer,NULL,13
+events,COLUMN,registration_required,boolean,NULL,14
+events,COLUMN,is_recurring,boolean,NULL,15
+events,COLUMN,recurrence_pattern,character varying,NULL,16
+events,COLUMN,image_url,text,NULL,17
+events,COLUMN,review_link,text,NULL,18
+events,COLUMN,custom_fields,jsonb,NULL,19
+events,COLUMN,is_published,boolean,NULL,20
+events,COLUMN,is_cancelled,boolean,NULL,21
+events,COLUMN,created_at,timestamp with time zone,NULL,22
+events,COLUMN,updated_at,timestamp with time zone,NULL,23
+events,COLUMN,deleted_at,timestamp with time zone,NULL,24
+events,RLS POLICY,Users can manage events in their branches,ALL,RESTRICTIVE,999
+events,RLS POLICY,Users can view events in their branches,SELECT,RESTRICTIVE,999
+family_groups,COLUMN,id,uuid,NOT NULL,1
+family_groups,COLUMN,organization_id,uuid,NOT NULL,2
+family_groups,COLUMN,family_name,character varying,NOT NULL,3
+family_groups,COLUMN,head_of_household_id,uuid,NULL,4
+family_groups,COLUMN,branch_id,uuid,NOT NULL,5
+family_groups,COLUMN,address,text,NOT NULL,6
+family_groups,COLUMN,phone_number,character varying,NOT NULL,7
+family_groups,COLUMN,email,character varying,NULL,8
+family_groups,COLUMN,joined_date,date,NOT NULL,9
+family_groups,COLUMN,notes,text,NULL,10
+family_groups,COLUMN,is_active,boolean,NULL,11
+family_groups,COLUMN,created_at,timestamp with time zone,NULL,12
+family_groups,COLUMN,updated_at,timestamp with time zone,NULL,13
+family_groups,COLUMN,deleted_at,timestamp with time zone,NULL,14
+family_groups,RLS POLICY,Users can manage family groups in their branches,ALL,RESTRICTIVE,999
+family_groups,RLS POLICY,Users can view family groups in their branches,SELECT,RESTRICTIVE,999
+group_members,COLUMN,id,uuid,NOT NULL,1
+group_members,COLUMN,group_id,uuid,NOT NULL,2
+group_members,COLUMN,member_id,uuid,NOT NULL,3
+group_members,COLUMN,joined_date,date,NOT NULL,4
+group_members,COLUMN,role,character varying,NULL,5
+group_members,COLUMN,is_active,boolean,NULL,6
+group_members,COLUMN,created_at,timestamp with time zone,NULL,7
+group_members,COLUMN,updated_at,timestamp with time zone,NULL,8
+group_members,COLUMN,deleted_at,timestamp with time zone,NULL,9
+group_members,COLUMN,branch_id,uuid,NOT NULL,10
+group_members,RLS POLICY,Users can manage group members in their branches,ALL,RESTRICTIVE,999
+group_members,RLS POLICY,Users can view group members in their branches,SELECT,RESTRICTIVE,999
+groups,COLUMN,id,uuid,NOT NULL,1
+groups,COLUMN,organization_id,uuid,NOT NULL,2
+groups,COLUMN,branch_id,uuid,NOT NULL,3
+groups,COLUMN,name,character varying,NOT NULL,4
+groups,COLUMN,type,USER-DEFINED,NOT NULL,5
+groups,COLUMN,tag,character varying,NOT NULL,6
+groups,COLUMN,description,text,NULL,7
+groups,COLUMN,leader_id,uuid,NULL,8
+groups,COLUMN,parent_group_id,uuid,NULL,9
+groups,COLUMN,meeting_schedule,character varying,NULL,10
+groups,COLUMN,meeting_location,character varying,NULL,11
+groups,COLUMN,max_members,integer,NULL,12
+groups,COLUMN,join_link,text,NULL,13
+groups,COLUMN,public_view_link,text,NULL,14
+groups,COLUMN,qr_code_join,text,NULL,15
+groups,COLUMN,qr_code_public,text,NULL,16
+groups,COLUMN,is_active,boolean,NULL,17
+groups,COLUMN,is_public,boolean,NULL,18
+groups,COLUMN,created_at,timestamp with time zone,NULL,19
+groups,COLUMN,updated_at,timestamp with time zone,NULL,20
+groups,COLUMN,deleted_at,timestamp with time zone,NULL,21
+groups,RLS POLICY,Users can manage groups in their branches,ALL,RESTRICTIVE,999
+groups,RLS POLICY,Users can view groups in their branches,SELECT,RESTRICTIVE,999
+join_requests,COLUMN,id,uuid,NOT NULL,1
+join_requests,COLUMN,group_id,uuid,NOT NULL,2
+join_requests,COLUMN,member_id,uuid,NOT NULL,3
+join_requests,COLUMN,request_message,text,NULL,4
+join_requests,COLUMN,status,USER-DEFINED,NULL,5
+join_requests,COLUMN,reviewed_by_user_id,uuid,NULL,6
+join_requests,COLUMN,reviewed_at,timestamp with time zone,NULL,7
+join_requests,COLUMN,rejection_reason,text,NULL,8
+join_requests,COLUMN,created_at,timestamp with time zone,NULL,9
+join_requests,COLUMN,updated_at,timestamp with time zone,NULL,10
+join_requests,COLUMN,deleted_at,timestamp with time zone,NULL,11
+join_requests,RLS POLICY,Users can manage join requests,ALL,RESTRICTIVE,999
+join_requests,RLS POLICY,Users can view join requests,SELECT,RESTRICTIVE,999
+kv_store_eb3d1645,COLUMN,key,text,NOT NULL,1
+kv_store_eb3d1645,COLUMN,value,jsonb,NOT NULL,2
+member_notes,COLUMN,id,uuid,NOT NULL,1
+member_notes,COLUMN,organization_id,uuid,NOT NULL,2
+member_notes,COLUMN,member_id,uuid,NOT NULL,3
+member_notes,COLUMN,created_by_user_id,uuid,NOT NULL,4
+member_notes,COLUMN,content,text,NULL,5
+member_notes,COLUMN,audio_url,text,NULL,6
+member_notes,COLUMN,audio_duration,integer,NULL,7
+member_notes,COLUMN,note_type,USER-DEFINED,NULL,8
+member_notes,COLUMN,is_private,boolean,NULL,9
+member_notes,COLUMN,tags,ARRAY,NULL,10
+member_notes,COLUMN,is_pinned,boolean,NULL,11
+member_notes,COLUMN,created_at,timestamp with time zone,NULL,12
+member_notes,COLUMN,updated_at,timestamp with time zone,NULL,13
+member_notes,COLUMN,deleted_at,timestamp with time zone,NULL,14
+member_notes,RLS POLICY,Users can manage member notes,ALL,RESTRICTIVE,999
+member_notes,RLS POLICY,Users can view member notes in their organization,SELECT,RESTRICTIVE,999
+member_registration_links,COLUMN,id,uuid,NOT NULL,1
+member_registration_links,COLUMN,organization_id,uuid,NOT NULL,2
+member_registration_links,COLUMN,branch_id,uuid,NULL,3
+member_registration_links,COLUMN,group_id,uuid,NULL,4
+member_registration_links,COLUMN,unique_code,character varying,NOT NULL,5
+member_registration_links,COLUMN,registration_url,text,NOT NULL,6
+member_registration_links,COLUMN,qr_code_url,text,NULL,7
+member_registration_links,COLUMN,created_by_user_id,uuid,NOT NULL,8
+member_registration_links,COLUMN,max_uses,integer,NULL,9
+member_registration_links,COLUMN,usage_count,integer,NULL,10
+member_registration_links,COLUMN,expires_at,timestamp with time zone,NULL,11
+member_registration_links,COLUMN,is_active,boolean,NULL,12
+member_registration_links,COLUMN,created_at,timestamp with time zone,NULL,13
+member_registration_links,COLUMN,updated_at,timestamp with time zone,NULL,14
+member_registration_links,COLUMN,deleted_at,timestamp with time zone,NULL,15
+member_registration_links,RLS POLICY,Users can manage registration links,ALL,RESTRICTIVE,999
+member_registration_links,RLS POLICY,Users can view registration links in their organization,SELECT,RESTRICTIVE,999
+member_registration_requests,COLUMN,id,uuid,NOT NULL,1
+member_registration_requests,COLUMN,organization_id,uuid,NOT NULL,2
+member_registration_requests,COLUMN,registration_link_id,uuid,NULL,3
+member_registration_requests,COLUMN,full_name,character varying,NOT NULL,4
+member_registration_requests,COLUMN,email,character varying,NULL,5
+member_registration_requests,COLUMN,phone_number,character varying,NOT NULL,6
+member_registration_requests,COLUMN,date_of_birth,date,NULL,7
+member_registration_requests,COLUMN,address,text,NULL,8
+member_registration_requests,COLUMN,occupation,character varying,NULL,9
+member_registration_requests,COLUMN,emergency_contact_name,character varying,NULL,10
+member_registration_requests,COLUMN,emergency_contact_phone,character varying,NULL,11
+member_registration_requests,COLUMN,preferred_branch_id,uuid,NULL,12
+member_registration_requests,COLUMN,form_data,jsonb,NULL,13
+member_registration_requests,COLUMN,status,USER-DEFINED,NULL,14
+member_registration_requests,COLUMN,reviewed_by_user_id,uuid,NULL,15
+member_registration_requests,COLUMN,reviewed_at,timestamp with time zone,NULL,16
+member_registration_requests,COLUMN,rejection_reason,text,NULL,17
+member_registration_requests,COLUMN,converted_member_id,uuid,NULL,18
+member_registration_requests,COLUMN,created_at,timestamp with time zone,NULL,19
+member_registration_requests,COLUMN,updated_at,timestamp with time zone,NULL,20
+member_registration_requests,COLUMN,deleted_at,timestamp with time zone,NULL,21
+member_registration_requests,RLS POLICY,Public can insert registration requests,INSERT,RESTRICTIVE,999
+member_registration_requests,RLS POLICY,Users can manage registration requests,UPDATE,RESTRICTIVE,999
+member_registration_requests,RLS POLICY,Users can view registration requests in their organization,SELECT,RESTRICTIVE,999
+members,COLUMN,id,uuid,NOT NULL,1
+members,COLUMN,organization_id,uuid,NOT NULL,2
+members,COLUMN,member_number,character varying,NULL,3
+members,COLUMN,profile_image,text,NULL,5
+members,COLUMN,email,character varying,NULL,6
+members,COLUMN,phone_number,character varying,NOT NULL,7
+members,COLUMN,alternate_phone,character varying,NULL,8
+members,COLUMN,emergency_contact_name,character varying,NULL,9
+members,COLUMN,emergency_contact_phone,character varying,NULL,10
+members,COLUMN,date_of_birth,date,NULL,11
+members,COLUMN,gender,USER-DEFINED,NULL,12
+members,COLUMN,marital_status,USER-DEFINED,NULL,13
+members,COLUMN,branch_id,uuid,NOT NULL,14
+members,COLUMN,family_group_id,uuid,NULL,15
+members,COLUMN,relationship_in_family,character varying,NULL,16
+members,COLUMN,address,text,NULL,17
+members,COLUMN,city,character varying,NULL,18
+members,COLUMN,state,character varying,NULL,19
+members,COLUMN,zip_code,character varying,NULL,20
+members,COLUMN,occupation,character varying,NULL,21
+members,COLUMN,employer,character varying,NULL,22
+members,COLUMN,join_date,date,NOT NULL,23
+members,COLUMN,baptism_date,date,NULL,24
+members,COLUMN,membership_status,USER-DEFINED,NOT NULL,25
+members,COLUMN,last_attendance_date,date,NULL,26
+members,COLUMN,attendance_rate,numeric,NULL,27
+members,COLUMN,total_attendance_count,integer,NULL,28
+members,COLUMN,custom_fields,jsonb,NULL,29
+members,COLUMN,notes,text,NULL,30
+members,COLUMN,is_active,boolean,NULL,31
+members,COLUMN,created_at,timestamp with time zone,NULL,32
+members,COLUMN,updated_at,timestamp with time zone,NULL,33
+members,COLUMN,deleted_at,timestamp with time zone,NULL,34
+members,COLUMN,first_name,character varying,NOT NULL,35
+members,COLUMN,last_name,character varying,NOT NULL,36
+members,RLS POLICY,Admins can delete members,DELETE,RESTRICTIVE,999
+members,RLS POLICY,Users can insert members in their branches,INSERT,RESTRICTIVE,999
+members,RLS POLICY,Users can update members in their branches,UPDATE,RESTRICTIVE,999
+members,RLS POLICY,Users can view members in their organization and branches,SELECT,RESTRICTIVE,999
+members,RLS POLICY,tenant_isolation_members,ALL,RESTRICTIVE,999
+message_recipients,COLUMN,id,uuid,NOT NULL,1
+message_recipients,COLUMN,message_id,uuid,NOT NULL,2
+message_recipients,COLUMN,member_id,uuid,NOT NULL,3
+message_recipients,COLUMN,delivery_status,USER-DEFINED,NULL,4
+message_recipients,COLUMN,delivered_at,timestamp with time zone,NULL,5
+message_recipients,COLUMN,opened_at,timestamp with time zone,NULL,6
+message_recipients,COLUMN,clicked_at,timestamp with time zone,NULL,7
+message_recipients,COLUMN,error_message,text,NULL,8
+message_recipients,COLUMN,created_at,timestamp with time zone,NULL,9
+message_recipients,COLUMN,updated_at,timestamp with time zone,NULL,10
+message_recipients,COLUMN,deleted_at,timestamp with time zone,NULL,11
+message_recipients,COLUMN,branch_id,uuid,NULL,12
+message_recipients,RLS POLICY,Users can manage message recipients,ALL,RESTRICTIVE,999
+message_recipients,RLS POLICY,Users can view message recipients,SELECT,RESTRICTIVE,999
+messages,COLUMN,id,uuid,NOT NULL,1
+messages,COLUMN,organization_id,uuid,NOT NULL,2
+messages,COLUMN,sent_by_user_id,uuid,NOT NULL,3
+messages,COLUMN,subject,character varying,NOT NULL,4
+messages,COLUMN,content,text,NOT NULL,5
+messages,COLUMN,message_type,USER-DEFINED,NOT NULL,6
+messages,COLUMN,target_type,USER-DEFINED,NOT NULL,7
+messages,COLUMN,target_branch_id,uuid,NULL,8
+messages,COLUMN,target_group_id,uuid,NULL,9
+messages,COLUMN,excluded_member_ids,ARRAY,NULL,10
+messages,COLUMN,scheduled_send_at,timestamp with time zone,NULL,11
+messages,COLUMN,sent_at,timestamp with time zone,NULL,12
+messages,COLUMN,status,USER-DEFINED,NULL,13
+messages,COLUMN,total_recipients,integer,NULL,14
+messages,COLUMN,delivered_count,integer,NULL,15
+messages,COLUMN,opened_count,integer,NULL,16
+messages,COLUMN,clicked_count,integer,NULL,17
+messages,COLUMN,created_at,timestamp with time zone,NULL,18
+messages,COLUMN,updated_at,timestamp with time zone,NULL,19
+messages,COLUMN,deleted_at,timestamp with time zone,NULL,20
+messages,RLS POLICY,Users can send messages,INSERT,RESTRICTIVE,999
+messages,RLS POLICY,Users can update their own messages,UPDATE,RESTRICTIVE,999
+messages,RLS POLICY,Users can view messages in their organization,SELECT,RESTRICTIVE,999
+notifications,COLUMN,id,uuid,NOT NULL,1
+notifications,COLUMN,organization_id,uuid,NOT NULL,2
+notifications,COLUMN,user_id,uuid,NOT NULL,3
+notifications,COLUMN,title,character varying,NOT NULL,4
+notifications,COLUMN,message,text,NOT NULL,5
+notifications,COLUMN,type,USER-DEFINED,NOT NULL,6
+notifications,COLUMN,action_url,text,NULL,7
+notifications,COLUMN,icon,character varying,NULL,8
+notifications,COLUMN,is_read,boolean,NULL,9
+notifications,COLUMN,read_at,timestamp with time zone,NULL,10
+notifications,COLUMN,created_at,timestamp with time zone,NULL,11
+notifications,COLUMN,updated_at,timestamp with time zone,NULL,12
+notifications,COLUMN,deleted_at,timestamp with time zone,NULL,13
+notifications,RLS POLICY,System can create notifications,INSERT,RESTRICTIVE,999
+notifications,RLS POLICY,Users can update their own notifications,UPDATE,RESTRICTIVE,999
+notifications,RLS POLICY,Users can view their own notifications,SELECT,RESTRICTIVE,999
+organizations,COLUMN,id,uuid,NOT NULL,1
+organizations,COLUMN,name,character varying,NOT NULL,2
+organizations,COLUMN,slug,character varying,NOT NULL,3
+organizations,COLUMN,logo_url,text,NULL,4
+organizations,COLUMN,primary_contact_name,character varying,NOT NULL,5
+organizations,COLUMN,primary_contact_email,character varying,NOT NULL,6
+organizations,COLUMN,primary_contact_phone,character varying,NOT NULL,7
+organizations,COLUMN,address,text,NULL,8
+organizations,COLUMN,city,character varying,NULL,9
+organizations,COLUMN,state,character varying,NULL,10
+organizations,COLUMN,zip_code,character varying,NULL,11
+organizations,COLUMN,country,character varying,NULL,12
+organizations,COLUMN,subscription_plan,USER-DEFINED,NOT NULL,13
+organizations,COLUMN,subscription_status,USER-DEFINED,NOT NULL,14
+organizations,COLUMN,monthly_revenue,numeric,NULL,15
+organizations,COLUMN,trial_ends_at,timestamp with time zone,NULL,16
+organizations,COLUMN,subscription_starts_at,timestamp with time zone,NULL,17
+organizations,COLUMN,subscription_ends_at,timestamp with time zone,NULL,18
+organizations,COLUMN,max_members,integer,NULL,19
+organizations,COLUMN,max_branches,integer,NULL,20
+organizations,COLUMN,settings,jsonb,NULL,21
+organizations,COLUMN,is_active,boolean,NULL,22
+organizations,COLUMN,created_at,timestamp with time zone,NULL,23
+organizations,COLUMN,updated_at,timestamp with time zone,NULL,24
+organizations,COLUMN,deleted_at,timestamp with time zone,NULL,25
+organizations,RLS POLICY,Admins can update their organization,UPDATE,RESTRICTIVE,999
+organizations,RLS POLICY,Super admins can insert organizations,INSERT,RESTRICTIVE,999
+organizations,RLS POLICY,Users can view their own organization,SELECT,RESTRICTIVE,999
+organizations,RLS POLICY,organizations_policy,ALL,RESTRICTIVE,999
+password_reset_tokens,COLUMN,id,uuid,NOT NULL,1
+password_reset_tokens,COLUMN,user_id,uuid,NOT NULL,2
+password_reset_tokens,COLUMN,token,character varying,NOT NULL,3
+password_reset_tokens,COLUMN,expires_at,timestamp with time zone,NOT NULL,4
+password_reset_tokens,COLUMN,used_at,timestamp with time zone,NULL,5
+password_reset_tokens,COLUMN,ip_address,character varying,NULL,6
+password_reset_tokens,COLUMN,user_agent,text,NULL,7
+password_reset_tokens,COLUMN,created_at,timestamp with time zone,NULL,8
+password_reset_tokens,COLUMN,deleted_at,timestamp with time zone,NULL,9
+password_reset_tokens,RLS POLICY,System can manage reset tokens,ALL,RESTRICTIVE,999
+password_reset_tokens,RLS POLICY,Users can view their own reset tokens,SELECT,RESTRICTIVE,999
+permissions,COLUMN,id,uuid,NOT NULL,1
+permissions,COLUMN,name,character varying,NOT NULL,2
+permissions,COLUMN,slug,character varying,NOT NULL,3
+permissions,COLUMN,description,text,NULL,4
+permissions,COLUMN,category,character varying,NOT NULL,5
+permissions,COLUMN,created_at,timestamp with time zone,NULL,6
+permissions,COLUMN,updated_at,timestamp with time zone,NULL,7
+permissions,COLUMN,deleted_at,timestamp with time zone,NULL,8
+permissions,RLS POLICY,Authenticated users can view permissions,SELECT,RESTRICTIVE,999
+role_permissions,COLUMN,id,uuid,NOT NULL,1
+role_permissions,COLUMN,role_id,uuid,NOT NULL,2
+role_permissions,COLUMN,permission_id,uuid,NOT NULL,3
+role_permissions,COLUMN,created_at,timestamp with time zone,NULL,4
+role_permissions,COLUMN,updated_at,timestamp with time zone,NULL,5
+role_permissions,COLUMN,deleted_at,timestamp with time zone,NULL,6
+role_permissions,RLS POLICY,Admins can manage role permissions,ALL,RESTRICTIVE,999
+role_permissions,RLS POLICY,Users can view role permissions,SELECT,RESTRICTIVE,999
+roles,COLUMN,id,uuid,NOT NULL,1
+roles,COLUMN,organization_id,uuid,NULL,2
+roles,COLUMN,name,character varying,NOT NULL,3
+roles,COLUMN,slug,character varying,NOT NULL,4
+roles,COLUMN,description,text,NULL,5
+roles,COLUMN,color,character varying,NULL,6
+roles,COLUMN,is_system_role,boolean,NULL,7
+roles,COLUMN,created_at,timestamp with time zone,NULL,8
+roles,COLUMN,updated_at,timestamp with time zone,NULL,9
+roles,COLUMN,deleted_at,timestamp with time zone,NULL,10
+roles,RLS POLICY,Admins can manage custom roles,ALL,RESTRICTIVE,999
+roles,RLS POLICY,Users can view roles,SELECT,RESTRICTIVE,999
+subscription_plans,COLUMN,id,uuid,NOT NULL,1
+subscription_plans,COLUMN,plan_name,character varying,NOT NULL,2
+subscription_plans,COLUMN,plan_slug,character varying,NOT NULL,3
+subscription_plans,COLUMN,description,text,NULL,4
+subscription_plans,COLUMN,price_monthly,numeric,NOT NULL,5
+subscription_plans,COLUMN,price_yearly,numeric,NOT NULL,6
+subscription_plans,COLUMN,max_members,integer,NOT NULL,7
+subscription_plans,COLUMN,max_branches,integer,NOT NULL,8
+subscription_plans,COLUMN,max_groups,integer,NOT NULL,9
+subscription_plans,COLUMN,max_storage_gb,integer,NOT NULL,10
+subscription_plans,COLUMN,features,jsonb,NULL,11
+subscription_plans,COLUMN,is_active,boolean,NULL,12
+subscription_plans,COLUMN,display_order,integer,NULL,13
+subscription_plans,COLUMN,created_at,timestamp with time zone,NULL,14
+subscription_plans,COLUMN,updated_at,timestamp with time zone,NULL,15
+subscription_plans,COLUMN,deleted_at,timestamp with time zone,NULL,16
+subscription_plans,RLS POLICY,Anyone can view subscription plans,SELECT,RESTRICTIVE,999
+subscription_plans,RLS POLICY,Super admins can manage subscription plans,ALL,RESTRICTIVE,999
+user_sessions,COLUMN,id,uuid,NOT NULL,1
+user_sessions,COLUMN,user_id,uuid,NOT NULL,2
+user_sessions,COLUMN,organization_id,uuid,NOT NULL,3
+user_sessions,COLUMN,session_token,character varying,NOT NULL,4
+user_sessions,COLUMN,refresh_token,character varying,NULL,5
+user_sessions,COLUMN,ip_address,character varying,NULL,6
+user_sessions,COLUMN,user_agent,text,NULL,7
+user_sessions,COLUMN,device_type,character varying,NULL,8
+user_sessions,COLUMN,browser,character varying,NULL,9
+user_sessions,COLUMN,os,character varying,NULL,10
+user_sessions,COLUMN,country,character varying,NULL,11
+user_sessions,COLUMN,city,character varying,NULL,12
+user_sessions,COLUMN,is_active,boolean,NULL,13
+user_sessions,COLUMN,last_activity_at,timestamp with time zone,NULL,14
+user_sessions,COLUMN,expires_at,timestamp with time zone,NOT NULL,15
+user_sessions,COLUMN,created_at,timestamp with time zone,NULL,16
+user_sessions,COLUMN,updated_at,timestamp with time zone,NULL,17
+user_sessions,COLUMN,deleted_at,timestamp with time zone,NULL,18
+user_sessions,RLS POLICY,Users can manage their own sessions,ALL,RESTRICTIVE,999
+user_sessions,RLS POLICY,Users can view their own sessions,SELECT,RESTRICTIVE,999
+users,COLUMN,id,uuid,NOT NULL,1
+users,COLUMN,organization_id,uuid,NOT NULL,2
+users,COLUMN,auth_user_id,uuid,NULL,3
+users,COLUMN,email,character varying,NOT NULL,4
+users,COLUMN,profile_image,text,NULL,6
+users,COLUMN,phone_number,character varying,NULL,7
+users,COLUMN,role_id,uuid,NULL,8
+users,COLUMN,assigned_branch_ids,ARRAY,NULL,9
+users,COLUMN,assigned_group_ids,ARRAY,NULL,10
+users,COLUMN,is_super_admin,boolean,NULL,11
+users,COLUMN,is_active,boolean,NULL,12
+users,COLUMN,last_login_at,timestamp with time zone,NULL,13
+users,COLUMN,email_verified_at,timestamp with time zone,NULL,14
+users,COLUMN,two_factor_enabled,boolean,NULL,15
+users,COLUMN,two_factor_secret,character varying,NULL,16
+users,COLUMN,created_at,timestamp with time zone,NULL,17
+users,COLUMN,updated_at,timestamp with time zone,NULL,18
+users,COLUMN,deleted_at,timestamp with time zone,NULL,19
+users,COLUMN,first_name,character varying,NOT NULL,20
+users,COLUMN,last_name,character varying,NOT NULL,21
+users,RLS POLICY,Admins can delete users in their organization,DELETE,RESTRICTIVE,999
+users,RLS POLICY,Admins can insert users in their organization,INSERT,RESTRICTIVE,999
+users,RLS POLICY,Admins can update users in their organization,UPDATE,RESTRICTIVE,999
+users,RLS POLICY,Users can view users in their organization,SELECT,RESTRICTIVE,999
+users,RLS POLICY,tenant_isolation_users,ALL,RESTRICTIVE,999
+users,RLS POLICY,users_policy,ALL,RESTRICTIVE,999

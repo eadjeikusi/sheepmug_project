@@ -1,0 +1,91 @@
+General idea
+
+
+Summary  of App is for church leader to be able to manage their pstors , church ,members, and activities. So ability to create branches , inside branches have pastors , members and groups  and activities. 
+
+Manage churches and branches.
+Member details - profile image, full name, tel number, location and emergency contact. 
+Members can be assigned to family group with their family members,
+Normal group like ministries and ites members  
+Assign leaders(pastors ) to groups 
+Leaders Groups -  login to view specific groups assigned to them, its analytics , event meetings attendances
+Links for normal member to join group - user should already be in the database. This link will be on on each group
+Goups can have suggroups 
+
+Event attendance, review link for each event , assessment, 
+Ability for ai to scan through image taken to take attendance. Leaders of assigned group can approve this. 
+AI notes transcript voice notes - select urgency . this is to help leaders type a note on a member profile , this will send a note to their supervisor as member of concern.
+Ai attendance check to send notifications to user to tell them to check up on members if not coming to church or members
+Detialed analyitc on members activities 
+Activity logs
+Export - member, family, event, group, leaders details by excel
+Calendar - filters, tags for events 
+Checkup data analyses and track —--
+Import member profile excel 
+
+
+
+
+Add an image in cards , use minimalist cards , 
+
+
+Reminders to checkup on members
+
+
+Language 
+
+Tasks - assigned by leader to mini leaders . Default weekly task - checkup , call, text , message . 
+
+
+Excutive Summary of web app 
+
+Is a church management for churches to manage their members data. 
+
+
+1. Members Page 
+
+Here is a list of all members in the church. The member link is a unique link for each church branch to collect data of new members (it will be like a survey form without login to help collect new information (first name, last name, phone number, address, emergency contact name and phone number) for new members in the church, it will have same data for members  profile page. 
+
+Members will have notes and tasks assigned in their name. 
+
+
+There is a request button that opens list of data collected through the link. admins can review the data and approve before they are added to the members list data pull. 
+
+
+Members Sections have 
+
+Members data - first name, last name, email, mobile number, address, emergency contact name and number, date joined,member ID. 
+
+ 
+Family feature - is for church to have a like a folder of members in that family- so u can assign unique family id to members of same family. member without family can be assigned null or no id . 
+
+Members can be assigned to ministries.
+Member profile will have notes section unique to that member. 
+
+There is a export which can allow admins to export certain data by filter- member(s), dob, age range, groups or subgroups. export to csv and pdf.  
+
+
+2. Ministries Feature Page 
+
+Ministry are mini groups in church that has events, members and leaders  assigned to them.They have different levels of groups and members at each level. there is member join link that allows members to join group via that link(it will be verified by their last,first name, DOB). there is a request for group leaders to review and accept, decline or ignore. 
+
+Groups has event feature. check event section for details 
+
+there is also a group public link , this will be a like a mini website for the group to have upcoming events, announcements and program outlines for events. 
+
+
+3. Event Features 
+
+Events can be created - title, event type, data, time, location(in-person or zoom), assign group or subgroups, notes , program description and outline(bulletin form). has attendance for members in the groups, ability to sent messages to attendance, events. 
+
+4. Messages 
+Admins can send bulk messages to members , groups, subgroups , schedules messages 
+
+5. There will be task features- where group leaders, admins or sected roles can assign task to subleaders . like senior pastor can assign task like check up on this member. so we can add task to members data. 
+
+6. Settings page 
+Profile Settings for users, roles and permissions for the leaders, custom fields for admins to add to their data like members form, event etc. Event types to add custome event types, branch management , integration settings like message, email etc. Roles to add admins or leaders or custom role (persmissions will apply here. )
+
+
+ 
+

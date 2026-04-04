@@ -1,0 +1,91 @@
+🔘 Sign button clicked!
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Mode: login
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Form data: {firstName: '', lastName: '', email: 'admin10@demo.com', password: '12345678', confirmPassword: '', …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Loading state: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ============================================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🚀 AUTH FORM SUBMISSION STARTED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ============================================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Mode: login
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Form Data: {
+  "firstName": "",
+  "lastName": "",
+  "email": "admin10@demo.com",
+  "password": "12345678",
+  "confirmPassword": "",
+  "organizationName": "",
+  "phone": ""
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Loading State: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Time: 2026-03-10T08:21:10.568Z
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔐 LOGIN MODE - Starting authentication...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Login Email: admin10@demo.com
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Password Length: 8
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Calling login() from AuthContext...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ║  🔐 LOGIN FUNCTION CALLED IN AUTH CONTEXT
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📧 Email: admin10@demo.com
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Password length: 8
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🌐 API URL: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔐 Using publicAnonKey: eyJhbGciOiJIUzI1NiIs...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⏱️  Timestamp: 2026-03-10T08:21:10.573Z
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📤 Sending login request...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           POST https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+login @ AuthContext.tsx:100
+handleSubmit @ AuthModal.tsx:111
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📥 Response received!
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Status: 404 
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 OK: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Headers: {content-type: 'application/json'}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 Response data: {
+  "success": false,
+  "error": "User profile not found"
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ Login failed!
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error from server: User profile not found
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ║  ❌ LOGIN ERROR IN AUTH CONTEXT
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error type: Error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error message: User profile not found
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error stack: Error: User profile not found
+    at login (https://app-a4nejhx5kkb2hn2vz7fuo6ow3abhzhhmh7hrq6tyzrspblj3zt5q.makeproxy-c.figma.site/src/app/contexts/AuthContext.tsx:98:15)
+    at async handleSubmit (https://app-a4nejhx5kkb2hn2vz7fuo6ow3abhzhhmh7hrq6tyzrspblj3zt5q.makeproxy-c.figma.site/src/app/components/modals/AuthModal.tsx:104:24)
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Full error object: Error: User profile not found
+    at login (AuthContext.tsx:124:15)
+    at async handleSubmit (AuthModal.tsx:111:24)
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ════════════════════════════════════════════════════════════
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ AUTH ERROR CAUGHT
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error object: Error: User profile not found
+    at login (AuthContext.tsx:156:13)
+    at async handleSubmit (AuthModal.tsx:111:24)
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error message: User profile not found
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Error stack: Error: User profile not found
+    at login (https://app-a4nejhx5kkb2hn2vz7fuo6ow3abhzhhmh7hrq6tyzrspblj3zt5q.makeproxy-c.figma.site/src/app/contexts/AuthContext.tsx:122:13)
+    at async handleSubmit (https://app-a4nejhx5kkb2hn2vz7fuo6ow3abhzhhmh7hrq6tyzrspblj3zt5q.makeproxy-c.figma.site/src/app/components/modals/AuthModal.tsx:104:24)
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏁 Auth flow finished, resetting loading state
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ============================================================

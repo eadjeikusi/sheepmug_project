@@ -1,0 +1,966 @@
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 BRANCH FORM SUBMISSION STARTED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📋 Form Data: {
+  "organization_id": "277762c3-7301-44c7-8a3e-b2478a1b67de",
+  "name": "asfasdfas",
+  "location": "dfasdfasdf",
+  "address": "asdfasdfa",
+  "city": "sdfasdf",
+  "state": "asdfasdf",
+  "zip_code": "3456345",
+  "phone_number": "3463456345634",
+  "email": "eadjeikusi@ksu.edu",
+  "established_date": "2026-03-10",
+  "is_active": true
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔄 Is Editing: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 Organization ID: 277762c3-7301-44c7-8a3e-b2478a1b67de
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Auth Token Check:
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token exists: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token length: 0
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token preview: NO TOKEN
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ NO AUTH TOKEN FOUND IN LOCALSTORAGE!
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+handleSubmit @ BranchModal.tsx:92
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 All localStorage keys: []
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 8:52:36 AM [vite] (client) hmr update /src/app/components/Root.tsx, /src/styles/index.css
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ SETTINGS PAGE LOADED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 👤 User from AuthContext: {id: 'b5f08554-e844-4503-841a-9b38fff97e07', auth_user_id: '97efc80d-a456-4c80-a5e2-91f858bacf98', email: 'admin10@demo.com', first_name: 'Emmanuel', last_name: 'Adjei-Kusi', …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Auth token in localStorage: MISSING
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 User in localStorage: MISSING
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 Current Organization: null
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🌳 Branches: []
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500100000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500200000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop 404 (Not Found)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+R @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+A @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in A
+I @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in I
+b @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:135
+await in b
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:55
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:3
+V @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+B @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113
+eo @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:113Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+images.unsplash.com/photo-1500300000000?w=100&h=100&fit=crop:1 
+            
+            
+           Failed to load resource: the server responded with a status of 404 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de 500 (Internal Server Error)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+fetchBranches @ Settings.tsx:364
+(anonymous) @ Settings.tsx:355
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SJ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SZ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+pC @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de 500 (Internal Server Error)
+(anonymous) @ code_components_prev…bdcfa0.min.js.br:28
+fetchBranches @ Settings.tsx:381
+(anonymous) @ Settings.tsx:374
+TN @ code_components_prev…bdcfa0.min.js.br:89
+T7 @ code_components_prev…bdcfa0.min.js.br:89
+T8 @ code_components_prev…bdcfa0.min.js.br:89
+T6 @ code_components_prev…bdcfa0.min.js.br:89
+T4 @ code_components_prev…bdcfa0.min.js.br:89
+S1 @ code_components_prev…bdcfa0.min.js.br:89
+SQ @ code_components_prev…bdcfa0.min.js.br:89
+SJ @ code_components_prev…bdcfa0.min.js.br:89
+SZ @ code_components_prev…bdcfa0.min.js.br:89
+SO @ code_components_prev…bdcfa0.min.js.br:89
+pC @ code_components_prev…bdcfa0.min.js.br:89
+(anonymous) @ code_components_prev…bdcfa0.min.js.br:89Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de:1 
+            
+            
+           Failed to load resource: the server responded with a status of 500 ()Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 BRANCH FORM SUBMISSION STARTED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📋 Form Data: {
+  "organization_id": "277762c3-7301-44c7-8a3e-b2478a1b67de",
+  "name": "sdfgsdfg",
+  "location": "sdfgsdfg",
+  "address": "sdfgsd",
+  "city": "fgsdfgsd",
+  "state": "fgsdfgsdf",
+  "zip_code": "67456745",
+  "phone_number": "45674567",
+  "email": "eadjeikusi@ksu.edu",
+  "established_date": "2026-03-10",
+  "is_active": true
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔄 Is Editing: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 Organization ID: 277762c3-7301-44c7-8a3e-b2478a1b67de
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Auth Token Check:
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token exists: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token length: 0
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token preview: NO TOKEN
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ❌ NO AUTH TOKEN FOUND IN LOCALSTORAGE!
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+handleSubmit @ BranchModal.tsx:92
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 All localStorage keys: []
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 8:55:11 AM [vite] (client) hmr update /src/app/components/Root.tsx, /src/styles/index.css
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ║  🔐 LOGIN FUNCTION CALLED IN AUTH CONTEXT
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📧 Email: admin10@demo.com
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Password length: 8
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🌐 API URL: https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/auth/login
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔐 Using publicAnonKey: eyJhbGciOiJIUzI1NiIs...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⏱️  Timestamp: 2026-03-10T08:55:38.109Z
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📤 Sending login request...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📥 Response received!
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Status: 200 
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 OK: true
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Headers: {content-type: 'application/json'}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ------------------------------------------------------------
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 Response data: {
+  "success": true,
+  "data": {
+    "session": {
+      "access_token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjVmODQ2OTQ0LTA2NDEtNDk2ZC1iZDIzLTJhNmEyYjM3M2M1ZiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3BvZndtbGVsd25odWttYXRiaGxnLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI5N2VmYzgwZC1hNDU2LTRjODAtYTVlMi05MWY4NThiYWNmOTgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzczMTM2NTM3LCJpYXQiOjE3NzMxMzI5MzcsImVtYWlsIjoiYWRtaW4xMEBkZW1vLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWxfdmVyaWZpZWQiOnRydWUsImZpcnN0X25hbWUiOiJFbW1hbnVlbCIsImxhc3RfbmFtZSI6IkFkamVpLUt1c2kifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc3MzEzMjkzN31dLCJzZXNzaW9uX2lkIjoiMDA2NGUwYTItYWY0MC00NTBhLTg1ODUtZjdkMGQwZDk2ZTgwIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.U0cBp9fKEo7omrxYD0vQOsjIh-K0fos-F1rKGX-ceWrGZcT-HFxlnYUsbtDjZGc6fFH3TdjxCBdiBuXfgVvvPw",
+      "token_type": "bearer",
+      "expires_in": 3600,
+      "expires_at": 1773136537,
+      "refresh_token": "fywtdqxfl7tr",
+      "user": {
+        "id": "97efc80d-a456-4c80-a5e2-91f858bacf98",
+        "aud": "authenticated",
+        "role": "authenticated",
+        "email": "admin10@demo.com",
+        "email_confirmed_at": "2026-03-10T07:49:26.728137Z",
+        "phone": "",
+        "confirmed_at": "2026-03-10T07:49:26.728137Z",
+        "last_sign_in_at": "2026-03-10T08:55:37.890998608Z",
+        "app_metadata": {
+          "provider": "email",
+          "providers": [
+            "email"
+          ]
+        },
+        "user_metadata": {
+          "email_verified": true,
+          "first_name": "Emmanuel",
+          "last_name": "Adjei-Kusi"
+        },
+        "identities": [
+          {
+            "identity_id": "cae8e6a6-6e00-4f0e-9e2f-fa1751c7e879",
+            "id": "97efc80d-a456-4c80-a5e2-91f858bacf98",
+            "user_id": "97efc80d-a456-4c80-a5e2-91f858bacf98",
+            "identity_data": {
+              "email": "admin10@demo.com",
+              "email_verified": false,
+              "phone_verified": false,
+              "sub": "97efc80d-a456-4c80-a5e2-91f858bacf98"
+            },
+            "provider": "email",
+            "last_sign_in_at": "2026-03-10T07:49:26.719667Z",
+            "created_at": "2026-03-10T07:49:26.720914Z",
+            "updated_at": "2026-03-10T07:49:26.720914Z",
+            "email": "admin10@demo.com"
+          }
+        ],
+        "created_at": "2026-03-10T07:49:26.713087Z",
+        "updated_at": "2026-03-10T08:55:37.950643Z",
+        "is_anonymous": false
+      },
+      "weak_password": null
+    },
+    "user": {
+      "id": "b5f08554-e844-4503-841a-9b38fff97e07",
+      "auth_user_id": "97efc80d-a456-4c80-a5e2-91f858bacf98",
+      "email": "admin10@demo.com",
+      "first_name": "Emmanuel",
+      "last_name": "Adjei-Kusi",
+      "phone_number": null,
+      "organization_id": "277762c3-7301-44c7-8a3e-b2478a1b67de",
+      "is_super_admin": true,
+      "is_active": true,
+      "created_at": "2026-03-10T07:49:26.957349+00:00",
+      "updated_at": "2026-03-10T07:49:26.957349+00:00",
+      "organization": {
+        "id": "277762c3-7301-44c7-8a3e-b2478a1b67de",
+        "name": "KANSAS STATE UNIVERSITY",
+        "slug": "kansas-state-university-1",
+        "created_at": "2026-03-10T07:49:26.912281+00:00",
+        "updated_at": "2026-03-10T07:49:26.912281+00:00",
+        "trial_ends_at": "2026-04-09T07:49:26.886+00:00",
+        "subscription_plan": "free",
+        "subscription_status": "trial",
+        "primary_contact_name": "Emmanuel Adjei-Kusi",
+        "primary_contact_email": "admin10@demo.com",
+        "primary_contact_phone": "N/A"
+      }
+    }
+  },
+  "message": "Login successful"
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ✅ Login successful!
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 User data: {id: 'b5f08554-e844-4503-841a-9b38fff97e07', auth_user_id: '97efc80d-a456-4c80-a5e2-91f858bacf98', email: 'admin10@demo.com', first_name: 'Emmanuel', last_name: 'Adjei-Kusi', …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Session: Present
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 💾 Storing access token (first 20 chars): eyJhbGciOiJFUzI1NiIs...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ✅ User state updated
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╔════════════════════════════════════════════════════════════╗
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ║  ✅ LOGIN COMPLETED SUCCESSFULLY
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ╚════════════════════════════════════════════════════════════╝
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ SETTINGS PAGE LOADED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 👤 User from AuthContext: {id: 'b5f08554-e844-4503-841a-9b38fff97e07', auth_user_id: '97efc80d-a456-4c80-a5e2-91f858bacf98', email: 'admin10@demo.com', first_name: 'Emmanuel', last_name: 'Adjei-Kusi', …}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Auth token in localStorage: EXISTS
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📦 User in localStorage: EXISTS
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 Current Organization: null
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🌳 Branches: []
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ⚙️ ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           GET https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches?organization_id=277762c3-7301-44c7-8a3e-b2478a1b67de 500 (Internal Server Error)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+fetchBranches @ Settings.tsx:364
+(anonymous) @ Settings.tsx:355
+TN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T7 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T8 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T6 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+T4 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+S1 @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SQ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SJ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SZ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+pC @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 BRANCH FORM SUBMISSION STARTED
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 📋 Form Data: {
+  "organization_id": "277762c3-7301-44c7-8a3e-b2478a1b67de",
+  "name": "sdfgsdfg",
+  "location": "sdfgsdf",
+  "address": "gsdfgsdfg",
+  "city": "sdfgsdfg",
+  "state": "sdfgsd",
+  "zip_code": "3456345",
+  "phone_number": "3456345",
+  "email": "eadjeikusi@ksu.edu",
+  "established_date": "2026-03-10",
+  "is_active": true
+}
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔄 Is Editing: false
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 Organization ID: 277762c3-7301-44c7-8a3e-b2478a1b67de
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🔑 Auth Token Check:
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token exists: true
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token length: 859
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28   - Token preview: eyJhbGciOiJFUzI1NiIsImtpZCI6Ij...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 ✅ Validation passed, calling onSave...
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 🏢 ============================================
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 
+            
+            
+           POST https://pofwmlelwnhukmatbhlg.supabase.co/functions/v1/make-server-eb3d1645/branches 401 (Unauthorized)
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+handleSaveBranch @ Settings.tsx:401
+handleSubmit @ BranchModal.tsx:106
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Branch save response: {code: 401, message: 'Invalid JWT'}code: 401message: "Invalid JWT"[[Prototype]]: Object
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Response status: 401
+code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28 Branch save error: undefined
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+r @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:69
+error @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+handleSaveBranch @ Settings.tsx:422
+await in handleSaveBranch
+handleSubmit @ BranchModal.tsx:106
+y @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28
+ik @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+ij @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+iz @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+dP @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dM @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dG @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+dk @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+(anonymous) @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+SR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+iR @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+d$ @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:89
+lO @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lN @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+lv @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:77
+i @ code_components_preview_iframe-c7239de3eebdcfa0.min.js.br:28Understand this error
