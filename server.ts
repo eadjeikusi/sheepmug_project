@@ -20030,16 +20030,45 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     /** Single HTTP server so Vite HMR reuses port ${PORT} instead of a separate WS port (e.g. 24678), avoiding EADDRINUSE when another dev server is running. */
     const httpServer = http.createServer(app);
-    /** Serve React marketing app at `/` (Vite entry `landing.html`). */
+    /**
+     * Vite `middlewareMode` does not reliably apply SPA HTML fallback; without these rewrites, routes like
+     * `/cms` or hard-refreshes on client routes can return an empty document (blank page).
+     * - `/` → marketing shell (`landing.html`)
+     * - other non-asset GETs → main app shell (`index.html`)
+     */
     app.use((req, _res, next) => {
       if (req.method !== "GET") return next();
+      const p = req.path || "/";
       const raw = req.url || "/";
-      const pathOnly = raw.split("?")[0] || "/";
-      if (pathOnly === "/" || pathOnly === "") {
-        const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+      const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+
+      if (p === "/" || p === "") {
         req.url = `/landing.html${q}`;
+        return next();
       }
-      next();
+
+      if (
+        p.startsWith("/@") ||
+        p.startsWith("/__vite") ||
+        p.startsWith("/node_modules/") ||
+        p.startsWith("/src/") ||
+        p.startsWith("/@fs") ||
+        p.startsWith("/@id") ||
+        p.startsWith("/.well-known")
+      ) {
+        return next();
+      }
+
+      if (
+        /\.(js|mjs|ts|tsx|jsx|css|map|json|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|pdf|txt|csv|html|vue|svelte)$/i.test(
+          p,
+        )
+      ) {
+        return next();
+      }
+
+      req.url = `/index.html${q}`;
+      return next();
     });
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: { server: httpServer } },
