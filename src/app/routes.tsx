@@ -20,11 +20,8 @@ import JoinGroupPage from "./components/pages/JoinGroupPage";
 
 const CMS_BASENAME = (() => {
   const configuredRaw = String(import.meta.env.VITE_CMS_BASENAME || "/cms").trim() || "/cms";
-  const configured = configuredRaw === "/" ? "/" : configuredRaw.startsWith("/") ? configuredRaw : `/${configuredRaw}`;
-  if (typeof window === "undefined") return configured;
-  if (configured === "/") return "/";
-  const path = window.location.pathname;
-  return path === configured || path.startsWith(`${configured}/`) ? configured : "/";
+  if (configuredRaw === "/") return "/";
+  return configuredRaw.startsWith("/") ? configuredRaw : `/${configuredRaw}`;
 })();
 
 export const router = createBrowserRouter([
