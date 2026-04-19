@@ -20030,11 +20030,16 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     /** Single HTTP server so Vite HMR reuses port ${PORT} instead of a separate WS port (e.g. 24678), avoiding EADDRINUSE when another dev server is running. */
     const httpServer = http.createServer(app);
-    const landingPath = path.join(process.cwd(), "public", "landing.html");
-    app.get("/", (_req, res, next) => {
-      res.sendFile(landingPath, (err) => {
-        if (err) next();
-      });
+    /** Serve React marketing app at `/` (Vite entry `landing.html`). */
+    app.use((req, _res, next) => {
+      if (req.method !== "GET") return next();
+      const raw = req.url || "/";
+      const pathOnly = raw.split("?")[0] || "/";
+      if (pathOnly === "/" || pathOnly === "") {
+        const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+        req.url = `/landing.html${q}`;
+      }
+      next();
     });
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: { server: httpServer } },
@@ -20067,12 +20072,13 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     const landingPath = path.join(distPath, "landing.html");
-    app.use(express.static(distPath));
+    /** `/` must be marketing shell before `express.static` (which would otherwise serve `index.html`). */
     app.get("/", (_req, res, next) => {
       res.sendFile(landingPath, (err) => {
         if (err) next();
       });
     });
+    app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
