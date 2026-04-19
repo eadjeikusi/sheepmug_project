@@ -20,6 +20,7 @@ interface SignupData {
   organizationName?: string;
   phone?: string;
   subscriptionTier?: string;
+  billingCycle?: string;
   demoBypass?: boolean;
 }
 
@@ -208,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           organizationName: signupData.organizationName || `${signupData.firstName}'s Organization`,
           fullName: `${signupData.firstName} ${signupData.lastName}`,
           subscriptionTier: signupData.subscriptionTier,
+          billingCycle: signupData.billingCycle,
           demoBypass: signupData.demoBypass === true,
         }),
         signal: controller.signal

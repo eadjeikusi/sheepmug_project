@@ -1,11 +1,13 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { CheckCircle2, Circle, CreditCard } from "lucide-react";
+import { CheckCircle2, Circle, CreditCard, Minus, Plus, Scale } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
 
 type PlanChoice = {
-  id: "starter" | "core";
-  tier: "free" | "enterprise";
+  id: "monthly" | "yearly";
+  tier: "enterprise";
+  billingCycle: "monthly" | "yearly";
   label: string;
   priceLabel: string;
   summary: string;
@@ -13,33 +15,35 @@ type PlanChoice = {
 
 const PLAN_CHOICES: PlanChoice[] = [
   {
-    id: "starter",
-    tier: "free",
-    label: "Starter",
-    priceLabel: "GHC 0 / mo.",
-    summary: "Good for churches starting with small teams and simple tracking.",
+    id: "monthly",
+    tier: "enterprise",
+    billingCycle: "monthly",
+    label: "Core Monthly",
+    priceLabel: "GHC 400 / mo.",
+    summary: "Pay month-to-month with full Core features.",
   },
   {
-    id: "core",
+    id: "yearly",
     tier: "enterprise",
-    label: "Core",
-    priceLabel: "GHC 400 / mo.",
-    summary: "For churches that need unlimited members, leaders, and ministries.",
+    billingCycle: "yearly",
+    label: "Core Yearly",
+    priceLabel: "GHC 4,400 / yr.",
+    summary: "Pay yearly and get one month free (11 months billed).",
   },
 ];
 
 const FAQ_ITEMS = [
   {
-    q: "How does signup work right now?",
-    a: "You select a package, create your account, and complete payment setup. Hubtel is pending approval, so demo bypass can be used for now.",
+    q: "How does the 14-day trial work?",
+    a: "You choose monthly or yearly billing during setup. Hubtel is still pending approval, so payment remains in a UI-ready state.",
   },
   {
-    q: "Can I change plan later?",
-    a: "Yes. Churches can start with Starter and move to Core when they need expanded capacity.",
+    q: "Why do we ask payment details for paid plans?",
+    a: "Core requires payment setup. Until Hubtel goes live, you can use the demo bypass path for onboarding and testing.",
   },
   {
-    q: "Do I need a card for Starter?",
-    a: "No. Starter is free. Core shows payment setup in signup.",
+    q: "How do I cancel if I am not impressed?",
+    a: "You can downgrade or cancel from account billing once live payment integration is active.",
   },
 ];
 
@@ -55,30 +59,117 @@ function AuthShell({
   subtitle: string;
   children: ReactNode;
 }) {
-  return (
-    <div className="min-h-screen bg-[#f6f8fa] px-4 py-8 text-[#111111] md:px-8">
-      <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-3xl border border-[#d6dde5] bg-white shadow-sm lg:grid-cols-[1.1fr_1fr]">
-        <div className="relative border-b border-[#e6ebf0] bg-[#fbfcfd] p-8 lg:border-b-0 lg:border-r lg:p-12">
-          <div className="absolute inset-0 opacity-60 [background-image:radial-gradient(#e6edf5_1px,transparent_1px)] [background-size:20px_20px]" />
-          <div className="relative">
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#25c06d]">Welcome to SheepMug</p>
-            <h1 className="mt-4 text-4xl font-semibold leading-tight text-[#0f172a]">{title}</h1>
-            <p className="mt-4 max-w-xl text-base text-[#475569]">{subtitle}</p>
+  const [openFaq, setOpenFaq] = useState(0);
 
-            <div className="mt-8 space-y-4 rounded-2xl border border-[#e6ebf0] bg-white/80 p-5">
-              {FAQ_ITEMS.map((item) => (
-                <div key={item.q} className="border-b border-[#edf2f7] pb-3 last:border-b-0 last:pb-0">
-                  <p className="font-semibold text-[#111827]">{item.q}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-[#4b5563]">{item.a}</p>
-                </div>
-              ))}
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[#f4f6f8] px-4 py-8 text-[#111111] md:px-8">
+      <div className="pointer-events-none absolute inset-0 opacity-35 [background-image:radial-gradient(circle_at_1px_1px,#e5e7eb_1px,transparent_0)] [background-size:26px_26px]" />
+      <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:repeating-radial-gradient(circle_at_0%_0%,transparent_0,transparent_42px,#d6dbe2_43px,transparent_44px)]" />
+
+      <div className="relative mx-auto grid w-full max-w-6xl overflow-hidden rounded-2xl border border-[#dce1e6] bg-[#fcfdff] shadow-[0_12px_40px_rgba(15,23,42,0.08)] lg:grid-cols-[1.08fr_1fr]">
+        <div className="relative flex items-center justify-center border-b border-[#e4e8ec] p-8 lg:border-b-0 lg:border-r lg:p-12">
+          <div className="relative mx-auto flex h-full w-full max-w-[500px] flex-col items-center justify-center">
+            <img
+              src={sheepmugLogo}
+              alt="SheepMug logo"
+              className="h-10 w-auto rounded-md object-contain"
+            />
+            <p className="mt-10 text-center text-[13px] font-bold uppercase tracking-[0.12em] text-[#1e3a8a]">Welcome to SheepMug</p>
+            <h1 className="mt-4 text-center text-[36px] font-bold leading-tight tracking-tight text-[#0f172a] sm:text-[42px]">{title}</h1>
+            <p className="mt-4 max-w-xl text-center text-[14px] leading-relaxed text-[#5b6470]">{subtitle}</p>
+
+            <div className="mt-8 rounded-xl border border-[#e5e7eb] bg-white/95 p-4">
+              {FAQ_ITEMS.map((item, idx) => {
+                const expanded = openFaq === idx;
+                return (
+                  <button
+                    key={item.q}
+                    type="button"
+                    onClick={() => setOpenFaq((prev) => (prev === idx ? -1 : idx))}
+                    className="w-full border-b border-[#edf0f3] py-3 text-left last:border-b-0"
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="text-[15px] font-medium text-[#111827]">{item.q}</span>
+                      {expanded ? <Minus className="h-4 w-4 text-[#111827]" /> : <Plus className="h-4 w-4 text-[#111827]" />}
+                    </span>
+                    {expanded ? <span className="mt-2 block pr-6 text-[13px] leading-relaxed text-[#667085]">{item.a}</span> : null}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
         <div className="p-6 md:p-10">{children}</div>
       </div>
+
+      <div className="relative mx-auto mt-4 flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-1 text-[12px] text-[#6b7280]">
+        <p>Copyright © {new Date().getFullYear()} SheepMug, Inc.</p>
+        <div className="flex items-center gap-4">
+          <a href="/terms" className="hover:text-[#111827]">
+            Terms of Service
+          </a>
+          <a href="/privacy" className="hover:text-[#111827]">
+            Privacy Policy
+          </a>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
+  return (
+    <div className="mb-5 flex items-center gap-2 text-sm">
+      {[1, 2, 3].map((n) => (
+        <div
+          key={n}
+          className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
+            step === n ? "bg-[#dbeafe] text-[#1e3a8a]" : "bg-[#f3f4f6] text-[#4b5563]"
+          }`}
+        >
+          {step > n ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+          Step {n}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlanSelectionCard({
+  plan,
+  active,
+  onClick,
+}: {
+  plan: PlanChoice;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-lg border bg-white px-4 py-3 text-left transition ${
+        active ? "border-[#1e3a8a] shadow-[0_0_0_1px_rgba(30,58,138,0.35)]" : "border-[#e5e7eb]"
+      }`}
+    >
+      <span className="flex items-start gap-3">
+        <span
+          className={`mt-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+            active ? "border-[#1e3a8a]" : "border-[#cbd5e1]"
+          }`}
+        >
+          {active ? <span className="h-2.5 w-2.5 rounded-full bg-[#1e3a8a]" /> : null}
+        </span>
+        <span className="flex-1">
+          <span className="flex items-start justify-between gap-3">
+            <span className="text-[19px] font-semibold text-[#111827]">{plan.label}</span>
+            <span className="text-[19px] font-semibold text-[#111827]">{plan.priceLabel}</span>
+          </span>
+          <span className="mt-0.5 block text-[13px] leading-relaxed text-[#667085]">{plan.summary}</span>
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -111,52 +202,49 @@ export function LoginPage() {
   };
 
   return (
-    <AuthShell
-      title="Sign in to your church workspace"
-      subtitle="Use the same standard login for both the landing site and CMS."
-    >
+    <AuthShell title="Sign in to your SheepMug workspace" subtitle="The standard CMS login for all church teams.">
       <div className="mx-auto w-full max-w-md">
-        <h2 className="text-2xl font-semibold text-[#111827]">Login</h2>
-        <p className="mt-2 text-sm text-[#6b7280]">Continue to your dashboard and ministry tools.</p>
+        <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Login</h2>
+        <p className="mt-2 text-[14px] text-[#667085]">Continue to your church dashboard.</p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-[#111827]">Email</span>
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Email</span>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+              className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
               placeholder="you@church.org"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-sm font-medium text-[#111827]">Password</span>
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Password</span>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+              className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
               placeholder="Enter your password"
             />
           </label>
 
-          {error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
 
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex w-full items-center justify-center rounded-xl bg-[#25c06d] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1faa61] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? "Signing in..." : "Sign in"}
+            {submitting ? "Signing in..." : "Continue"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-[#4b5563]">
-          New to SheepMug?{" "}
-          <Link to="/signup" className="font-semibold text-[#0f766e] hover:underline">
+        <p className="mt-6 text-center text-[14px] text-[#4b5563]">
+          Need a workspace?{" "}
+          <Link to="/signup" className="font-semibold text-[#1e3a8a] hover:underline">
             Create account
           </Link>
         </p>
@@ -169,7 +257,10 @@ export function SignupPage() {
   const { signup, isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const initialPlanId = new URLSearchParams(window.location.search).get("plan")?.toLowerCase() === "core" ? "core" : "starter";
+  const initialPlanId =
+    new URLSearchParams(window.location.search).get("plan")?.toLowerCase() === "yearly"
+      ? "yearly"
+      : "monthly";
   const [selectedPlanId, setSelectedPlanId] = useState<PlanChoice["id"]>(initialPlanId);
   const [fullName, setFullName] = useState("");
   const [churchName, setChurchName] = useState("");
@@ -227,6 +318,7 @@ export function SignupPage() {
         lastName,
         organizationName: churchName.trim() || undefined,
         subscriptionTier: selectedPlan.tier,
+        billingCycle: selectedPlan.billingCycle,
         demoBypass,
       });
 
@@ -241,65 +333,37 @@ export function SignupPage() {
   };
 
   return (
-    <AuthShell
-      title="Choose your package and create your account"
-      subtitle="Set up your church workspace with a clean signup flow and payment-ready experience."
-    >
-      <div className="mx-auto w-full max-w-lg">
-        <div className="mb-5 flex items-center gap-2 text-sm">
-          {[1, 2, 3].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => {
-                if (n < step) setStep(n as 1 | 2 | 3);
-              }}
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 ${
-                step === n ? "bg-[#dcfce7] text-[#15803d]" : "bg-[#f3f4f6] text-[#4b5563]"
-              }`}
-            >
-              {step > n ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-              Step {n}
-            </button>
-          ))}
-        </div>
+    <AuthShell title="Select your SheepMug billing plan" subtitle="Choose monthly or yearly payment and finish account setup.">
+      <div className="mx-auto w-full max-w-xl">
+        <StepIndicator step={step} />
 
         {step === 1 ? (
           <div>
-            <h2 className="text-2xl font-semibold text-[#111827]">Choose a package</h2>
-            <p className="mt-2 text-sm text-[#6b7280]">Select your plan before account setup.</p>
+            <h2 className="text-[34px] font-bold leading-tight text-[#111827]">Select your billing</h2>
+            <p className="mt-2 text-[14px] text-[#667085]">Pay yearly and get one month free.</p>
             <div className="mt-6 space-y-3">
-              {PLAN_CHOICES.map((plan) => {
-                const active = selectedPlanId === plan.id;
-                return (
-                  <button
-                    key={plan.id}
-                    type="button"
-                    onClick={() => setSelectedPlanId(plan.id)}
-                    className={`w-full rounded-xl border p-4 text-left transition ${
-                      active
-                        ? "border-[#25c06d] bg-[#f0fdf4] shadow-[0_0_0_1px_rgba(37,192,109,0.25)]"
-                        : "border-[#e5e7eb] bg-white hover:border-[#cbd5e1]"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-lg font-semibold text-[#111827]">{plan.label}</p>
-                        <p className="mt-1 text-sm text-[#4b5563]">{plan.summary}</p>
-                      </div>
-                      <p className="text-lg font-semibold text-[#0f172a]">{plan.priceLabel}</p>
-                    </div>
-                  </button>
-                );
-              })}
+              {PLAN_CHOICES.map((plan) => (
+                <PlanSelectionCard
+                  key={plan.id}
+                  plan={plan}
+                  active={selectedPlanId === plan.id}
+                  onClick={() => setSelectedPlanId(plan.id)}
+                />
+              ))}
             </div>
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-[#25c06d] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1faa61]"
+              className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a]"
             >
               Continue
             </button>
+            <div className="mt-3 flex justify-end">
+              <Link to="/#pricing" className="inline-flex items-center gap-1 text-[13px] text-[#6b7280] hover:text-[#111827]">
+                Show full comparison
+                <Scale className="h-3.5 w-3.5" />
+              </Link>
+            </div>
           </div>
         ) : null}
 
@@ -310,57 +374,57 @@ export function SignupPage() {
               setStep(3);
             }}
           >
-            <h2 className="text-2xl font-semibold text-[#111827]">Create your account</h2>
-            <p className="mt-2 text-sm text-[#6b7280]">This owner account can invite leaders after setup.</p>
+            <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Create your account</h2>
+            <p className="mt-2 text-[14px] text-[#667085]">Owner account for your church workspace.</p>
             <div className="mt-5 space-y-4">
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-[#111827]">Full name</span>
+                <span className="mb-1 block text-[14px] font-medium text-[#111827]">Full name</span>
                 <input
                   type="text"
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-[#111827]">Church name</span>
+                <span className="mb-1 block text-[14px] font-medium text-[#111827]">Church name</span>
                 <input
                   type="text"
                   required
                   value={churchName}
                   onChange={(e) => setChurchName(e.target.value)}
-                  className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-[#111827]">Email</span>
+                <span className="mb-1 block text-[14px] font-medium text-[#111827]">Email</span>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-[#111827]">Password</span>
+                <span className="mb-1 block text-[14px] font-medium text-[#111827]">Password</span>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
                 />
               </label>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium text-[#111827]">Confirm password</span>
+                <span className="mb-1 block text-[14px] font-medium text-[#111827]">Confirm password</span>
                 <input
                   type="password"
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-xl border border-[#d1d5db] px-4 py-3 text-sm outline-none ring-[#25c06d] focus:ring-2"
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
                 />
               </label>
             </div>
@@ -369,15 +433,15 @@ export function SignupPage() {
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#d1d5db] px-4 py-3 text-sm font-semibold text-[#111827]"
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] font-semibold text-[#111827]"
               >
                 Back
               </button>
               <button
                 type="submit"
-                className="inline-flex flex-1 items-center justify-center rounded-xl bg-[#25c06d] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1faa61]"
+                className="inline-flex flex-1 items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[14px] font-semibold text-white transition hover:bg-[#1b357a]"
               >
-                Continue to payment
+                Continue
               </button>
             </div>
           </form>
@@ -385,62 +449,57 @@ export function SignupPage() {
 
         {step === 3 ? (
           <div>
-            <h2 className="text-2xl font-semibold text-[#111827]">Payment setup</h2>
-            <p className="mt-2 text-sm text-[#6b7280]">Hubtel payment will be connected after approval.</p>
+            <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Payment setup</h2>
+            <p className="mt-2 text-[14px] text-[#667085]">Hubtel payment is pending approval for live charging.</p>
 
-            <div className="mt-5 rounded-2xl border border-[#dbe3ec] bg-[#f8fbff] p-5">
+            <div className="mt-5 rounded-lg border border-[#dbe3ec] bg-[#f8fbff] p-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-[#64748b]">Selected package</p>
-                  <p className="text-xl font-semibold text-[#111827]">{selectedPlan.label}</p>
+                  <p className="text-[12px] uppercase tracking-wide text-[#64748b]">Selected package</p>
+                  <p className="text-[20px] font-semibold text-[#111827]">{selectedPlan.label}</p>
                 </div>
-                <p className="text-xl font-semibold text-[#0f172a]">{selectedPlan.priceLabel}</p>
+                <p className="text-[20px] font-semibold text-[#111827]">{selectedPlan.priceLabel}</p>
               </div>
-              <p className="mt-3 text-sm text-[#475569]">{selectedPlan.summary}</p>
+              <p className="mt-2 text-[13px] text-[#475569]">{selectedPlan.summary}</p>
             </div>
 
-            <label className="mt-4 flex items-start gap-2 rounded-xl border border-[#e5e7eb] bg-white p-3 text-sm text-[#374151]">
+            <label className="mt-4 flex items-start gap-2 rounded-lg border border-[#e5e7eb] bg-white p-3 text-[13px] text-[#374151]">
               <input
                 type="checkbox"
                 checked={agree}
                 onChange={(e) => setAgree(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-[#cbd5e1] text-[#25c06d] focus:ring-[#25c06d]"
+                className="mt-0.5 h-4 w-4 rounded border-[#cbd5e1] text-[#1e3a8a] focus:ring-[#1e3a8a]"
               />
               <span>I agree to continue and verify my account email if confirmation is required.</span>
             </label>
 
-            {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-            {successMessage ? (
-              <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{successMessage}</p>
-            ) : null}
+            {error ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+            {successMessage ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{successMessage}</p> : null}
 
             <div className="mt-5 space-y-3">
               <button
                 type="button"
                 disabled
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#cbd5e1] bg-white px-4 py-3 text-sm font-semibold text-[#334155]"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#cbd5e1] bg-white px-4 py-3 text-[14px] font-semibold text-[#334155]"
               >
                 <CreditCard className="h-4 w-4" />
                 Hubtel payment (Pending approval)
               </button>
 
-              {selectedPlan.tier === "free" ? (
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => void submitSignup({ demoBypass: false })}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#25c06d] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1faa61] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? "Creating account..." : "Create Starter account"}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                disabled
+                className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white opacity-70"
+              >
+                Complete payment (Coming soon)
+              </button>
 
-              {selectedPlan.tier !== "free" && DEMO_BYPASS_ENABLED ? (
+              {DEMO_BYPASS_ENABLED ? (
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => void submitSignup({ demoBypass: true })}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-[#25c06d] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#1faa61] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? "Creating account..." : "Continue with demo bypass"}
                 </button>
@@ -451,14 +510,14 @@ export function SignupPage() {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#d1d5db] px-4 py-3 text-sm font-semibold text-[#111827]"
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] font-semibold text-[#111827]"
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => navigate("/login")}
-                className="inline-flex flex-1 items-center justify-center rounded-xl border border-[#d1d5db] px-4 py-3 text-sm font-semibold text-[#111827]"
+                className="inline-flex flex-1 items-center justify-center rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] font-semibold text-[#111827]"
               >
                 Already have an account
               </button>

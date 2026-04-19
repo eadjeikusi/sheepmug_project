@@ -652,25 +652,27 @@ export function LandingApp() {
             </p>
             <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
               <SimplePricingCard
-                plan="Starter Plan"
-                price="GHC 0 per month"
+                plan="Core Monthly"
+                price="GHC 400 per month"
                 features={[
-                  "10 members limit",
-                  "Tasks",
-                  "Events",
-                  "Attendance tracking",
-                  "Mobile app access",
-                  "No church leaders",
+                  "All Core features",
+                  "Full offline version",
+                  "Desktop application",
+                  "Unlimited members",
+                  "Unlimited group leaders",
+                  "Unlimited ministries",
+                  "Prompt notifications for church leaders",
                 ]}
-                cta="Start Now"
-                href={`${SIGNUP}?plan=starter`}
+                cta="Choose Monthly"
+                href={`${SIGNUP}?plan=monthly`}
                 tone="violet"
               />
               <SimplePricingCard
-                plan="Core Plan"
-                price="GHC 400 per month"
+                plan="Core Yearly"
+                price="GHC 4,400 per year"
                 features={[
-                  "All Starter Plan features",
+                  "All Core Monthly features",
+                  "Pay yearly, get one month free",
                   "Full offline version",
                   "Desktop application",
                   "Unlimited members",
@@ -680,8 +682,8 @@ export function LandingApp() {
                   "Import and export membership data",
                   "Monthly group reports",
                 ]}
-                cta="Order Now"
-                href={`${SIGNUP}?plan=core`}
+                cta="Choose Yearly"
+                href={`${SIGNUP}?plan=yearly`}
                 tone="orange"
               />
             </div>
