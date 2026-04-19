@@ -5,16 +5,12 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/",
-      "destination": "/landing.html"
-    },
-    {
       "source": "/cms",
-      "destination": "/index.html"
+      "destination": "/app.html"
     },
     {
       "source": "/cms/(.*)",
-      "destination": "/index.html"
+      "destination": "/app.html"
     }
   ]
 }

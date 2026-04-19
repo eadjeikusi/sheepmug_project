@@ -20033,19 +20033,14 @@ async function startServer() {
     /**
      * Vite `middlewareMode` does not reliably apply SPA HTML fallback; without these rewrites, routes like
      * `/cms` or hard-refreshes on client routes can return an empty document (blank page).
-     * - `/` → marketing shell (`landing.html`)
-     * - other non-asset GETs → main app shell (`index.html`)
+     * - `/` and unknown non-asset GETs → marketing shell (`index.html`)
+     * - `/cms` and `/cms/*` → main app shell (`app.html`)
      */
     app.use((req, _res, next) => {
       if (req.method !== "GET") return next();
       const p = req.path || "/";
       const raw = req.url || "/";
       const q = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
-
-      if (p === "/" || p === "") {
-        req.url = `/landing.html${q}`;
-        return next();
-      }
 
       if (
         p.startsWith("/@") ||
@@ -20064,6 +20059,11 @@ async function startServer() {
           p,
         )
       ) {
+        return next();
+      }
+
+      if (p === "/cms" || p.startsWith("/cms/")) {
+        req.url = `/app.html${q}`;
         return next();
       }
 
@@ -20100,16 +20100,17 @@ async function startServer() {
     });
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    const landingPath = path.join(distPath, "landing.html");
-    /** `/` must be marketing shell before `express.static` (which would otherwise serve `index.html`). */
-    app.get("/", (_req, res, next) => {
-      res.sendFile(landingPath, (err) => {
+    const indexPath = path.join(distPath, "index.html");
+    const appPath = path.join(distPath, "app.html");
+    /** `/cms` and `/cms/*` must serve the CMS shell before `express.static` would otherwise miss. */
+    app.get(["/cms", "/cms/*"], (_req, res, next) => {
+      res.sendFile(appPath, (err) => {
         if (err) next();
       });
     });
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("*", (_req, res) => {
+      res.sendFile(indexPath);
     });
 
     const httpServer = http.createServer(app);

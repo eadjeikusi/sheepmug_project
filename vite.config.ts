@@ -7,8 +7,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, 'index.html'),
-        landing: path.resolve(__dirname, 'landing.html'),
+        // `index.html` is the marketing landing (default served at `/` by static hosts).
+        // `app.html` is the CMS shell (served only via the `/cms` rewrite to avoid
+        // filesystem-first hosts like Vercel from serving the CMS shell at `/`).
+        landing: path.resolve(__dirname, 'index.html'),
+        app: path.resolve(__dirname, 'app.html'),
       },
     },
   },
