@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Sheepmug Mobile",
+    "slug": "sheepmug-mobile",
+    "scheme": "sheepmug",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/sheepmug-logo.png",
+    "splash": {
+      "image": "./assets/sheepmug-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SheepMug CMS is requesting access to your photo library so you can choose or update profile images, member photos, and event attachments.",
+          "cameraPermission": "SheepMug CMS would like to use your camera to capture photos for profiles and events."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSPhotoLibraryUsageDescription": "SheepMug CMS is requesting access to your photo library so you can choose or update profile images, member photos, and event attachments.",
+        "NSPhotoLibraryAddUsageDescription": "SheepMug CMS may save images when you export or share from the app."
+      }
+    },
+    "android": {
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/sheepmug-logo.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "assetBundlePatterns": ["**/*"],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ed7b6cb4-4175-4497-8195-348a228513f8"
+      }
+    }
+  }
+}

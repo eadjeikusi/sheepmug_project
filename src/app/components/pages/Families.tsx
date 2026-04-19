@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { familyApi } from '../../utils/api';
 import FamilyGroupModal from '../modals/FamilyGroupModal';
@@ -11,29 +11,74 @@ interface Family {
   organization_id: string;
 }
 
+const PAGE_SIZE = 10;
+
 const Families = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [families, setFamilies] = useState<Family[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadedFamiliesCountRef = useRef(0);
   const { selectedBranch } = useBranch();
 
   useEffect(() => {
-    if (selectedBranch) {
-      fetchFamilies();
+    loadedFamiliesCountRef.current = families.length;
+  }, [families.length]);
+
+  const fetchFamilies = useCallback(async (reset = true) => {
+    if (!selectedBranch) return;
+    try {
+      if (reset) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+      const offset = reset ? 0 : loadedFamiliesCountRef.current;
+      const data = await familyApi.getAll({
+        branch_id: selectedBranch.id,
+        offset,
+        limit: PAGE_SIZE,
+      });
+      const rows = Array.isArray(data) ? data : Array.isArray(data?.families) ? data.families : [];
+      setFamilies((prev) => (reset ? rows : [...prev, ...rows]));
+      setHasMore(rows.length === PAGE_SIZE);
+    } catch (error) {
+    } finally {
+      if (reset) {
+        setLoading(false);
+      } else {
+        setLoadingMore(false);
+      }
     }
   }, [selectedBranch]);
 
-  const fetchFamilies = async () => {
-    if (!selectedBranch) return;
-    try {
-      setLoading(true);
-      const data = await familyApi.getAll({ branch_id: selectedBranch.id });
-      setFamilies(data);
-    } catch (error) {
-    } finally {
+  useEffect(() => {
+    if (selectedBranch) {
+      void fetchFamilies(true);
+    } else {
+      setFamilies([]);
+      setHasMore(true);
       setLoading(false);
     }
-  };
+  }, [selectedBranch, fetchFamilies]);
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore) return;
+    const node = sentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          void fetchFamilies(false);
+        }
+      },
+      { rootMargin: '200px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchFamilies, loading, loadingMore, hasMore]);
 
   const handleFamilyCreated = async (familyData: any) => {
     if (!selectedBranch) return;
@@ -43,7 +88,7 @@ const Families = () => {
         branch_id: selectedBranch.id,
       });
       setIsModalOpen(false);
-      fetchFamilies();
+      void fetchFamilies(true);
     } catch (error) {
     }
   };
@@ -54,7 +99,7 @@ const Families = () => {
         <h1 className="text-2xl font-bold">Families</h1>
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-5 h-5" />
           Add Family
@@ -74,6 +119,8 @@ const Families = () => {
             </div>
           ))}
           {families.length === 0 && <p>No families found.</p>}
+          {!loading && hasMore ? <div ref={sentinelRef} className="h-6" /> : null}
+          {loadingMore ? <p className="text-sm text-gray-500">Loading more families...</p> : null}
         </div>
       )}
 

@@ -35,14 +35,14 @@ export default function AssignMenuModal({ isOpen, onClose, onSelect }: AssignMen
               <div className="p-6 space-y-3">
                 <button
                   onClick={() => onSelect('ministry')}
-                  className="w-full flex items-center p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 hover:text-indigo-700 transition-all text-left"
+                  className="w-full flex items-center p-4 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-700 transition-all text-left"
                 >
                   <Users className="w-6 h-6 mr-4" />
                   <span className="font-medium">Assign to Ministry</span>
                 </button>
                 <button
                   onClick={() => onSelect('family')}
-                  className="w-full flex items-center p-4 bg-gray-50 rounded-xl hover:bg-indigo-50 hover:text-indigo-700 transition-all text-left"
+                  className="w-full flex items-center p-4 bg-gray-50 rounded-xl hover:bg-blue-50 hover:text-blue-700 transition-all text-left"
                 >
                   <Home className="w-6 h-6 mr-4" />
                   <span className="font-medium">Assign to Family</span>

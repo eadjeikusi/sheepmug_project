@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X, Upload, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import PhoneCountryInput from '../PhoneCountryInput';
+import { DatePickerField } from '@/components/datetime';
+
+const DEFAULT_PHONE_REGION = 'US';
 
 interface MemberRegistrationFormModalProps {
   isOpen: boolean;
@@ -8,14 +12,20 @@ interface MemberRegistrationFormModalProps {
 }
 
 export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberRegistrationFormModalProps) {
+  const dobMaxDate = useMemo(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  }, []);
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
     email: '',
-    phone: '',
+    phone_national: '',
+    phone_country_iso: DEFAULT_PHONE_REGION,
     address: '',
     emergency_contact_name: '',
-    emergency_contact_phone: '',
+    emergency_contact_phone_national: '',
+    emergency_contact_phone_country_iso: DEFAULT_PHONE_REGION,
     dob: '',
     gender: '',
     marital_status: '',
@@ -56,10 +66,12 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
       first_name: '',
       last_name: '',
       email: '',
-      phone: '',
+      phone_national: '',
+      phone_country_iso: DEFAULT_PHONE_REGION,
       address: '',
       emergency_contact_name: '',
-      emergency_contact_phone: '',
+      emergency_contact_phone_national: '',
+      emergency_contact_phone_country_iso: DEFAULT_PHONE_REGION,
       dob: '',
       gender: '',
       marital_status: '',
@@ -148,7 +160,7 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
                         Email *
@@ -162,19 +174,15 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                         placeholder="john@example.com"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Phone Number *
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                        placeholder="(555) 123-4567"
-                      />
-                    </div>
+                    <PhoneCountryInput
+                      label="Phone number *"
+                      countryIso={formData.phone_country_iso}
+                      onCountryChange={(iso) => setFormData({ ...formData, phone_country_iso: iso })}
+                      national={formData.phone_national}
+                      onNationalChange={(v) => setFormData({ ...formData, phone_national: v })}
+                      required
+                      className="[&_label]:text-sm [&_label]:font-medium [&_label]:text-gray-700 [&_label]:mb-1.5 [&_select]:py-1.5 [&_select]:rounded-lg [&_select]:border [&_select]:border-gray-300 [&_input]:py-1.5 [&_input]:rounded-lg [&_input]:border [&_input]:border-gray-300 [&_p]:hidden"
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -182,11 +190,12 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
                         Date of Birth
                       </label>
-                      <input
-                        type="date"
+                      <DatePickerField
                         value={formData.dob}
-                        onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                        onChange={(v) => setFormData({ ...formData, dob: v })}
+                        placeholder="Date of birth"
+                        maxDate={dobMaxDate}
+                        triggerClassName="h-auto min-h-[36px] rounded-lg border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-none focus-visible:ring-gray-900"
                       />
                     </div>
                     <div>
@@ -227,11 +236,11 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
                         Date Joined
                       </label>
-                      <input
-                        type="date"
+                      <DatePickerField
                         value={formData.date_joined}
-                        onChange={(e) => setFormData({ ...formData, date_joined: e.target.value })}
-                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                        onChange={(v) => setFormData({ ...formData, date_joined: v })}
+                        placeholder="Date joined"
+                        triggerClassName="h-auto min-h-[36px] rounded-lg border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 shadow-none focus-visible:ring-gray-900"
                       />
                     </div>
                   </div>
@@ -250,7 +259,7 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
                         Emergency Contact Name
@@ -263,18 +272,18 @@ export default function MemberRegistrationFormModal({ isOpen, onClose }: MemberR
                         placeholder="Full name"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Emergency Contact Phone
-                      </label>
-                      <input
-                        type="tel"
-                        value={formData.emergency_contact_phone}
-                        onChange={(e) => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
-                        className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                        placeholder="(555) 987-6543"
-                      />
-                    </div>
+                    <PhoneCountryInput
+                      label="Emergency contact phone"
+                      countryIso={formData.emergency_contact_phone_country_iso}
+                      onCountryChange={(iso) =>
+                        setFormData({ ...formData, emergency_contact_phone_country_iso: iso })
+                      }
+                      national={formData.emergency_contact_phone_national}
+                      onNationalChange={(v) =>
+                        setFormData({ ...formData, emergency_contact_phone_national: v })
+                      }
+                      className="[&_label]:text-sm [&_label]:font-medium [&_label]:text-gray-700 [&_label]:mb-1.5 [&_select]:py-1.5 [&_select]:rounded-lg [&_select]:border [&_select]:border-gray-300 [&_input]:py-1.5 [&_input]:rounded-lg [&_input]:border [&_input]:border-gray-300 [&_p]:hidden"
+                    />
                   </div>
 
                   <div>

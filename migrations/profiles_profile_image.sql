@@ -1,0 +1,3 @@
+-- Staff photos: prefer public.members (matching email + org). If none, use public.profiles.avatar_url.
+-- Run: migrations/profiles_avatar_url.sql
+-- See server.ts: findLinkedMemberForStaffProfile, updateMemberPrimaryPhoto, updateStaffProfileAvatarOnProfileRow.

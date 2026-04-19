@@ -10,6 +10,7 @@ export interface Member {
   last_name: string;
   email?: string;
   phone?: string;
+  phone_country_iso?: string | null;
   dob?: string;
   gender?: string;
   marital_status?: string;
@@ -17,8 +18,11 @@ export interface Member {
   address?: string;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
+  emergency_contact_phone_country_iso?: string | null;
   date_joined?: string;
   status?: string;
+  /** Org-defined custom field values (field_key → value) */
+  custom_fields?: Record<string, unknown> | null;
   created_at?: string;
   updated_at?: string;
   member_url?: string;

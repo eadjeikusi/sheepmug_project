@@ -1,9 +1,21 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { X, Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Member } from '../../utils/mockData';
-import imageCompression from 'browser-image-compression';
+import {
+  compressImageForUpload,
+  MAX_STORED_IMAGE_BYTES,
+  MEMBER_PROFILE_PHOTO_OPTIONS,
+} from '../../utils/compressImageForUpload';
 import { toast } from 'sonner';
+import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
+import { useCustomFieldDefinitions } from '../../hooks/useCustomFieldDefinitions';
+import CustomFieldsSection from '../CustomFieldsSection';
+import PhoneCountryInput from '../PhoneCountryInput';
+import { DatePickerField } from '@/components/datetime';
+import { e164ToCountryAndNational } from '@/lib/phoneE164';
+
+const DEFAULT_PHONE_REGION = 'US';
 
 interface MemberModalProps {
   isOpen: boolean;
@@ -13,14 +25,31 @@ interface MemberModalProps {
 }
 
 export default function MemberModal({ isOpen, onClose, member, onSave }: MemberModalProps) {
+  const { options: memberStatusPicklist } = useMemberStatusOptions(isOpen);
+  const { definitions: memberCustomFieldDefs } = useCustomFieldDefinitions('member', isOpen);
+  const sortedStatusLabels = useMemo(
+    () =>
+      [...memberStatusPicklist].sort(
+        (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label),
+      ),
+    [memberStatusPicklist],
+  );
+
+  const dobMaxDate = useMemo(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  }, []);
+
   const [formData, setFormData] = useState({
     first_name: member?.first_name || '',
     last_name: member?.last_name || '',
-    phone: member?.phone || member?.phoneNumber || '',
+    phone_country_iso: DEFAULT_PHONE_REGION,
+    phone_national: '',
     email: member?.email || '',
     address: member?.address || member?.location || '',
     emergency_contact_name: member?.emergency_contact_name || '',
-    emergency_contact_phone: member?.emergency_contact_phone || member?.emergencyContact || '',
+    emergency_contact_phone_country_iso: DEFAULT_PHONE_REGION,
+    emergency_contact_phone_national: '',
     member_url: member?.member_url || member?.profileImage || '',
     dob: member?.dob || '',
     gender: member?.gender || '',
@@ -32,6 +61,50 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
   });
   const [isCompressing, setIsCompressing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, unknown>>({});
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const raw = member?.custom_fields;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      setCustomFieldValues({ ...(raw as Record<string, unknown>) });
+    } else {
+      setCustomFieldValues({});
+    }
+  }, [isOpen, member]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const m = member;
+    const p = e164ToCountryAndNational(
+      m?.phone || m?.phoneNumber || '',
+      (m as Member & { phone_country_iso?: string })?.phone_country_iso || DEFAULT_PHONE_REGION,
+    );
+    const e = e164ToCountryAndNational(
+      m?.emergency_contact_phone || m?.emergencyContact || '',
+      (m as Member & { emergency_contact_phone_country_iso?: string })?.emergency_contact_phone_country_iso ||
+        DEFAULT_PHONE_REGION,
+    );
+    setFormData({
+      first_name: m?.first_name || '',
+      last_name: m?.last_name || '',
+      phone_country_iso: p.countryIso,
+      phone_national: p.national,
+      email: m?.email || '',
+      address: m?.address || m?.location || '',
+      emergency_contact_name: m?.emergency_contact_name || '',
+      emergency_contact_phone_country_iso: e.countryIso,
+      emergency_contact_phone_national: e.national,
+      member_url: m?.member_url || m?.profileImage || '',
+      dob: m?.dob || '',
+      gender: m?.gender || '',
+      marital_status: m?.marital_status || '',
+      occupation: m?.occupation || '',
+      member_id_string: m?.member_id_string || '',
+      status: m?.status || 'active',
+      date_joined: m?.date_joined || new Date().toISOString().split('T')[0],
+    });
+  }, [isOpen, member]);
 
   if (!isOpen) return null;
 
@@ -47,16 +120,10 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
 
     setIsCompressing(true);
     try {
-      const options = {
-        maxSizeMB: 0.05, // Max 50KB for even smaller size
-        maxWidthOrHeight: 600,
-        useWebWorker: true,
-      };
+      const compressedFile = await compressImageForUpload(file, MEMBER_PROFILE_PHOTO_OPTIONS);
 
-      const compressedFile = await imageCompression(file, options);
-      
-      if (compressedFile.size > 1024 * 1024) { // 1MB limit check
-        toast.error('Image is still too large. Please use a smaller image.');
+      if (compressedFile.size > MAX_STORED_IMAGE_BYTES) {
+        toast.error('Image is still too large after optimization. Try a simpler photo.');
         setIsCompressing(false);
         return;
       }
@@ -84,7 +151,26 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    onSave({
+      first_name: formData.first_name,
+      last_name: formData.last_name,
+      email: formData.email,
+      address: formData.address,
+      phone: formData.phone_national,
+      phone_country_iso: formData.phone_country_iso,
+      emergency_contact_name: formData.emergency_contact_name,
+      emergency_contact_phone: formData.emergency_contact_phone_national,
+      emergency_contact_phone_country_iso: formData.emergency_contact_phone_country_iso,
+      member_url: formData.member_url,
+      dob: formData.dob,
+      gender: formData.gender,
+      marital_status: formData.marital_status,
+      occupation: formData.occupation,
+      member_id_string: formData.member_id_string,
+      status: formData.status,
+      date_joined: formData.date_joined,
+      custom_fields: customFieldValues,
+    });
     onClose();
   };
 
@@ -126,7 +212,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
             <div className="flex flex-col items-center justify-center mb-6">
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="relative w-32 h-32 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-all overflow-hidden group"
+                className="relative w-32 h-32 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-all overflow-hidden group"
               >
                 {formData.member_url ? (
                   <>
@@ -139,7 +225,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                 ) : (
                   <div className="flex flex-col items-center text-gray-400">
                     {isCompressing ? (
-                      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                     ) : (
                       <>
                         <ImageIcon className="w-8 h-8 mb-2" />
@@ -168,7 +254,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                   type="text"
                   value={formData.first_name}
                   onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                   required
                 />
               </div>
@@ -180,25 +266,21 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                   type="text"
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                   required
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                  required
-                />
-              </div>
+              <PhoneCountryInput
+                label="Phone number"
+                countryIso={formData.phone_country_iso}
+                onCountryChange={(iso) => setFormData((f) => ({ ...f, phone_country_iso: iso }))}
+                national={formData.phone_national}
+                onNationalChange={(v) => setFormData((f) => ({ ...f, phone_national: v }))}
+                required
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -208,7 +290,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 />
               </div>
             </div>
@@ -218,11 +300,12 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date of Birth
                 </label>
-                <input
-                  type="date"
+                <DatePickerField
                   value={formData.dob}
-                  onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  onChange={(v) => setFormData({ ...formData, dob: v })}
+                  placeholder="Date of birth"
+                  maxDate={dobMaxDate}
+                  triggerClassName="h-auto min-h-[48px] rounded-xl border-transparent bg-gray-50 px-4 py-3 text-gray-900 shadow-none focus-visible:ring-blue-500"
                 />
               </div>
               <div>
@@ -232,7 +315,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                 <select
                   value={formData.gender}
                   onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 >
                   <option value="">Select Gender</option>
                   <option value="Male">Male</option>
@@ -250,7 +333,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                 <select
                   value={formData.marital_status}
                   onChange={(e) => setFormData({ ...formData, marital_status: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 >
                   <option value="">Select Status</option>
                   <option value="Single">Single</option>
@@ -261,13 +344,44 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Membership status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                  disabled={sortedStatusLabels.length === 0}
+                >
+                  {sortedStatusLabels.length === 0 ? (
+                    <option value={formData.status || 'active'}>
+                      {formData.status || 'active'} (add statuses in Settings)
+                    </option>
+                  ) : (
+                    <>
+                      {sortedStatusLabels.every((o) => o.label !== formData.status) && formData.status ? (
+                        <option value={formData.status}>{formData.status} (current)</option>
+                      ) : null}
+                      {sortedStatusLabels.map((o) => (
+                        <option key={o.id} value={o.label}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                {sortedStatusLabels.length === 0 && (
+                  <p className="text-xs text-amber-700 mt-1">Open Settings → Member statuses and load or add labels.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Occupation
                 </label>
                 <input
                   type="text"
                   value={formData.occupation}
                   onChange={(e) => setFormData({ ...formData, occupation: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 />
               </div>
             </div>
@@ -280,7 +394,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                 type="text"
                 value={formData.address}
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 required
               />
             </div>
@@ -294,47 +408,49 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
                   type="text"
                   value={formData.emergency_contact_name}
                   onChange={(e) => setFormData({ ...formData, emergency_contact_name: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Emergency Contact Phone
-                </label>
-                <input
-                  type="tel"
-                  value={formData.emergency_contact_phone}
-                  onChange={(e) => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                />
-              </div>
+              <PhoneCountryInput
+                label="Emergency contact phone"
+                countryIso={formData.emergency_contact_phone_country_iso}
+                onCountryChange={(iso) =>
+                  setFormData((f) => ({ ...f, emergency_contact_phone_country_iso: iso }))
+                }
+                national={formData.emergency_contact_phone_national}
+                onNationalChange={(v) =>
+                  setFormData((f) => ({ ...f, emergency_contact_phone_national: v }))
+                }
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Member ID String
-                </label>
-                <input
-                  type="text"
-                  value={formData.member_id_string}
-                  onChange={(e) => setFormData({ ...formData, member_id_string: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                  placeholder="e.g. MEM-001"
-                />
-              </div>
+              <div />
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date Joined
                 </label>
-                <input
-                  type="date"
+                <DatePickerField
                   value={formData.date_joined}
-                  onChange={(e) => setFormData({ ...formData, date_joined: e.target.value })}
-                  className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                  onChange={(v) => setFormData({ ...formData, date_joined: v })}
+                  placeholder="Date joined"
+                  triggerClassName="h-auto min-h-[48px] rounded-xl border-transparent bg-gray-50 px-4 py-3 text-gray-900 shadow-none focus-visible:ring-blue-500"
                 />
               </div>
             </div>
+
+            {memberCustomFieldDefs.length > 0 ? (
+              <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Additional fields</h3>
+                <CustomFieldsSection
+                  definitions={memberCustomFieldDefs}
+                  values={customFieldValues}
+                  onChange={(key, value) =>
+                    setCustomFieldValues((prev) => ({ ...prev, [key]: value }))
+                  }
+                />
+              </div>
+            ) : null}
           </div>
         </form>
 
@@ -351,7 +467,7 @@ export default function MemberModal({ isOpen, onClose, member, onSave }: MemberM
             form="member-form"
             type="submit"
             disabled={isCompressing}
-            className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             {isCompressing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             {member ? 'Save Changes' : 'Add Member'}

@@ -78,7 +78,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter church name"
               />
             </div>
@@ -94,7 +94,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.pastor}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Rev. John Doe"
               />
             </div>
@@ -110,7 +110,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="pastor@church.org"
               />
             </div>
@@ -126,7 +126,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.phone}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="+1 234 567 8900"
               />
             </div>
@@ -141,7 +141,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.plan}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
               >
                 <option value="Free">Free - $0/month</option>
                 <option value="Basic">Basic - $99/month</option>
@@ -160,7 +160,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 name="address"
                 value={formData.address}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="123 Main Street"
               />
             </div>
@@ -175,7 +175,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 name="city"
                 value={formData.city}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="New York"
               />
             </div>
@@ -190,7 +190,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 name="state"
                 value={formData.state}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="NY"
               />
             </div>
@@ -205,7 +205,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 name="zip"
                 value={formData.zip}
                 onChange={handleChange}
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="10001"
               />
             </div>
@@ -220,7 +220,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
                 value={formData.status}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+                className="w-full px-4 py-2.5 text-base border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
               >
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
@@ -240,7 +240,7 @@ export default function AddChurchModal({ church, onClose, onSave }: AddChurchMod
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 text-base bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
+              className="px-5 py-2.5 text-base bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
             >
               {church ? 'Save Changes' : 'Add Church'}
             </button>

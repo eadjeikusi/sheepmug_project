@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Church, Building2, Loader2, CheckCircle } from 'lucide-react';
+import { Building2, Loader2, CheckCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { organizationApi, branchApi } from '../../utils/api';
 import { useApp } from '../../contexts/AppContext';
@@ -99,7 +99,7 @@ export default function InitialSetup() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -107,16 +107,14 @@ export default function InitialSetup() {
       >
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-6 text-white">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-600 px-8 py-6 text-white">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <Church className="w-6 h-6" />
+              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center p-1.5 shadow-sm">
+                <img src="/sheepmug-logo.png" alt="" className="w-full h-full object-contain" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Welcome to ChurchHub!</h1>
-                <p className="text-blue-100 text-sm mt-1">
-                  Let's set up your church management system
-                </p>
+                <h1 className="text-2xl font-bold">Welcome to SheepMug!</h1>
+                <p className="text-blue-100 text-sm mt-1">Discipleship Made Easy</p>
               </div>
             </div>
           </div>
@@ -126,7 +124,7 @@ export default function InitialSetup() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step === 'organization' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'
+                  step === 'organization' ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
                 }`}>
                   {step === 'organization' ? '1' : <CheckCircle className="w-5 h-5" />}
                 </div>
@@ -138,7 +136,7 @@ export default function InitialSetup() {
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                   step === 'branch' ? 'bg-blue-600 text-white' : 
-                  step === 'complete' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                  step === 'complete' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
                 }`}>
                   {step === 'complete' ? <CheckCircle className="w-5 h-5" /> : '2'}
                 </div>
@@ -149,7 +147,7 @@ export default function InitialSetup() {
 
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step === 'complete' ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                  step === 'complete' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'
                 }`}>
                   {step === 'complete' ? <CheckCircle className="w-5 h-5" /> : '3'}
                 </div>
@@ -365,8 +363,8 @@ export default function InitialSetup() {
                 animate={{ opacity: 1, scale: 1 }}
                 className="text-center py-8"
               >
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle className="w-12 h-12 text-green-600" />
+                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <CheckCircle className="w-12 h-12 text-blue-600" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Setup Complete!</h2>
                 <p className="text-gray-600 mb-8">

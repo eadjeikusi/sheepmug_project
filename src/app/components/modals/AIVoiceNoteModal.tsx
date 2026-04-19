@@ -75,7 +75,7 @@ export default function AIVoiceNoteModal({ isOpen, onClose, memberName }: AIVoic
               className={`w-28 h-28 rounded-3xl flex items-center justify-center transition-all shadow-lg ${
                 isRecording
                   ? 'bg-red-600 animate-pulse'
-                  : 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
               <Mic className="w-14 h-14 text-white" />
@@ -95,7 +95,7 @@ export default function AIVoiceNoteModal({ isOpen, onClose, memberName }: AIVoic
                 value={transcribedText}
                 onChange={(e) => setTranscribedText(e.target.value)}
                 rows={4}
-                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none"
+                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all resize-none"
                 placeholder="AI transcription will appear here..."
               />
             </div>
@@ -117,7 +117,7 @@ export default function AIVoiceNoteModal({ isOpen, onClose, memberName }: AIVoic
                         ? 'border-red-500 bg-red-50 text-red-700'
                         : level === 'medium'
                         ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
-                        : 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -150,7 +150,7 @@ export default function AIVoiceNoteModal({ isOpen, onClose, memberName }: AIVoic
           <button
             onClick={handleSave}
             disabled={!transcribedText}
-            className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Save & Send
           </button>

@@ -11,10 +11,14 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: {
-    alias: {
-      // Alias @ to the src directory
-      '@': path.resolve(__dirname, './src/app'),
-    },
+    alias: [
+      // Shared helpers under src/lib; @ maps to src/app, so @/lib/* needs an explicit rule
+      {
+        find: /^@\/lib\/(.+)$/,
+        replacement: path.resolve(__dirname, './src/lib/$1'),
+      },
+      { find: '@', replacement: path.resolve(__dirname, './src/app') },
+    ],
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.

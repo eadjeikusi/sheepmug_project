@@ -3,6 +3,7 @@ import { X, Eye, Check, XCircle, Edit2, Clock, Mail, Phone, MapPin, User, Briefc
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import type { MemberRequest } from '../pages/Members';
+import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
 
 interface MemberRequestReviewModalProps {
   isOpen: boolean;
@@ -55,8 +56,7 @@ export default function MemberRequestReviewModal({
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return formatLongWeekdayDate(dateString) || dateString;
   };
 
   return (
@@ -103,7 +103,7 @@ export default function MemberRequestReviewModal({
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
                     {/* Requests List */}
                     <div className="space-y-4">
-                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                      <h3 className="text-sm font-semibold text-gray-900">
                         Pending Requests
                       </h3>
                       
@@ -121,14 +121,14 @@ export default function MemberRequestReviewModal({
                               animate={{ opacity: 1, y: 0 }}
                               className={`bg-white border-2 rounded-2xl p-4 cursor-pointer transition-all ${
                                 selectedRequest?.id === request.id
-                                  ? 'border-indigo-500 shadow-lg'
-                                  : 'border-gray-200 hover:border-indigo-300 hover:shadow-md'
+                                  ? 'border-blue-500 shadow-lg'
+                                  : 'border-gray-200 hover:border-blue-300 hover:shadow-md'
                               }`}
                               onClick={() => handleView(request)}
                             >
                               <div className="flex items-start space-x-3">
                                 <img
-                                  src={request.profileImage || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop'}
+                                  src={request.profileImage || ''}
                                   alt={request.fullName}
                                   className="w-12 h-12 rounded-xl object-cover"
                                 />
@@ -157,7 +157,7 @@ export default function MemberRequestReviewModal({
                       {selectedRequest ? (
                         <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
                           <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">
+                            <h3 className="text-sm font-semibold text-gray-900">
                               Request Details
                             </h3>
                             {!isEditing && (
@@ -174,7 +174,7 @@ export default function MemberRequestReviewModal({
                           {/* Profile Image */}
                           <div className="flex justify-center mb-6">
                             <img
-                              src={selectedRequest.profileImage || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop'}
+                              src={selectedRequest.profileImage || ''}
                               alt={selectedRequest.fullName}
                               className="w-24 h-24 rounded-2xl object-cover border-4 border-white shadow-md"
                             />
@@ -184,7 +184,7 @@ export default function MemberRequestReviewModal({
                           <div className="space-y-4">
                             {/* Full Name */}
                             <div>
-                              <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                 <User className="w-3 h-3 mr-2" />
                                 Full Name
                               </label>
@@ -193,7 +193,7 @@ export default function MemberRequestReviewModal({
                                   type="text"
                                   value={editedRequest?.fullName}
                                   onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, fullName: e.target.value } : null)}
-                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <p className="text-gray-900 font-medium">{selectedRequest.fullName}</p>
@@ -202,7 +202,7 @@ export default function MemberRequestReviewModal({
 
                             {/* Email */}
                             <div>
-                              <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                 <Mail className="w-3 h-3 mr-2" />
                                 Email Address
                               </label>
@@ -211,7 +211,7 @@ export default function MemberRequestReviewModal({
                                   type="email"
                                   value={editedRequest?.email}
                                   onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, email: e.target.value } : null)}
-                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <p className="text-gray-900">{selectedRequest.email}</p>
@@ -220,7 +220,7 @@ export default function MemberRequestReviewModal({
 
                             {/* Phone Number */}
                             <div>
-                              <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                 <Phone className="w-3 h-3 mr-2" />
                                 Phone Number
                               </label>
@@ -229,7 +229,7 @@ export default function MemberRequestReviewModal({
                                   type="tel"
                                   value={editedRequest?.phoneNumber}
                                   onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, phoneNumber: e.target.value } : null)}
-                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <p className="text-gray-900">{selectedRequest.phoneNumber}</p>
@@ -238,7 +238,7 @@ export default function MemberRequestReviewModal({
 
                             {/* Location */}
                             <div>
-                              <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                 <MapPin className="w-3 h-3 mr-2" />
                                 Location
                               </label>
@@ -247,7 +247,7 @@ export default function MemberRequestReviewModal({
                                   type="text"
                                   value={editedRequest?.location}
                                   onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, location: e.target.value } : null)}
-                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <p className="text-gray-900">{selectedRequest.location}</p>
@@ -256,7 +256,7 @@ export default function MemberRequestReviewModal({
 
                             {/* Emergency Contact */}
                             <div>
-                              <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                              <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                 <Phone className="w-3 h-3 mr-2" />
                                 Emergency Contact
                               </label>
@@ -265,7 +265,7 @@ export default function MemberRequestReviewModal({
                                   type="tel"
                                   value={editedRequest?.emergencyContact}
                                   onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, emergencyContact: e.target.value } : null)}
-                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               ) : (
                                 <p className="text-gray-900">{selectedRequest.emergencyContact}</p>
@@ -276,7 +276,7 @@ export default function MemberRequestReviewModal({
                             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200">
                               {selectedRequest.dateOfBirth && (
                                 <div>
-                                  <label className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2 block">
+                                  <label className="text-sm font-medium text-gray-500 mb-2 block">
                                     Date of Birth
                                   </label>
                                   <p className="text-gray-900">{formatDate(selectedRequest.dateOfBirth)}</p>
@@ -284,7 +284,7 @@ export default function MemberRequestReviewModal({
                               )}
                               {selectedRequest.gender && (
                                 <div>
-                                  <label className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2 block">
+                                  <label className="text-sm font-medium text-gray-500 mb-2 block">
                                     Gender
                                   </label>
                                   <p className="text-gray-900">{selectedRequest.gender}</p>
@@ -292,7 +292,7 @@ export default function MemberRequestReviewModal({
                               )}
                               {selectedRequest.occupation && (
                                 <div>
-                                  <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                                  <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                     <Briefcase className="w-3 h-3 mr-2" />
                                     Occupation
                                   </label>
@@ -301,7 +301,7 @@ export default function MemberRequestReviewModal({
                               )}
                               {selectedRequest.maritalStatus && (
                                 <div>
-                                  <label className="flex items-center text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                                  <label className="flex items-center text-sm font-medium text-gray-500 mb-2">
                                     <Heart className="w-3 h-3 mr-2" />
                                     Marital Status
                                   </label>
@@ -313,7 +313,7 @@ export default function MemberRequestReviewModal({
                             {/* Notes */}
                             {selectedRequest.notes && (
                               <div className="pt-4 border-t border-gray-200">
-                                <label className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2 block">
+                                <label className="text-sm font-medium text-gray-500 mb-2 block">
                                   Notes
                                 </label>
                                 {isEditing ? (
@@ -321,7 +321,7 @@ export default function MemberRequestReviewModal({
                                     value={editedRequest?.notes}
                                     onChange={(e) => setEditedRequest(editedRequest ? { ...editedRequest, notes: e.target.value } : null)}
                                     rows={3}
-                                    className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full px-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                   />
                                 ) : (
                                   <p className="text-gray-900 text-sm">{selectedRequest.notes}</p>
@@ -336,7 +336,7 @@ export default function MemberRequestReviewModal({
                               <>
                                 <button
                                   onClick={handleSaveEdit}
-                                  className="flex-1 flex items-center justify-center px-4 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all font-medium"
+                                  className="flex-1 flex items-center justify-center px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all font-medium"
                                 >
                                   <Check className="w-4 h-4 mr-2" />
                                   Save Changes
@@ -355,7 +355,7 @@ export default function MemberRequestReviewModal({
                               <>
                                 <button
                                   onClick={() => handleApprove(selectedRequest.id)}
-                                  className="flex-1 flex items-center justify-center px-4 py-3 text-white bg-green-600 rounded-xl hover:bg-green-700 transition-all font-medium"
+                                  className="flex-1 flex items-center justify-center px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all font-medium"
                                 >
                                   <Check className="w-4 h-4 mr-2" />
                                   Approve

@@ -10,12 +10,21 @@ export interface Organization {
   website: string | null;
   timezone: string;
   currency: string;
+  /** DB column (signup uses `free`, etc.) */
+  subscription_tier?: string | null;
   subscription_status: 'trial' | 'active' | 'cancelled' | 'expired';
   subscription_plan: string | null;
   trial_ends_at: string | null;
   settings: any;
   created_at: string;
   updated_at: string;
+  /** SuperAdmin overrides; null = use tier defaults from subscriptionPlans */
+  max_members?: number | null;
+  max_groups?: number | null;
+  max_branches?: number | null;
+  max_events_per_month?: number | null;
+  max_staff?: number | null;
+  hubtel_subscription_id?: string | null;
 }
 
 export interface Branch {
@@ -31,6 +40,8 @@ export interface Branch {
   phone: string | null;
   email: string | null;
   is_main_branch: boolean;
+  timezone?: string | null;
+  important_dates_default_reminder_time?: string | null;
   settings: any;
   created_at: string;
   updated_at: string;
@@ -44,10 +55,21 @@ export interface User {
   organization_id: string;
   branch_id?: string;
   organization?: any;
-  role_id?: string;
+  role_id?: string | null;
   role?: any;
   is_super_admin?: boolean;
+  /** Org signup account — full access in API */
+  is_org_owner?: boolean;
+  /** Effective permission ids from assigned role (or all if org owner) */
+  permissions?: string[];
+  /** Server: ministry directory scope for staff (Settings assignments + All Members). */
+  ministry_scope?: {
+    kind: 'bypass' | 'branch_all' | 'groups';
+    group_ids: string[];
+  };
   profile_image?: string | null;
+  /** Same URL as profile_image when stored on profiles row (Optional). */
+  avatar_url?: string | null;
 }
 
 export interface Member {
@@ -59,7 +81,10 @@ export interface Member {
   first_name: string;
   last_name: string;
   email: string | null;
+  /** E.164 international format from API */
   phone: string | null;
+  /** ISO 3166-1 alpha-2 for primary phone country (UI + parsing) */
+  phone_country_iso?: string | null;
   dob: string | null;
   gender: string | null;
   marital_status: string | null;
@@ -67,8 +92,11 @@ export interface Member {
   address: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
+  emergency_contact_phone_country_iso?: string | null;
   date_joined: string | null;
   status: string | null;
+  /** Primary photo URL when present (some DBs use memberimage_url / member_url instead). */
+  avatar_url?: string | null;
   member_url: string | null;
   created_at: string;
   updated_at: string;
@@ -80,6 +108,79 @@ export interface Member {
   location?: string;
   profileImage?: string;
   churchId?: string;
+  /** Org custom field values keyed by `field_key` (from Settings → Custom fields). */
+  custom_fields?: Record<string, unknown> | null;
+}
+
+/** Admin-defined custom field (matches `custom_field_definitions` / GET /api/custom-field-definitions). */
+export interface CustomFieldDefinition {
+  id: string;
+  organization_id: string;
+  field_key: string;
+  label: string;
+  field_type: string;
+  required: boolean;
+  placeholder: string | null;
+  options: unknown;
+  default_value: string | null;
+  sort_order: number;
+  applies_to: string[];
+  show_on_public: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Organization picklist for `members.status` (label text is stored on the member row). */
+export interface MemberStatusOption {
+  id: string;
+  organization_id: string;
+  label: string;
+  color: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Branch-scoped picklist for `groups.group_type` (label text stored on each group row). */
+export interface GroupTypeOption {
+  id: string;
+  organization_id: string;
+  branch_id?: string | null;
+  label: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemberImportantDate {
+  id: string;
+  title: string;
+  description: string | null;
+  date_value: string;
+  time_value: string | null;
+  date_type?: 'birthday' | 'anniversary' | 'custom';
+  is_recurring_yearly?: boolean;
+  reminder_offsets?: string[];
+  default_alert_enabled?: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface UpcomingImportantDateItem {
+  id: string;
+  member_id: string;
+  member_display_name: string;
+  member_image_url?: string | null;
+  title: string;
+  description?: string | null;
+  date_type: 'birthday' | 'anniversary' | 'custom';
+  occurs_on: string;
+  time_value?: string | null;
+  days_until: number;
+  source: 'member_important_date' | 'member_birthday';
+  default_alert_enabled?: boolean;
+  reminder_offsets?: string[];
 }
 
 export interface Event {
@@ -120,6 +221,7 @@ export interface Group {
   cover_image_url?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
+  contact_phone_country_iso?: string | null;
   created_at: string | null;
   updated_at: string | null;
   leader_id: string | null;
@@ -134,6 +236,11 @@ export interface Group {
   program_outline_content?: string | null;
   /** Root → parent chain from GET /api/groups/:id (excludes current group) */
   breadcrumb?: { id: string; name: string }[];
+  /** Org custom field values for group public page (see Settings → Custom fields, applies to group). */
+  custom_fields?: Record<string, unknown> | null;
+  /** System-managed row (e.g. All Members); hidden from normal ministry lists. */
+  is_system?: boolean | null;
+  system_kind?: string | null;
 }
 
 export interface Attendance {
@@ -178,6 +285,26 @@ export interface Message {
   sent_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Row from GET /api/org/messages (bulk SMS; metadata from migrations/messages_metadata.sql). */
+export interface OrgBulkMessageRow {
+  id: string;
+  subject: string | null;
+  content: string;
+  recipient_type: string;
+  status: string;
+  scheduled_for?: string | null;
+  created_at: string;
+  sender_id?: string;
+  branch_id?: string;
+  metadata?: {
+    channel?: string;
+    recipient_label?: string;
+    recipient_count?: number;
+    recipient_scope?: string;
+    recurrence?: { frequency?: string; end_date?: string | null };
+  };
 }
 
 export interface GroupMember {

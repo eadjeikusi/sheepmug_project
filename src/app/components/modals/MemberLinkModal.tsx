@@ -84,7 +84,7 @@ const MemberLinkModal: React.FC<MemberLinkModalProps> = ({
               </button>
               <button
                 onClick={shareLink}
-                className="flex items-center px-4 py-2 bg-green-500 text-white rounded-xl hover:bg-green-600 transition-colors shadow-sm"
+                className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors shadow-sm"
               >
                 <Share2 className="w-5 h-5 mr-2" />
                 Share Link

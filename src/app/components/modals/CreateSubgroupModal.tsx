@@ -131,7 +131,7 @@ export default function CreateSubgroupModal({
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="e.g., Vocal Team, Prayer Warriors, etc."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                   </div>
 
@@ -148,7 +148,7 @@ export default function CreateSubgroupModal({
                           onClick={() => setFormData({ ...formData, type: type as any })}
                           className={`px-4 py-3 rounded-xl border-2 transition-all ${
                             formData.type === type
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+                              ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
                               : 'border-gray-200 text-gray-600 hover:border-gray-300'
                           }`}
                         >
@@ -170,7 +170,7 @@ export default function CreateSubgroupModal({
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       placeholder="Describe the purpose and activities of this subgroup..."
                       rows={4}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
                     />
                   </div>
 
@@ -184,7 +184,7 @@ export default function CreateSubgroupModal({
                       required
                       value={formData.leaderId}
                       onChange={(e) => setFormData({ ...formData, leaderId: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     >
                       <option value="">Select a leader...</option>
                       <optgroup label="Pastors">
@@ -208,8 +208,8 @@ export default function CreateSubgroupModal({
                   {formData.leaderId && (() => {
                     const selectedLeader = allLeaders.find(l => l.id === formData.leaderId);
                     return selectedLeader ? (
-                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-4">
-                        <p className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100 rounded-2xl p-4">
+                        <p className="text-sm font-medium text-gray-500 mb-2">
                           Selected Leader
                         </p>
                         <div className="flex items-center space-x-3">
@@ -242,7 +242,7 @@ export default function CreateSubgroupModal({
                         checkTagUnique(tag);
                       }}
                       placeholder="e.g., vocal-team, prayer-warriors, etc."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
                     {tagError && <p className="text-sm text-red-500 mt-1">{tagError}</p>}
                   </div>
@@ -266,7 +266,7 @@ export default function CreateSubgroupModal({
                     </button>
                     <button
                       type="submit"
-                      className="px-6 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm"
+                      className="px-6 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm"
                     >
                       Create Subgroup
                     </button>

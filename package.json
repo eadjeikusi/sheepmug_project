@@ -3,11 +3,21 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "vite build",
     "dev": "tsx watch server.ts",
     "start": "node server.ts",
-    "lint": "eslint ."
+    "migrate:custom-fields": "tsx migrations/runCustomFieldsMigration.ts",
+    "migrate:group-type-options": "tsx migrations/runGroupTypeOptionsMigration.ts",
+    "lint": "eslint .",
+    "mobile:start": "npm run start --workspace @sheepmug/mobile --",
+    "mobile:android": "npm run android --workspace @sheepmug/mobile --",
+    "mobile:ios": "npm run ios --workspace @sheepmug/mobile --",
+    "mobile:web": "npm run web --workspace @sheepmug/mobile --"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -51,19 +61,24 @@
     "date-fns": "3.6.0",
     "dotenv": "^17.3.1",
     "embla-carousel-react": "8.6.0",
+    "expo-server-sdk": "^4.0.0",
     "express": "^5.2.1",
     "input-otp": "1.4.2",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
+    "libphonenumber-js": "^1.12.41",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "multer": "^2.1.1",
     "next-themes": "0.4.6",
+    "pg": "^8.20.0",
     "qrcode": "^1.5.4",
     "react-day-picker": "8.10.1",
     "react-dnd": "16.0.1",
     "react-dnd-html5-backend": "16.0.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-hook-form": "7.55.0",
     "react-popper": "2.3.0",
     "react-resizable-panels": "2.1.7",
@@ -95,17 +110,9 @@
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },
-  "peerDependencies": {
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    }
+  "overrides": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
   },
   "pnpm": {
     "overrides": {

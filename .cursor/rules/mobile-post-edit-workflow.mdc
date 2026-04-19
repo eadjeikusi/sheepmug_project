@@ -1,0 +1,14 @@
+---
+description: After mobile/Expo edits — reload app, read terminal, fix errors
+alwaysApply: true
+---
+
+# Post-edit workflow (mobile / Expo)
+
+After **every** substantive change that affects the mobile app or Metro:
+
+1. **Reload the app** — Trigger a Metro reload (e.g. `POST` to `http://127.0.0.1:8081/reload` when Expo uses port 8081), or the equivalent for the active dev server port.
+2. **Check the terminal** — Read the Expo/Metro terminal output (and any build or typecheck output you ran) for errors, warnings that block the flow, or red screens.
+3. **Fix errors** — Address bundler errors, runtime errors, and TypeScript/lint issues tied to the change before considering the task done.
+
+Do not skip reload + terminal check for mobile work unless the change is documentation-only with no app impact.

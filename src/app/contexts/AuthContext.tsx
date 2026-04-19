@@ -7,6 +7,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (data: SignupData) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
   token: string | null;
 }
@@ -21,6 +22,21 @@ interface SignupData {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const TOKEN_KEY = 'token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+const USER_KEY = 'user';
+
+/** If an API payload omits `permissions`, keep the previous value so RBAC state is not wiped. */
+function mergeIncomingUser(prev: User | null, incoming: User): User {
+  const merged: User = { ...incoming };
+  if (prev && incoming.permissions === undefined && prev.permissions !== undefined) {
+    merged.permissions = prev.permissions;
+  }
+  if (prev && incoming.ministry_scope === undefined && prev.ministry_scope !== undefined) {
+    merged.ministry_scope = prev.ministry_scope;
+  }
+  return merged;
+}
 
 // Mock user for bypass
 const MOCK_USER: User = {
@@ -30,6 +46,9 @@ const MOCK_USER: User = {
   last_name: 'User',
   organization_id: 'mock-org-123',
   is_super_admin: true,
+  is_org_owner: true,
+  permissions: [],
+  profile_image: null,
   organization: {
     id: 'mock-org-123',
     name: 'Demo Church',
@@ -39,23 +58,105 @@ const MOCK_USER: User = {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    if (storedToken && storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-        setToken(storedToken);
-      } catch (e) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        setToken(null);
+  const clearSession = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    setToken(null);
+    setUser(null);
+  };
+
+  const refreshSession = async (): Promise<string | null> => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) return null;
+    try {
+      const refreshResponse = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      const refreshData = await refreshResponse.json().catch(() => ({}));
+      if (refreshResponse.status === 403) {
+        clearSession();
+        throw new Error((refreshData as { error?: string }).error || 'Access denied for this account.');
       }
+      if (!refreshResponse.ok || typeof refreshData.token !== 'string') {
+        clearSession();
+        return null;
+      }
+      localStorage.setItem(TOKEN_KEY, refreshData.token);
+      if (typeof refreshData.refresh_token === 'string' && refreshData.refresh_token.trim()) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshData.refresh_token);
+      }
+      if (refreshData.user) {
+        const nextUser = mergeIncomingUser(user, refreshData.user);
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        setUser(nextUser);
+      }
+      setToken(refreshData.token);
+      return refreshData.token;
+    } catch {
+      return null;
     }
-    setLoading(false);
+  };
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    if (!storedToken) {
+      setLoading(false);
+      return;
+    }
+
+    setToken(storedToken);
+
+    const load = async () => {
+      try {
+        const getMe = (authToken: string) =>
+          fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+        let activeToken = storedToken;
+        let response = await getMe(activeToken);
+        if (response.status === 401) {
+          const refreshedToken = await refreshSession();
+          if (!refreshedToken) {
+            clearSession();
+            return;
+          }
+          activeToken = refreshedToken;
+          response = await getMe(activeToken);
+        }
+        if (response.status === 403) {
+          clearSession();
+          return;
+        }
+        if (!response.ok) throw new Error('me failed');
+        const data = await response.json();
+        if (data.user) {
+          setUser((prev) => {
+            const next = mergeIncomingUser(prev, data.user);
+            localStorage.setItem(USER_KEY, JSON.stringify(next));
+            return next;
+          });
+        }
+      } catch {
+        const storedUser = localStorage.getItem(USER_KEY);
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            clearSession();
+          }
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void load();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -77,9 +178,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) throw new Error(data.error || 'Login failed');
 
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
+      localStorage.setItem(TOKEN_KEY, data.token);
+      if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+      }
+      const nextUser = mergeIncomingUser(null, data.user);
+      localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+      setUser(nextUser);
       setToken(data.token);
     } catch (error: any) {
       throw error;
@@ -113,21 +218,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(errorMessage);
       }
 
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      setUser(data.user);
-      setToken(data.token);
+      if (data.token) {
+        localStorage.setItem(TOKEN_KEY, data.token);
+        if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
+          localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+        }
+        setToken(data.token);
+      }
+      if (data.user) {
+        const nextUser = mergeIncomingUser(null, data.user);
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        setUser(nextUser);
+      }
     } catch (error: any) {
       throw error;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-    setToken(null);
+    clearSession();
     window.location.href = '/';
+  };
+
+  const refreshUser = async () => {
+    let t = localStorage.getItem(TOKEN_KEY);
+    if (!t) return;
+    try {
+      const getMe = (authToken: string) =>
+        fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+      let response = await getMe(t);
+      if (response.status === 401) {
+        const refreshedToken = await refreshSession();
+        if (!refreshedToken) {
+          clearSession();
+          window.location.href = '/';
+          return;
+        }
+        t = refreshedToken;
+        response = await getMe(t);
+      }
+      if (response.status === 403) {
+        clearSession();
+        window.location.href = '/';
+        return;
+      }
+      if (!response.ok) throw new Error('refresh user failed');
+      const data = await response.json();
+      if (data.user) {
+        setUser((prev) => {
+          const next = mergeIncomingUser(prev, data.user);
+          localStorage.setItem(USER_KEY, JSON.stringify(next));
+          return next;
+        });
+      }
+    } catch {
+      /* ignore */
+    }
   };
 
   const value = {
@@ -136,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     signup,
     logout,
+    refreshUser,
     isAuthenticated: !!user,
     token,
   };

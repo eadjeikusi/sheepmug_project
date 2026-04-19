@@ -3,14 +3,60 @@ import { Link } from 'react-router';
 import { Plus, Search, Pencil, Trash2, ClipboardList, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranch } from '../../contexts/BranchContext';
+import { withBranchScope } from '@/utils/branchScopeHeaders';
 import type { EventTypeRow } from './EventTypes';
 import ProgramOutlineAccordionEditor, {
+  computeTotalUsedMinutes,
   documentFromProgramOutline,
   documentToProgramOutline,
   emptyDocument,
+  formatHoursMinutes,
   freshDuplicateOutline,
   type ProgramOutlineDocument,
 } from './ProgramOutlineAccordionEditor';
+
+function outlineTableStats(program_outline: Record<string, unknown> | undefined | null) {
+  const doc = documentFromProgramOutline(program_outline ?? {});
+  const parts = doc.sections.length;
+  const activities = doc.sections.reduce((n, s) => n + s.items.length, 0);
+  const usedMinutes = computeTotalUsedMinutes(doc);
+  const ph = doc.planned_duration_hours;
+  const plannedMinutes =
+    ph != null && Number.isFinite(ph) && ph > 0 ? ph * 60 : null;
+  return { parts, activities, usedMinutes, plannedMinutes };
+}
+
+function TemplateTimeBudgetCell({
+  usedMinutes,
+  plannedMinutes,
+}: {
+  usedMinutes: number;
+  plannedMinutes: number | null;
+}) {
+  const usedStr = formatHoursMinutes(usedMinutes);
+  if (plannedMinutes == null) {
+    return (
+      <div className="text-sm">
+        <span className="tabular-nums font-medium text-gray-900">{usedStr}</span>
+        <span className="ml-1 text-xs text-gray-500">used</span>
+        <p className="mt-0.5 text-[11px] text-gray-400">No event budget</p>
+      </div>
+    );
+  }
+  const rem = plannedMinutes - usedMinutes;
+  const secondStr = rem >= 0 ? formatHoursMinutes(rem) : formatHoursMinutes(-rem);
+  const tone = rem >= 0 ? 'text-blue-700' : 'text-amber-700';
+  const suffix = rem >= 0 ? 'left' : 'over';
+  return (
+    <div className="text-sm">
+      <span className="tabular-nums font-medium text-gray-900">{usedStr}</span>
+      <span className="text-gray-400"> / </span>
+      <span className={`tabular-nums font-medium ${tone}`}>{secondStr}</span>
+      <span className="ml-1 text-xs font-medium text-gray-500">{suffix}</span>
+    </div>
+  );
+}
 
 export interface OutlineTemplateRow {
   id: string;
@@ -26,8 +72,11 @@ export interface OutlineTemplateRow {
   event_types?: { name: string; slug: string; color: string | null } | null;
 }
 
-export default function EventOutlineTemplates() {
+export type EventOutlineTemplatesProps = { embedded?: boolean };
+
+export default function EventOutlineTemplates({ embedded = false }: EventOutlineTemplatesProps) {
   const { token } = useAuth();
+  const { selectedBranch } = useBranch();
   const [eventTypes, setEventTypes] = useState<EventTypeRow[]>([]);
   const [rows, setRows] = useState<OutlineTemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +98,9 @@ export default function EventOutlineTemplates() {
       return;
     }
     try {
-      const res = await fetch('/api/event-types', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch('/api/event-types', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to load types');
       setEventTypes(Array.isArray(data) ? data : []);
@@ -57,7 +108,7 @@ export default function EventOutlineTemplates() {
       toast.error(e instanceof Error ? e.message : 'Failed to load event types');
       setEventTypes([]);
     }
-  }, [token]);
+  }, [token, selectedBranch?.id]);
 
   const fetchRows = useCallback(async () => {
     if (!token) {
@@ -69,7 +120,7 @@ export default function EventOutlineTemplates() {
     try {
       const q = filterTypeId ? `?event_type_id=${encodeURIComponent(filterTypeId)}` : '';
       const res = await fetch(`/api/event-outline-templates${q}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to load templates');
@@ -80,7 +131,7 @@ export default function EventOutlineTemplates() {
     } finally {
       setLoading(false);
     }
-  }, [token, filterTypeId]);
+  }, [token, filterTypeId, selectedBranch?.id]);
 
   useEffect(() => {
     void fetchEventTypes();
@@ -157,10 +208,10 @@ export default function EventOutlineTemplates() {
       if (editing) {
         const res = await fetch(`/api/event-outline-templates/${encodeURIComponent(editing.id)}`, {
           method: 'PATCH',
-          headers: {
+          headers: withBranchScope(selectedBranch?.id, {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
-          },
+          }),
           body: JSON.stringify({
             name: formName.trim(),
             description: formDescription.trim() || null,
@@ -175,10 +226,10 @@ export default function EventOutlineTemplates() {
       } else {
         const res = await fetch('/api/event-outline-templates', {
           method: 'POST',
-          headers: {
+          headers: withBranchScope(selectedBranch?.id, {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
-          },
+          }),
           body: JSON.stringify({
             name: formName.trim(),
             event_type_id: formEventTypeId,
@@ -207,7 +258,7 @@ export default function EventOutlineTemplates() {
     try {
       const res = await fetch(`/api/event-outline-templates/${encodeURIComponent(r.id)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Delete failed');
@@ -233,8 +284,8 @@ export default function EventOutlineTemplates() {
   }, [rows, q, typeLabel]);
 
   return (
-    <div className="flex flex-col flex-1 bg-gray-50/80 min-h-0">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+    <div className={embedded ? '' : 'flex flex-col flex-1 bg-gray-50/80 min-h-0'}>
+      <div className={embedded ? '' : 'mx-auto w-full max-w-6xl px-4 py-8 md:px-8'}>
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Program templates</h1>
@@ -246,7 +297,7 @@ export default function EventOutlineTemplates() {
             type="button"
             onClick={openCreate}
             disabled={eventTypes.length === 0}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
             Add template
@@ -262,7 +313,7 @@ export default function EventOutlineTemplates() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search templates…"
-                className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm focus:border-indigo-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </label>
             <div className="sm:w-56">
@@ -285,7 +336,7 @@ export default function EventOutlineTemplates() {
           {eventTypes.length === 0 && !loading ? (
             <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
               Add at least one{' '}
-              <Link to="/event-types" className="font-medium underline decoration-amber-600/50">
+              <Link to="/settings?tab=eventTypes" className="font-medium underline decoration-amber-600/50">
                 event type
               </Link>{' '}
               before you can create program templates.
@@ -303,17 +354,26 @@ export default function EventOutlineTemplates() {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/90">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Template
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500">
+                      Parts
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500">
+                      Activities
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
+                      Time
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Event type
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Active
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Actions
+                    <th className="whitespace-nowrap px-3 py-4 text-right">
+                      <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -321,13 +381,25 @@ export default function EventOutlineTemplates() {
                   {filtered.map((r) => {
                     const emb = r.event_types;
                     const typeName = emb?.name ?? typeLabel(r.event_type_id);
+                    const stats = outlineTableStats(r.program_outline);
                     return (
                       <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/80">
+                        <td className="max-w-[min(24rem,40vw)] px-6 py-4 align-middle">
+                          <p className="truncate text-[14px] font-medium text-gray-900" title={r.name}>
+                            {r.name}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4 align-middle text-right tabular-nums text-sm text-gray-800">
+                          {stats.parts}
+                        </td>
+                        <td className="px-6 py-4 align-middle text-right tabular-nums text-sm text-gray-800">
+                          {stats.activities}
+                        </td>
                         <td className="px-6 py-4 align-middle">
-                          <p className="text-[14px] font-medium text-gray-900">{r.name}</p>
-                          {r.description && (
-                            <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{r.description}</p>
-                          )}
+                          <TemplateTimeBudgetCell
+                            usedMinutes={stats.usedMinutes}
+                            plannedMinutes={stats.plannedMinutes}
+                          />
                         </td>
                         <td className="px-6 py-4 align-middle">
                           <div className="flex items-center gap-2">
@@ -341,32 +413,34 @@ export default function EventOutlineTemplates() {
                         <td className="px-6 py-4 align-middle text-sm text-gray-700">
                           {r.is_active === false ? 'No' : 'Yes'}
                         </td>
-                        <td className="px-6 py-4 align-middle text-right">
-                          <div className="flex justify-end gap-2">
+                        <td className="whitespace-nowrap px-3 py-4 align-middle text-right">
+                          <div className="flex justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => openEdit(r)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+                              title="Edit template"
+                              aria-label="Edit template"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
-                              Edit
+                              <Pencil className="h-4 w-4" />
                             </button>
                             <button
                               type="button"
                               onClick={() => openDuplicateTemplate(r)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
                               title="Duplicate template"
+                              aria-label="Duplicate template"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
                             >
-                              <Copy className="h-3.5 w-3.5" />
-                              Duplicate
+                              <Copy className="h-4 w-4" />
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleDelete(r)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                              title="Delete template"
+                              aria-label="Delete template"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Delete
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </td>
@@ -392,7 +466,7 @@ export default function EventOutlineTemplates() {
           <div className="fixed left-1/2 top-1/2 z-[120] flex max-h-[min(94vh,880px)] w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl">
             <div className="shrink-0 border-b border-gray-100 p-5 pb-4 sm:p-6">
               <div className="flex items-start gap-2">
-                <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">
                     {editing ? 'Edit template' : 'New template'}
@@ -406,7 +480,7 @@ export default function EventOutlineTemplates() {
             <div className="flex min-h-0 flex-1 flex-col md:flex-row">
               <div className="flex max-h-[42vh] shrink-0 flex-col gap-4 overflow-y-auto border-gray-100 p-5 sm:p-6 md:max-h-none md:w-[min(100%,320px)] md:border-r md:py-6">
                 <div>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <p className="mb-3 text-[11px] font-semibold text-gray-400">
                     Details
                   </p>
                   <div className="space-y-3">
@@ -446,14 +520,14 @@ export default function EventOutlineTemplates() {
                         type="checkbox"
                         checked={formActive}
                         onChange={(e) => setFormActive(e.target.checked)}
-                        className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600"
                       />
                       Active
                     </label>
                   </div>
                 </div>
                 <div>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <p className="mb-2 text-[11px] font-semibold text-gray-400">
                     Time
                   </p>
                   <ProgramOutlineAccordionEditor
@@ -465,7 +539,7 @@ export default function EventOutlineTemplates() {
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-t border-gray-100 md:border-t-0">
                 <div className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  <p className="mb-3 text-[11px] font-semibold text-gray-400">
                     Parts & activities
                   </p>
                   <ProgramOutlineAccordionEditor
@@ -491,7 +565,7 @@ export default function EventOutlineTemplates() {
                 type="button"
                 disabled={saving}
                 onClick={() => void handleSave()}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

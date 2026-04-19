@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import Root from "./components/Root";
 import MemberRegistration from "./components/pages/MemberRegistration";
 import Dashboard from "./components/pages/Dashboard";
@@ -6,17 +6,26 @@ import Members from "./components/pages/Members";
 import Ministries from "./components/pages/Ministries";
 import MinistryDetail from "./components/pages/MinistryDetail";
 import Events from "./components/pages/Events";
-import EventTypes from "./components/pages/EventTypes";
-import EventOutlineTemplates from "./components/pages/EventOutlineTemplates";
-import Families from "./components/pages/Families";
+import EventDetail from "./components/pages/EventDetail";
+import Tasks from "./components/pages/Tasks";
 import Messages from "./components/pages/Messages";
 import Notifications from "./components/pages/Notifications";
 import Settings from "./components/pages/Settings";
+import ImportantDates from "./components/pages/ImportantDates";
 import ProfileSettings from "./components/pages/ProfileSettings";
 import SuperAdmin from "./components/pages/SuperAdmin";
 import NotFound from "./components/pages/NotFound";
 import PublicGroupPage from "./components/pages/PublicGroupPage";
 import JoinGroupPage from "./components/pages/JoinGroupPage";
+
+const CMS_BASENAME = (() => {
+  const configuredRaw = String(import.meta.env.VITE_CMS_BASENAME || "/cms").trim() || "/cms";
+  const configured = configuredRaw === "/" ? "/" : configuredRaw.startsWith("/") ? configuredRaw : `/${configuredRaw}`;
+  if (typeof window === "undefined") return configured;
+  if (configured === "/") return "/";
+  const path = window.location.pathname;
+  return path === configured || path.startsWith(`${configured}/`) ? configured : "/";
+})();
 
 export const router = createBrowserRouter([
   {
@@ -56,16 +65,20 @@ export const router = createBrowserRouter([
         Component: Events,
       },
       {
+        path: "events/:eventId",
+        Component: EventDetail,
+      },
+      {
         path: "event-types",
-        Component: EventTypes,
+        element: <Navigate to="/settings?tab=eventTypes" replace />,
       },
       {
         path: "program-templates",
-        Component: EventOutlineTemplates,
+        element: <Navigate to="/settings?tab=programTemplates" replace />,
       },
       {
-        path: "families",
-        Component: Families,
+        path: "tasks",
+        Component: Tasks,
       },
       {
         path: "messages",
@@ -74,6 +87,14 @@ export const router = createBrowserRouter([
       {
         path: "notifications",
         Component: Notifications,
+      },
+      {
+        path: "important-dates",
+        Component: ImportantDates,
+      },
+      {
+        path: "member-join-requests",
+        element: <Navigate to="/members?tab=requests" replace />,
       },
       {
         path: "settings",
@@ -93,4 +114,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+], {
+  basename: CMS_BASENAME,
+});

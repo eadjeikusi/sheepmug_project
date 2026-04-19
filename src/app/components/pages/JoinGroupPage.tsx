@@ -1,6 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
+import { DatePickerField } from '@/components/datetime';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface PublicJoinGroupData {
   id: string;
@@ -16,6 +25,13 @@ const JoinGroupPage: React.FC = () => {
   const [lastName, setLastName] = useState('');
   const [dob, setDob] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successOpen, setSuccessOpen] = useState(false);
+  const firstNameInputRef = useRef<HTMLInputElement>(null);
+
+  const dobMaxDate = useMemo(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  }, []);
 
   useEffect(() => {
     const fetchJoinGroup = async () => {
@@ -59,6 +75,14 @@ const JoinGroupPage: React.FC = () => {
       return;
     }
 
+    if (
+      !window.confirm(
+        'Send this join request? Your first name, last name, and date of birth must match the church directory.',
+      )
+    ) {
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const response = await fetch('/api/group-requests', {
@@ -77,16 +101,25 @@ const JoinGroupPage: React.FC = () => {
         throw new Error((body as { error?: string }).error || 'Failed to submit join request');
       }
 
-      toast.success('Request sent. A leader will approve it in the app.');
       setFirstName('');
       setLastName('');
       setDob('');
+      setSuccessOpen(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Request failed';
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmitAnother = () => {
+    setSuccessOpen(false);
+    window.setTimeout(() => firstNameInputRef.current?.focus(), 100);
+  };
+
+  const handleSuccessDone = () => {
+    setSuccessOpen(false);
   };
 
   if (loading) {
@@ -134,13 +167,14 @@ const JoinGroupPage: React.FC = () => {
               First name
             </label>
             <input
+              ref={firstNameInputRef}
               id="firstName"
               type="text"
               autoComplete="given-name"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               placeholder="First name"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               required
             />
           </div>
@@ -155,7 +189,7 @@ const JoinGroupPage: React.FC = () => {
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               placeholder="Last name"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               required
             />
           </div>
@@ -163,23 +197,54 @@ const JoinGroupPage: React.FC = () => {
             <label htmlFor="dob" className="block text-xs font-medium text-slate-700">
               Date of birth
             </label>
-            <input
+            <DatePickerField
               id="dob"
-              type="date"
               value={dob}
-              onChange={(e) => setDob(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              required
+              onChange={setDob}
+              placeholder="Date of birth"
+              maxDate={dobMaxDate}
+              className="mt-1"
+              triggerClassName="h-auto min-h-[38px] rounded-lg border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-none focus-visible:ring-blue-500"
             />
           </div>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {isSubmitting ? 'Sending…' : 'Request to join'}
           </button>
         </form>
+
+        <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
+          <DialogContent className="sm:max-w-md" onCloseAutoFocus={(e) => e.preventDefault()}>
+            <DialogHeader>
+              <DialogTitle>Request submitted</DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-3 text-sm text-slate-600">
+                  <p>Your join request was sent. A leader will review it in the app when they are ready.</p>
+                  <p>Would you like to submit another request?</p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <button
+                type="button"
+                onClick={handleSuccessDone}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 hover:bg-slate-50"
+              >
+                No, done
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitAnother}
+                className="inline-flex h-9 items-center justify-center rounded-md bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Yes, submit another
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

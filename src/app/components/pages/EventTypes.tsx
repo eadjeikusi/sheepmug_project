@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, Search, Pencil, Trash2, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranch } from '../../contexts/BranchContext';
+import { withBranchScope } from '@/utils/branchScopeHeaders';
 
 export interface EventTypeRow {
   id: string;
@@ -16,8 +18,11 @@ export interface EventTypeRow {
   updated_at?: string | null;
 }
 
-export default function EventTypes() {
+export type EventTypesProps = { embedded?: boolean };
+
+export default function EventTypes({ embedded = false }: EventTypesProps) {
   const { token } = useAuth();
+  const { selectedBranch } = useBranch();
   const [rows, setRows] = useState<EventTypeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -37,7 +42,9 @@ export default function EventTypes() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/event-types', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch('/api/event-types', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to load');
       setRows(Array.isArray(data) ? data : []);
@@ -47,7 +54,7 @@ export default function EventTypes() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, selectedBranch?.id]);
 
   useEffect(() => {
     void fetchRows();
@@ -82,10 +89,10 @@ export default function EventTypes() {
       if (editing) {
         const res = await fetch(`/api/event-types/${encodeURIComponent(editing.id)}`, {
           method: 'PATCH',
-          headers: {
+          headers: withBranchScope(selectedBranch?.id, {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
-          },
+          }),
           body: JSON.stringify({
             name: formName.trim(),
             slug: formSlug.trim() || undefined,
@@ -99,10 +106,10 @@ export default function EventTypes() {
       } else {
         const res = await fetch('/api/event-types', {
           method: 'POST',
-          headers: {
+          headers: withBranchScope(selectedBranch?.id, {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
-          },
+          }),
           body: JSON.stringify({
             name: formName.trim(),
             slug: formSlug.trim() || undefined,
@@ -129,7 +136,7 @@ export default function EventTypes() {
     try {
       const res = await fetch(`/api/event-types/${encodeURIComponent(r.id)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data as { error?: string }).error || 'Delete failed');
@@ -151,8 +158,8 @@ export default function EventTypes() {
     : rows;
 
   return (
-    <div className="flex flex-col flex-1 bg-gray-50/80 min-h-0">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+    <div className={embedded ? '' : 'flex flex-col flex-1 bg-gray-50/80 min-h-0'}>
+      <div className={embedded ? '' : 'mx-auto w-full max-w-6xl px-4 py-8 md:px-8'}>
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Event types</h1>
@@ -163,7 +170,7 @@ export default function EventTypes() {
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
           >
             <Plus className="h-4 w-4" />
             Add type
@@ -178,7 +185,7 @@ export default function EventTypes() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search types…"
-              className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm focus:border-indigo-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </label>
 
@@ -193,16 +200,16 @@ export default function EventTypes() {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/90">
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Type
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Slug
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
                       Description
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500">
                       Actions
                     </th>
                   </tr>
@@ -259,7 +266,7 @@ export default function EventTypes() {
           <div className="fixed inset-0 z-[110] bg-black/40" onClick={() => setModalOpen(false)} />
           <div className="fixed left-1/2 top-1/2 z-[120] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
             <div className="mb-4 flex items-center gap-2">
-              <Tag className="h-5 w-5 text-indigo-600" />
+              <Tag className="h-5 w-5 text-blue-600" />
               <h2 className="text-lg font-semibold text-gray-900">
                 {editing ? 'Edit event type' : 'New event type'}
               </h2>
@@ -315,7 +322,7 @@ export default function EventTypes() {
                 type="button"
                 disabled={saving}
                 onClick={() => void handleSave()}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save'}
               </button>

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { useState } from 'react';
 import type { Event, Member } from '../../utils/mockData';
 import { toast } from 'sonner';
+import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
 
 interface EventAttendanceModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
             <h2 className="text-2xl font-semibold text-gray-900">Take Attendance</h2>
             <p className="text-sm text-gray-500 mt-1">{event.title}</p>
             <div className="flex items-center space-x-4 mt-3 text-sm text-gray-600">
-              <span>📅 {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span>📅 {formatLongWeekdayDate(String(event.date)) || '—'}</span>
               <span>🕒 {event.time}</span>
               <span>📍 {event.location}</span>
             </div>
@@ -98,7 +99,7 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
         </div>
 
         {/* Stats */}
-        <div className="px-8 pt-6 pb-4 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-100">
+        <div className="px-8 pt-6 pb-4 bg-gradient-to-r from-blue-50 to-blue-50 border-b border-blue-100">
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
               <Users className="w-6 h-6 text-gray-400 mx-auto mb-2" />
@@ -106,13 +107,13 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
               <p className="text-sm text-gray-500 mt-1">Total Members</p>
             </div>
             <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
-              <UserCheck className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-semibold text-green-700">{attendees.size}</p>
+              <UserCheck className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-2xl font-semibold text-blue-700">{attendees.size}</p>
               <p className="text-sm text-gray-500 mt-1">Present</p>
             </div>
             <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
-              <Check className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-              <p className="text-2xl font-semibold text-indigo-700">{attendanceRate}%</p>
+              <Check className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+              <p className="text-2xl font-semibold text-blue-700">{attendanceRate}%</p>
               <p className="text-sm text-gray-500 mt-1">Attendance Rate</p>
             </div>
           </div>
@@ -127,7 +128,7 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
             className={`flex items-center px-4 py-2.5 text-white rounded-xl transition-all shadow-sm ${
               isScanning 
                 ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-indigo-600 hover:bg-indigo-700'
+                : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
             <QrCode className={`w-4 h-4 mr-2 ${isScanning ? 'animate-pulse' : ''}`} />
@@ -148,7 +149,7 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
                   animate={{ opacity: 1 }}
                   className={`flex items-center space-x-3 p-4 rounded-2xl border-2 transition-all text-left ${
                     isPresent
-                      ? 'border-green-500 bg-green-50'
+                      ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
@@ -159,21 +160,21 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
                       className="w-12 h-12 rounded-xl object-cover"
                     />
                     {isPresent && (
-                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
+                      <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white">
                         <Check className="w-3 h-3 text-white" />
                       </div>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h4 className={`font-semibold ${isPresent ? 'text-green-900' : 'text-gray-900'}`}>
+                    <h4 className={`font-semibold ${isPresent ? 'text-blue-900' : 'text-gray-900'}`}>
                       {member.fullName}
                     </h4>
-                    <p className={`text-sm ${isPresent ? 'text-green-600' : 'text-gray-500'}`}>
+                    <p className={`text-sm ${isPresent ? 'text-blue-600' : 'text-gray-500'}`}>
                       {member.email}
                     </p>
                   </div>
                   {isPresent && (
-                    <div className="text-green-600">
+                    <div className="text-blue-600">
                       <Check className="w-6 h-6" />
                     </div>
                   )}
@@ -208,7 +209,7 @@ export default function EventAttendanceModal({ isOpen, onClose, event, groupMemb
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium"
+              className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
             >
               Save Attendance ({attendees.size})
             </button>

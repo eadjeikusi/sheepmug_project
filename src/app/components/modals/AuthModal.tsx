@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Eye, EyeOff, Church, Users, Calendar, Heart } from 'lucide-react';
+import { X, Eye, EyeOff, Users, Calendar, Heart, Church } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -139,11 +139,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
               <div className="bg-white rounded-3xl shadow-2xl overflow-hidden">
                 <div className="grid md:grid-cols-2 min-h-[600px]">
                   {/* Left Panel - Branding */}
-                  <div className="relative bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-500 p-12 flex flex-col justify-center items-center text-white overflow-hidden">
+                  <div className="relative bg-gradient-to-br from-blue-400 via-blue-400 to-blue-500 p-12 flex flex-col justify-center items-center text-white overflow-hidden">
                     {/* Decorative Background Elements */}
                     <div className="absolute inset-0 opacity-10">
                       <div className="absolute top-10 left-10 w-64 h-64 bg-white rounded-full blur-3xl" />
-                      <div className="absolute bottom-10 right-10 w-96 h-96 bg-emerald-600 rounded-full blur-3xl" />
+                      <div className="absolute bottom-10 right-10 w-96 h-96 bg-blue-600 rounded-full blur-3xl" />
                     </div>
 
                     <div className="relative z-10 text-center">
@@ -152,9 +152,13 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
                         transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-                        className="mb-8 inline-flex items-center justify-center w-20 h-20 bg-white/20 backdrop-blur-lg rounded-2xl"
+                        className="mb-8 inline-flex items-center justify-center w-24 h-24 bg-white/95 backdrop-blur-lg rounded-2xl p-2 shadow-lg"
                       >
-                        <Church className="w-10 h-10 text-white" />
+                        <img
+                          src="/sheepmug-logo.png"
+                          alt=""
+                          className="w-full h-full object-contain"
+                        />
                       </motion.div>
 
                       {/* Title */}
@@ -162,10 +166,18 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
-                        className="text-4xl font-bold mb-4"
+                        className="text-4xl font-bold mb-2"
                       >
-                        Welcome to ChurchHub!
+                        SheepMug
                       </motion.h2>
+                      <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.35 }}
+                        className="text-xl font-medium text-white/95 mb-6"
+                      >
+                        Discipleship Made Easy
+                      </motion.p>
 
                       <motion.p
                         initial={{ opacity: 0, y: 20 }}
@@ -242,7 +254,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                           {mode === 'login' ? 'Don\'t have an account?' : 'Already have an account?'}{' '}
                           <button
                             onClick={toggleMode}
-                            className="text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                            className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
                           >
                             {mode === 'login' ? 'Sign Up' : 'Sign In'}
                           </button>
@@ -270,7 +282,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                                   placeholder="John"
                                   value={formData.firstName}
                                   onChange={(e) => handleInputChange('firstName', e.target.value)}
-                                  className="h-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                  className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                                   required={mode === 'signup'}
                                 />
                               </div>
@@ -284,7 +296,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                                   placeholder="Doe"
                                   value={formData.lastName}
                                   onChange={(e) => handleInputChange('lastName', e.target.value)}
-                                  className="h-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                  className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                                   required={mode === 'signup'}
                                 />
                               </div>
@@ -302,7 +314,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                             placeholder="john.doe@example.com"
                             value={formData.email}
                             onChange={(e) => handleInputChange('email', e.target.value)}
-                            className="h-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                            className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                             required
                           />
                         </div>
@@ -318,7 +330,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                               placeholder="••••••••"
                               value={formData.password}
                               onChange={(e) => handleInputChange('password', e.target.value)}
-                              className="h-12 pr-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                              className="h-12 pr-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                               required
                             />
                             <button
@@ -353,7 +365,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                                 placeholder="••••••••"
                                 value={formData.confirmPassword}
                                 onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                                className="h-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                                 required={mode === 'signup'}
                               />
                             </motion.div>
@@ -378,7 +390,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                                 placeholder="My Church"
                                 value={formData.organizationName}
                                 onChange={(e) => handleInputChange('organizationName', e.target.value)}
-                                className="h-12 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                className="h-12 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                                 required={mode === 'signup'}
                               />
                             </motion.div>
@@ -399,7 +411,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                           <div className="flex justify-end">
                             <button
                               type="button"
-                              className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
                             >
                               Forgot password?
                             </button>
@@ -409,7 +421,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                         <Button
                           type="submit"
                           disabled={loading}
-                          className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors"
+                          className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
                         >
                           {loading ? (
                             <div className="flex items-center gap-2">
@@ -452,11 +464,11 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
                           className="text-xs text-gray-500 text-center mt-6"
                         >
                           By creating an account, you agree to our{' '}
-                          <a href="#" className="text-emerald-600 hover:underline">
+                          <a href="#" className="text-blue-600 hover:underline">
                             Terms of Service
                           </a>{' '}
                           and{' '}
-                          <a href="#" className="text-emerald-600 hover:underline">
+                          <a href="#" className="text-blue-600 hover:underline">
                             Privacy Policy
                           </a>
                         </motion.p>

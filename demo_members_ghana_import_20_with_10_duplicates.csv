@@ -1,0 +1,21 @@
+first_name,last_name,phone,phone_country_iso,email,dob,gender,marital_status,occupation,address,emergency_contact_name,emergency_contact_phone,emergency_contact_phone_country_iso,date_joined,status
+Kwame,Asare,+233241239001,GH,kwame.asare.dup1@example.com,1990-03-14,male,married,Teacher,Dansoman Accra,Adwoa Asare,+233201119001,GH,2024-01-10,active
+Ama,Ofori,+233241239002,GH,ama.ofori.dup2@example.com,1994-07-22,female,single,Nurse,Adenta Accra,Kofi Ofori,+233201119002,GH,2024-02-15,active
+Kofi,Boateng,+233241239003,GH,kofi.boateng.dup3@example.com,1988-11-05,male,married,Accountant,Kumasi Central,Akosua Boateng,+233201119003,GH,2023-09-08,active
+Akosua,Mensah,+233241239004,GH,akosua.mensah.dup4@example.com,1996-01-19,female,single,Software Engineer,East Legon Accra,Yaw Mensah,+233201119004,GH,2024-03-02,active
+Yaw,Owusu,+233241239005,GH,yaw.owusu.dup5@example.com,1985-05-30,male,married,Entrepreneur,Takoradi Market Circle,Efua Owusu,+233201119005,GH,2022-12-20,active
+Efua,Agyeman,+233241239006,GH,efua.agyeman.dup6@example.com,1992-09-12,female,married,Pharmacist,Cape Coast Pedu,Kojo Agyeman,+233201119006,GH,2023-04-18,active
+Kojo,Antwi,+233241239007,GH,kojo.antwi.dup7@example.com,1991-02-28,male,single,Graphic Designer,Tema Community 9,Abena Antwi,+233201119007,GH,2024-05-11,active
+Abena,Nkrumah,+233241239008,GH,abena.nkrumah.dup8@example.com,1998-12-03,female,single,Student,Madina Zongo Junction,Nana Nkrumah,+233201119008,GH,2024-06-01,active
+Nana,Appiah,+233241239009,GH,nana.appiah.dup9@example.com,1987-08-17,male,married,Civil Engineer,Sunyani New Town,Mavis Appiah,+233201119009,GH,2021-11-09,active
+Mavis,Darko,+233241239010,GH,mavis.darko.dup10@example.com,1993-10-26,female,married,Banker,Koforidua Effiduase,Daniel Darko,+233201119010,GH,2023-07-24,active
+Prince,Boadu,+233241239011,GH,prince.boadu.new1@example.com,1994-04-13,male,single,Data Analyst,Achimota Accra,Janet Boadu,+233201119011,GH,2024-09-01,active
+Janet,Frimpong,+233241239012,GH,janet.frimpong.new2@example.com,1991-12-30,female,married,Administrator,Osu Accra,Kojo Frimpong,+233201119012,GH,2024-09-03,active
+Kojo,Sarpong,+233241239013,GH,kojo.sarpong.new3@example.com,1984-06-08,male,married,Architect,Airport Residential Accra,Maria Sarpong,+233201119013,GH,2024-09-04,active
+Maria,Adjei,+233241239014,GH,maria.adjei.new4@example.com,1999-02-11,female,single,Student,Nungua Accra,Kwesi Adjei,+233201119014,GH,2024-09-05,active
+Kwesi,Nyarko,+233241239015,GH,kwesi.nyarko.new5@example.com,1986-09-19,male,married,Mechanic,Kasoa,Ohemaa Nyarko,+233201119015,GH,2024-09-06,active
+Ohemaa,Darko,+233241239016,GH,ohemaa.darko.new6@example.com,1993-01-27,female,single,Teacher,Weija Accra,Yaw Darko,+233201119016,GH,2024-09-07,active
+Yaw,Kyeremeh,+233241239017,GH,yaw.kyeremeh.new7@example.com,1990-05-04,male,married,Procurement Officer,Koforidua,Abena Kyeremeh,+233201119017,GH,2024-09-08,active
+Abena,Opoku,+233241239018,GH,abena.opoku.new8@example.com,1997-08-22,female,single,UI Designer,Tema Community 2,Kofi Opoku,+233201119018,GH,2024-09-09,active
+Kofi,Danquah,+233241239019,GH,kofi.danquah.new9@example.com,1988-03-15,male,married,Lawyer,Kumasi Ahodwo,Efua Danquah,+233201119019,GH,2024-09-10,active
+Efua,Ankomah,+233241239020,GH,efua.ankomah.new10@example.com,1995-11-06,female,single,Nurse,Takoradi,Mensah Ankomah,+233201119020,GH,2024-09-11,active

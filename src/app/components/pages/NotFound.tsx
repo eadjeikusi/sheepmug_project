@@ -9,7 +9,7 @@ export default function NotFound() {
       <p className="mt-2 text-gray-500">The page you're looking for doesn't exist.</p>
       <Link
         to="/"
-        className="mt-8 flex items-center px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+        className="mt-8 flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
       >
         <Home className="w-5 h-5 mr-2" />
         Back to Dashboard

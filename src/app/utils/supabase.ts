@@ -1,27 +1,37 @@
-// Mock supabase client
-export const supabase = {
-  auth: {
-    getSession: async () => ({ data: { session: null }, error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-    signInWithPassword: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
-    signUp: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
-    signOut: async () => ({ error: null }),
-  },
-  from: () => ({
-    select: () => ({
-      eq: () => ({
-        single: async () => ({ data: null, error: null }),
-        maybeSingle: async () => ({ data: null, error: null }),
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+export const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : ({
+      auth: {
+        getSession: async () => ({ data: { session: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+        signInWithPassword: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
+        signUp: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
+        signOut: async () => ({ error: null }),
+      },
+      channel: () => ({
+        on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
       }),
-      order: () => ({
-        limit: async () => ({ data: [], error: null }),
+      removeChannel: () => undefined,
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            single: async () => ({ data: null, error: null }),
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+          order: () => ({
+            limit: async () => ({ data: [], error: null }),
+          }),
+        }),
+        insert: async () => ({ data: null, error: null }),
+        update: async () => ({ data: null, error: null }),
+        delete: async () => ({ data: null, error: null }),
       }),
-    }),
-    insert: async () => ({ data: null, error: null }),
-    update: async () => ({ data: null, error: null }),
-    delete: async () => ({ data: null, error: null }),
-  }),
-} as any;
+    } as any);
 
 // Database types based on our schema
 export interface Organization {

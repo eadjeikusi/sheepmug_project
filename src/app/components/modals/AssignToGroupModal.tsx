@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranch } from '../../contexts/BranchContext';
+import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { toast } from 'sonner';
 import { X, Search, Check, Users, GitFork, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -123,18 +124,20 @@ function AssignToGroupModal({
       try {
         const url = new URL('/api/groups', window.location.origin);
         url.searchParams.set('tree', '1');
+        url.searchParams.set('include_system', '1');
         if (selectedBranch?.id) {
           url.searchParams.set('branch_id', selectedBranch.id);
         }
         const response = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
         });
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || 'Failed to fetch available groups');
         }
-        const allGroups: Group[] = await response.json();
-        setAvailableGroups(Array.isArray(allGroups) ? allGroups : []);
+        const raw = await response.json();
+        const allGroups = Array.isArray(raw) ? raw : Array.isArray(raw?.groups) ? raw.groups : [];
+        setAvailableGroups(allGroups as Group[]);
       } catch (err: any) {
         setError(err.message);
         toast.error(err.message);
@@ -197,33 +200,37 @@ function AssignToGroupModal({
       let alreadyInGroup = 0;
 
       for (const groupId of groupIdsToAssign) {
-        for (const memberId of selectedMemberIds) {
-          const response = await fetch(`/api/group-members`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              group_id: groupId,
-              member_id: memberId,
-              role_in_group: 'member',
-            }),
-          });
-          const errorData = await response.json().catch(() => ({}));
-
-          if (response.status === 409 || (errorData as { code?: string }).code === 'ALREADY_GROUP_MEMBER') {
-            alreadyInGroup += 1;
-            continue;
-          }
-          if (!response.ok) {
-            throw new Error(
-              (errorData as { error?: string }).error ||
-                `Failed to assign member ${memberId} to group ${groupId}`
-            );
-          }
-          added += 1;
+        const response = await fetch(`/api/group-members/bulk`, {
+          method: 'POST',
+          headers: withBranchScope(selectedBranch?.id, {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          }),
+          body: JSON.stringify({
+            group_id: groupId,
+            member_ids: [...selectedMemberIds],
+            role_in_group: 'member',
+          }),
+        });
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 409 || (errorData as { code?: string }).code === 'ALREADY_GROUP_MEMBER') {
+          alreadyInGroup += selectedMemberIds.length;
+          continue;
         }
+        if (!response.ok) {
+          throw new Error(
+            (errorData as { error?: string }).error ||
+              `Failed to assign members to group ${groupId}`
+          );
+        }
+        const payload = errorData as {
+          added?: string[];
+          skipped?: { reason?: string }[];
+          inserted_count?: number;
+        };
+        added += payload.inserted_count ?? payload.added?.length ?? 0;
+        const skipped = payload.skipped?.filter((s) => s.reason === 'already_in_group').length ?? 0;
+        alreadyInGroup += skipped;
       }
 
       if (alreadyInGroup > 0) {
@@ -286,13 +293,13 @@ function AssignToGroupModal({
               onClick={() => toggleSelect(node.id)}
               className={`flex-1 flex items-center justify-between gap-2 p-2.5 rounded-lg border text-left min-w-0 ${
                 isSelected
-                  ? 'border-indigo-500 bg-indigo-50'
+                  ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-200 bg-white hover:bg-gray-50'
               }`}
             >
               <div className="flex items-center space-x-3 min-w-0">
-                <div className="w-9 h-9 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
-                  <Users className="w-4 h-4 text-indigo-600" />
+                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
+                  <Users className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-semibold text-sm text-gray-900 truncate">{node.name}</h3>
@@ -302,19 +309,19 @@ function AssignToGroupModal({
                     {memberCount > 0 ? ` · ${memberCount} member${memberCount === 1 ? '' : 's'}` : ''}
                   </p>
                   {hasChildren && isSelected && (
-                    <p className="text-[10px] text-indigo-600 mt-0.5 font-medium">
+                    <p className="text-[10px] text-blue-600 mt-0.5 font-medium">
                       Main group only — subgroups not included
                     </p>
                   )}
                   {!node.parent_group_id ? null : isSelected ? (
-                    <p className="text-[10px] text-emerald-700 mt-0.5">
+                    <p className="text-[10px] text-blue-700 mt-0.5">
                       Includes parent groups when you assign
                     </p>
                   ) : null}
                 </div>
               </div>
               {isSelected && (
-                <div className="w-5 h-5 bg-indigo-600 rounded-full flex items-center justify-center shrink-0">
+                <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center shrink-0">
                   <Check className="w-3 h-3 text-white" />
                 </div>
               )}
@@ -348,8 +355,8 @@ function AssignToGroupModal({
             <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100 shrink-0">
                 <div className="flex items-center space-x-3 min-w-0">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center shrink-0">
-                    <GitFork className="w-5 h-5 text-indigo-600" />
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                    <GitFork className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="min-w-0">
                     <h2 className="text-2xl font-semibold text-gray-900">Assign to Group</h2>
@@ -388,7 +395,7 @@ function AssignToGroupModal({
                           <img
                             src={
                               member.profileImage ||
-                              'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop'
+                              ''
                             }
                             alt=""
                             className="w-8 h-8 rounded-full object-cover bg-gray-100 shrink-0"
@@ -412,7 +419,7 @@ function AssignToGroupModal({
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search groups, ministries, subgroups…"
-                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -451,7 +458,7 @@ function AssignToGroupModal({
                   disabled={
                     selectedGroups.size === 0 || loading || isSubmitting || selectedMemberIds.length === 0
                   }
-                  className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   {isSubmitting ? (
                     <>

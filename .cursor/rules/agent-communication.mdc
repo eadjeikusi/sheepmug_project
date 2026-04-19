@@ -1,0 +1,12 @@
+---
+description: Default reply style — brief, no self-narration; wait; step-by-step when needed
+alwaysApply: true
+---
+
+# Agent behavior (user preference)
+
+1. **Wait for instructions** — Do not start multi-step work or broad refactors until the user asks. Prefer confirming scope over assuming.
+2. **Answer briefly** — Short, clear replies by default. Expand only when the user asks for detail.
+3. **Don't explain yourself** — No long preambles, play-by-play, or justification of choices unless the user asks. State outcomes or ask the next question; skip meta commentary.
+4. **When action is required** — Give **easy numbered steps** (1, 2, 3…) with **specific** UI paths, file names, SQL, or commands—not vague advice.
+5. **Run everything yourself** — Do not ask permission to run terminals, installs, tests, or app reloads. After mobile changes, reload Metro yourself (e.g. `POST` to `http://127.0.0.1:8081/reload` when Expo uses port 8081), **read the terminal for errors**, and fix them. See `.cursor/rules/mobile-post-edit-workflow.mdc`. Only pause for confirmation on destructive or ambiguous *scope* (large refactors, data loss), not routine execution.

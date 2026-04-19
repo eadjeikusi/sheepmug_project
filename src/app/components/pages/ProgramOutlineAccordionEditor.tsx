@@ -13,6 +13,7 @@ import {
   StickyNote,
   Trash2,
 } from 'lucide-react';
+import { TimePickerField } from '@/components/datetime';
 
 export type ProgramItemDraft = {
   id: string;
@@ -323,8 +324,8 @@ type Props = {
 };
 
 const inputCls =
-  'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/15';
-const labelCls = 'text-[11px] font-medium uppercase tracking-wide text-gray-500';
+  'w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/15';
+const labelCls = 'text-[11px] font-medium text-gray-500';
 
 export default function ProgramOutlineAccordionEditor({ value, onChange, variant = 'full' }: Props) {
   const setSections = useCallback(
@@ -489,7 +490,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
             <div className="flex justify-between gap-3">
               <dt className="text-gray-500">{exceeds ? 'Over' : 'Remaining'}</dt>
               <dd
-                className={`font-medium tabular-nums ${exceeds ? 'text-red-600' : 'text-emerald-700'}`}
+                className={`font-medium tabular-nums ${exceeds ? 'text-red-600' : 'text-blue-700'}`}
               >
                 {exceeds && remaining != null
                   ? formatHoursMinutes(Math.abs(remaining))
@@ -522,7 +523,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
         <button
           type="button"
           onClick={addSection}
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-800 hover:bg-indigo-100"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
         >
           <Plus className="h-3.5 w-3.5" />
           Part
@@ -552,7 +553,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                     type="button"
                     title="Duplicate part"
                     onClick={() => duplicateSection(sIdx)}
-                    className="rounded p-1 text-gray-500 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-700 group-hover/partsum:opacity-100"
+                    className="rounded p-1 text-gray-500 opacity-0 transition-opacity hover:bg-blue-50 hover:text-blue-700 group-hover/partsum:opacity-100"
                   >
                     <Copy className="h-4 w-4" />
                   </button>
@@ -602,11 +603,12 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                       <Clock className="h-3 w-3" aria-hidden />
                       Block start
                     </label>
-                    <input
-                      type="time"
-                      className={`${inputCls} mt-1`}
+                    <TimePickerField
+                      className="mt-1"
                       value={section.start_time}
-                      onChange={(e) => updateSection(sIdx, { start_time: e.target.value })}
+                      onChange={(v) => updateSection(sIdx, { start_time: v })}
+                      placeholder="Start"
+                      triggerClassName={`${inputCls} h-8 min-h-8 shadow-none`}
                     />
                   </div>
                   <div>
@@ -614,11 +616,12 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                       <Clock className="h-3 w-3" aria-hidden />
                       Block end
                     </label>
-                    <input
-                      type="time"
-                      className={`${inputCls} mt-1`}
+                    <TimePickerField
+                      className="mt-1"
                       value={section.end_time}
-                      onChange={(e) => updateSection(sIdx, { end_time: e.target.value })}
+                      onChange={(v) => updateSection(sIdx, { end_time: v })}
+                      placeholder="End"
+                      triggerClassName={`${inputCls} h-8 min-h-8 shadow-none`}
                     />
                   </div>
                 </div>
@@ -636,12 +639,12 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                   />
                 </div>
 
-                <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Activities</p>
+                <p className="text-[11px] font-medium text-gray-500">Activities</p>
                 <div className="space-y-2">
                   {section.items.map((item, iIdx) => (
                     <details
                       key={item.id}
-                      className="act-item group/act rounded-lg border border-gray-100 bg-white open:border-indigo-100 open:ring-1 open:ring-indigo-100"
+                      className="act-item group/act rounded-lg border border-gray-100 bg-white open:border-blue-100 open:ring-1 open:ring-blue-100"
                     >
                       <summary className="group/actsum flex cursor-pointer list-none items-center gap-2 px-2.5 py-2 text-left text-sm [&::-webkit-details-marker]:hidden">
                         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-open/act:rotate-180" />
@@ -650,7 +653,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                           {(() => {
                             const em = activityEffectiveMinutes(item);
                             return em > 0 ? (
-                              <span className="ml-2 font-normal text-indigo-600">
+                              <span className="ml-2 font-normal text-blue-600">
                                 · {formatHoursMinutes(em)}
                               </span>
                             ) : null;
@@ -667,7 +670,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                             type="button"
                             title="Duplicate activity"
                             onClick={() => duplicateItem(sIdx, iIdx)}
-                            className="rounded p-0.5 text-gray-500 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-700 group-hover/actsum:opacity-100"
+                            className="rounded p-0.5 text-gray-500 opacity-0 transition-opacity hover:bg-blue-50 hover:text-blue-700 group-hover/actsum:opacity-100"
                           >
                             <Copy className="h-3.5 w-3.5" />
                           </button>
@@ -713,20 +716,22 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className={labelCls}>Start time</label>
-                            <input
-                              type="time"
-                              className={`${inputCls} mt-1`}
+                            <TimePickerField
+                              className="mt-1"
                               value={item.start_time}
-                              onChange={(e) => updateItem(sIdx, iIdx, { start_time: e.target.value })}
+                              onChange={(v) => updateItem(sIdx, iIdx, { start_time: v })}
+                              placeholder="Start"
+                              triggerClassName={`${inputCls} h-8 min-h-8 shadow-none`}
                             />
                           </div>
                           <div>
                             <label className={labelCls}>End time</label>
-                            <input
-                              type="time"
-                              className={`${inputCls} mt-1`}
+                            <TimePickerField
+                              className="mt-1"
                               value={item.end_time}
-                              onChange={(e) => updateItem(sIdx, iIdx, { end_time: e.target.value })}
+                              onChange={(v) => updateItem(sIdx, iIdx, { end_time: v })}
+                              placeholder="End"
+                              triggerClassName={`${inputCls} h-8 min-h-8 shadow-none`}
                             />
                           </div>
                         </div>
@@ -784,7 +789,7 @@ export default function ProgramOutlineAccordionEditor({ value, onChange, variant
                 <button
                   type="button"
                   onClick={() => addItem(sIdx)}
-                  className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 py-2 text-xs font-medium text-gray-600 hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-800"
+                  className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 py-2 text-xs font-medium text-gray-600 hover:border-blue-200 hover:bg-blue-50/50 hover:text-blue-800"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add activity

@@ -62,15 +62,15 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
                     type="text"
                     value={familyName}
                     onChange={(e) => setFamilyName(e.target.value)}
-                    className="text-2xl font-semibold text-gray-900 border-b border-indigo-500 focus:outline-none"
+                    className="text-2xl font-semibold text-gray-900 border-b border-blue-500 focus:outline-none"
                   />
-                  <button onClick={handleSaveName} className="text-sm text-indigo-600 hover:text-indigo-800">Save</button>
+                  <button onClick={handleSaveName} className="text-sm text-blue-600 hover:text-blue-800">Save</button>
                   <button onClick={() => { setFamilyName(familyGroup.familyName); setIsEditing(false); }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
                 </div>
               ) : (
                 <div className="flex items-center space-x-2">
                   <h2 className="text-2xl font-semibold text-gray-900">{familyGroup.familyName}</h2>
-                  <button onClick={() => { setFamilyName(familyGroup.familyName); setIsEditing(true); }} className="text-sm text-gray-500 hover:text-indigo-600">Edit</button>
+                  <button onClick={() => { setFamilyName(familyGroup.familyName); setIsEditing(true); }} className="text-sm text-gray-500 hover:text-blue-600">Edit</button>
                 </div>
               )}
               <p className="text-sm text-gray-500 mt-1">{members.length} family members</p>
@@ -92,10 +92,10 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
           {/* Head of Household */}
           {headOfHousehold && (
             <div className="mb-6">
-              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+              <h3 className="text-sm font-medium text-gray-500 mb-3">
                 Head of Household
               </h3>
-              <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
                 <div className="flex items-center space-x-4">
                   <img
                     src={headOfHousehold.profileImage}
@@ -108,7 +108,7 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
                     <p className="text-sm text-gray-600">{headOfHousehold.phoneNumber}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-semibold text-indigo-600">N/A</p>
+                    <p className="text-2xl font-semibold text-blue-600">N/A</p>
                     <p className="text-sm text-gray-500 mt-1">Attendance</p>
                   </div>
                 </div>
@@ -118,7 +118,7 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
 
           {/* Family Members */}
           <div>
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+            <h3 className="text-sm font-medium text-gray-500 mb-3">
               Family Members
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -127,7 +127,7 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
                   key={member.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all"
+                  className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-blue-200 hover:shadow-sm transition-all"
                 >
                   <div className="flex items-start space-x-3">
                     <img
@@ -183,7 +183,7 @@ export default function FamilyGroupDetailModal({ isOpen, onClose, familyGroup, m
           </button>
           <button
             onClick={onClose}
-            className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium"
+            className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
           >
             Close
           </button>

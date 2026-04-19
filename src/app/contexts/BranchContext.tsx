@@ -59,13 +59,16 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       if (data.length > 0) {
         const storedBranchId = localStorage.getItem('selectedBranchId');
         const userBranchId = user?.branch_id;
-        
-        
-        const found = data.find((b: Branch) => b.id === (storedBranchId || userBranchId));
-        
+
+        /** Assigned branch in profile wins over stale localStorage so X-Branch-Id matches server checks. */
+        const byUser =
+          userBranchId && data.some((b: Branch) => b.id === userBranchId) ? userBranchId : null;
+        const preferredId = byUser || storedBranchId || userBranchId;
+        const found = preferredId ? data.find((b: Branch) => b.id === preferredId) : undefined;
+
         const branchToSelect = found || data[0];
         setSelectedBranchState(branchToSelect);
-        
+
         // Persist selection
         localStorage.setItem('selectedBranchId', branchToSelect.id);
       } else {
@@ -88,10 +91,17 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     }
   }, [isAuthenticated, fetchBranches]);
 
-  const setSelectedBranch = (branch: Branch) => {
-    setSelectedBranchState(branch);
-    localStorage.setItem('selectedBranchId', branch.id);
-  };
+  const setSelectedBranch = useCallback(
+    (branch: Branch) => {
+      if (user?.is_org_owner !== true && user?.branch_id && branch.id !== user.branch_id) {
+        toast.error('Only the organization owner can switch branches.');
+        return;
+      }
+      setSelectedBranchState(branch);
+      localStorage.setItem('selectedBranchId', branch.id);
+    },
+    [user?.is_org_owner, user?.branch_id]
+  );
 
   const refreshBranches = async () => {
     await fetchBranches();

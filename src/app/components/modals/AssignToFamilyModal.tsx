@@ -81,8 +81,8 @@ export default function AssignToFamilyModal({
               {/* Header */}
               <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                    <Home className="w-5 h-5 text-indigo-600" />
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <Home className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
                     <h2 className="text-2xl font-semibold text-gray-900">Assign to Family Group</h2>
@@ -132,7 +132,7 @@ export default function AssignToFamilyModal({
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search family groups..."
-                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -149,8 +149,8 @@ export default function AssignToFamilyModal({
                           onClick={() => toggleFamilySelection(family.id)}
                           className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all text-left ${
                             isSelected
-                              ? 'border-indigo-500 bg-indigo-50'
-                              : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                           }`}
                         >
                           <div className="flex items-center space-x-3">
@@ -164,7 +164,7 @@ export default function AssignToFamilyModal({
                           </div>
 
                           {isSelected && (
-                            <div className="w-5 h-5 bg-indigo-600 rounded-full flex items-center justify-center">
+                            <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
                               <Check className="w-3 h-3 text-white" />
                             </div>
                           )}
@@ -181,7 +181,7 @@ export default function AssignToFamilyModal({
 
               {/* Footer */}
               <div className="flex items-center justify-end space-x-3 px-8 py-4 border-t border-gray-100 bg-gray-50">
-                {statusMessage && <p className="text-sm text-indigo-600">{statusMessage}</p>}
+                {statusMessage && <p className="text-sm text-blue-600">{statusMessage}</p>}
                 <button
                   onClick={onClose}
                   className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all"
@@ -191,7 +191,7 @@ export default function AssignToFamilyModal({
                 <button
                   onClick={handleAssign}
                   disabled={selectedFamilies.size === 0 || isLoading}
-                  className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   {isLoading ? (
                     <>

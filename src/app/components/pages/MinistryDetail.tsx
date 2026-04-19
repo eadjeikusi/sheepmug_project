@@ -1,14 +1,30 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, Link } from 'react-router';
+import { compressImageForUpload, PUBLIC_BANNER_IMAGE_OPTIONS } from '../../utils/compressImageForUpload';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router';
 import QRCode from 'qrcode';
 import { Group, Member } from '@/types';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranch } from '../../contexts/BranchContext';
+import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { toast } from 'sonner';
 import AddMembersModal from '../modals/AddMembersModal';
 import ManageSubgroupModal from '../modals/ManageSubgroupModal';
 import MemberDetailPanel from '../panels/MemberDetailPanel';
 import DeleteModal from '../modals/DeleteModal';
 import MinistryCard from '../cards/MinistryCard';
+import CustomFieldsSection from '../CustomFieldsSection';
+import PhoneCountryInput from '../PhoneCountryInput';
+import GroupTasksSection from '../groups/GroupTasksSection';
+import BulkSmsComposeModal from '../modals/BulkSmsComposeModal';
+import { useCustomFieldDefinitions } from '../../hooks/useCustomFieldDefinitions';
+import { e164ToCountryAndNational } from '@/lib/phoneE164';
+import { displayTitleWords } from '@/utils/displayText';
+import {
+  formatLongWeekdayDate,
+  formatLongWeekdayDateTime,
+  formatCalendarCountdown,
+  formatCompactWeekdayDate,
+} from '@/utils/dateDisplayFormat';
 import {
   Trash2,
   ArrowLeft,
@@ -16,7 +32,6 @@ import {
   Mail,
   ChevronRight,
   Globe,
-  UserCheck,
   Download,
   Share2,
   Send,
@@ -31,9 +46,15 @@ import {
   XCircle,
   Ban,
   X,
+  Loader2,
+  Upload,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 
-type DetailTab = 'overview' | 'members' | 'events' | 'requests' | 'subgroups' | 'settings';
+type DetailTab = 'overview' | 'members' | 'events' | 'requests' | 'tasks' | 'subgroups' | 'settings';
+
+const DEFAULT_PUB_PHONE_REGION = 'US';
 
 function embeddedMemberName(gm: { members?: { first_name?: string; last_name?: string } | null }) {
   const m = gm.members;
@@ -80,7 +101,7 @@ const MemberRowAvatar: React.FC<{ name: string; imageUrl: string | null }> = ({ 
   const showImg = Boolean(imageUrl) && !imgFailed;
 
   return (
-    <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-semibold ring-1 ring-black/5">
+    <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold ring-1 ring-black/5">
       {showImg ? (
         <img
           src={imageUrl!}
@@ -110,6 +131,7 @@ function normalizeMemberForDetailPanel(raw: Record<string, unknown> & { id: stri
     last_name: last,
     email: (raw.email as string | null) ?? null,
     phone: typeof phoneRaw === 'string' ? phoneRaw : (phoneRaw as string | null) ?? null,
+    phone_country_iso: (raw.phone_country_iso as string | null | undefined) ?? null,
     dob: (raw.dob as string | null) ?? null,
     gender: (raw.gender as string | null) ?? null,
     marital_status: (raw.marital_status as string | null) ?? null,
@@ -117,6 +139,7 @@ function normalizeMemberForDetailPanel(raw: Record<string, unknown> & { id: stri
     address: (raw.address as string | null) ?? null,
     emergency_contact_name: (raw.emergency_contact_name as string | null) ?? null,
     emergency_contact_phone: (raw.emergency_contact_phone as string | null) ?? null,
+    emergency_contact_phone_country_iso: (raw.emergency_contact_phone_country_iso as string | null | undefined) ?? null,
     date_joined: (raw.date_joined as string | null) ?? null,
     status: (raw.status as string | null) ?? null,
     member_url: (raw.member_url as string | null) ?? null,
@@ -133,8 +156,52 @@ function normalizeMemberForDetailPanel(raw: Record<string, unknown> & { id: stri
       (raw.phoneNumber as string | undefined) ??
       (typeof phoneRaw === 'string' ? phoneRaw : undefined),
     location: (raw.location as string | undefined) ?? (raw.address as string | undefined),
+    custom_fields:
+      raw.custom_fields &&
+      typeof raw.custom_fields === 'object' &&
+      !Array.isArray(raw.custom_fields)
+        ? (raw.custom_fields as Record<string, unknown>)
+        : null,
   };
   return base;
+}
+
+/** Public mini-site is on by default; only explicit false turns it off. */
+function isPublicWebsiteExplicitlyOff(v: unknown): boolean {
+  if (v === false || v === 0) return true;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    return s === 'false' || s === 'f' || s === '0' || s === 'no' || s === 'off';
+  }
+  return false;
+}
+
+/** URL segment for /public/groups/:slug — safe default from ministry name. */
+function suggestPublicSlug(name: string): string {
+  const raw = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 72);
+  return raw || 'ministry';
+}
+
+function normalizeGroupFromApi(raw: Record<string, unknown>): Group {
+  const pubSlug = raw.public_link_slug ?? raw.publicLinkSlug;
+  const pubOn = raw.public_website_enabled ?? raw.publicWebsiteEnabled;
+  const websiteOn =
+    typeof pubOn === 'boolean'
+      ? pubOn
+      : pubOn == null
+        ? true
+        : isPublicWebsiteExplicitlyOff(pubOn)
+          ? false
+          : true;
+  return {
+    ...(raw as unknown as Group),
+    public_link_slug: typeof pubSlug === 'string' ? pubSlug : pubSlug == null ? null : String(pubSlug),
+    public_website_enabled: websiteOn,
+  };
 }
 
 function memberFromGroupRow(gm: {
@@ -314,9 +381,9 @@ function searchRowMatches(row: MemberSearchRow, rawQuery: string): boolean {
 function groupTypeBadgeClass(t: string | null | undefined) {
   const x = (t || '').toLowerCase();
   if (x.includes('music') || x.includes('worship')) return 'bg-pink-100 text-pink-800 border-pink-200';
-  if (x.includes('youth')) return 'bg-violet-100 text-violet-800 border-violet-200';
+  if (x.includes('youth')) return 'bg-blue-100 text-blue-800 border-blue-200';
   if (x.includes('prayer')) return 'bg-rose-50 text-rose-800 border-rose-200';
-  return 'bg-indigo-50 text-indigo-800 border-indigo-200';
+  return 'bg-blue-50 text-blue-800 border-blue-200';
 }
 
 function downloadQrDataUrl(dataUrl: string, filename: string) {
@@ -350,11 +417,30 @@ async function shareUrl(url: string, title: string) {
   }
 }
 
+async function copyLinkToClipboard(label: string, text: string) {
+  if (!text?.trim()) {
+    toast.error('Nothing to copy');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text.trim());
+    toast.success(`${label} copied`);
+  } catch {
+    toast.error('Could not copy');
+  }
+}
+
 const MinistryDetail: React.FC = () => {
   const { groupId } = useParams<{ groupId: string }>();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [launchAssignFromUrl] = useState(() => searchParams.get('assign') === '1');
   const { token } = useAuth();
+  const { selectedBranch } = useBranch();
 
   const [group, setGroup] = useState<Group | null>(null);
+  const [pubContactNational, setPubContactNational] = useState('');
+  const [pubContactCountryIso, setPubContactCountryIso] = useState(DEFAULT_PUB_PHONE_REGION);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -369,7 +455,8 @@ const MinistryDetail: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requestActionBusyId, setRequestActionBusyId] = useState<string | null>(null);
-  const [joinLinkModalOpen, setJoinLinkModalOpen] = useState(false);
+  const [shareLinksModalOpen, setShareLinksModalOpen] = useState(false);
+  const [bulkSmsModalOpen, setBulkSmsModalOpen] = useState(false);
 
   const [isAddMembersModalOpen, setIsAddMembersModalOpen] = useState(false);
   const [availableMembers, setAvailableMembers] = useState<any[]>([]);
@@ -378,17 +465,70 @@ const MinistryDetail: React.FC = () => {
   const [isManageSubgroupModalOpen, setIsManageSubgroupModalOpen] = useState(false);
   const [editingSubgroup, setEditingSubgroup] = useState<Group | null>(null);
 
-  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [activeTab, setActiveTab] = useState<DetailTab>(() => {
+    const t = searchParams.get('tab');
+    if (t === 'tasks') return 'tasks';
+    if (t === 'members') return 'members';
+    if (t === 'requests') return 'requests';
+    return 'overview';
+  });
+  const { definitions: groupCustomFieldDefs } = useCustomFieldDefinitions(
+    'group',
+    activeTab === 'settings' && !!token && !!groupId,
+  );
   const [qrPublic, setQrPublic] = useState('');
   const [qrJoin, setQrJoin] = useState('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [viewingMemberDetail, setViewingMemberDetail] = useState<Member | null>(null);
   const [removeFromGroupConfirmOpen, setRemoveFromGroupConfirmOpen] = useState(false);
+  const [deleteMinistryModalOpen, setDeleteMinistryModalOpen] = useState(false);
+  const [subgroupToDeleteId, setSubgroupToDeleteId] = useState<string | null>(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [assignedRangeStart, setAssignedRangeStart] = useState('');
+  const [assignedRangeEnd, setAssignedRangeEnd] = useState('');
+  const [pulseHighlightIds, setPulseHighlightIds] = useState<string[]>([]);
+  const [pulseHighlightRequestIds, setPulseHighlightRequestIds] = useState<string[]>([]);
 
-  const publicSectionRef = React.useRef<HTMLDivElement>(null);
-  const joinSectionRef = React.useRef<HTMLDivElement>(null);
+  type GroupEventRow = {
+    id: string;
+    title: string;
+    start_time: string;
+    end_time: string | null;
+    event_type: string | null;
+    status: string | null;
+    group_name: string | null;
+  };
+  const [groupEvents, setGroupEvents] = useState<GroupEventRow[]>([]);
+  const [loadingGroupEvents, setLoadingGroupEvents] = useState(true);
+  const [errorGroupEvents, setErrorGroupEvents] = useState<string | null>(null);
+
   const selectAllMembersRef = React.useRef<HTMLInputElement>(null);
+  const publicCoverFileRef = React.useRef<HTMLInputElement>(null);
+  const [publicCoverUploading, setPublicCoverUploading] = useState(false);
+
+  useEffect(() => {
+    if (!launchAssignFromUrl) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (!next.has('assign') && !next.has('tab')) return prev;
+        next.delete('assign');
+        next.delete('tab');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [groupId, launchAssignFromUrl, setSearchParams]);
+
+  useEffect(() => {
+    if (!group) return;
+    const p = e164ToCountryAndNational(
+      group.contact_phone || '',
+      group.contact_phone_country_iso || DEFAULT_PUB_PHONE_REGION,
+    );
+    setPubContactNational(p.national);
+    setPubContactCountryIso(p.countryIso);
+  }, [group?.id, group?.contact_phone, group?.contact_phone_country_iso]);
 
   const fetchGroupDetails = useCallback(async () => {
     if (!groupId || !token) return;
@@ -396,21 +536,80 @@ const MinistryDetail: React.FC = () => {
     setError(null);
     try {
       const response = await fetch(`/api/groups/${groupId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to fetch group details');
       }
       const data = await response.json();
-      setGroup(data);
+      const normalized = normalizeGroupFromApi(data as Record<string, unknown>);
+
+      if (normalized.name && !(normalized.public_link_slug ?? '').trim()) {
+        const autoSlug = suggestPublicSlug(normalized.name);
+        normalized.public_link_slug = autoSlug;
+        fetch(`/api/groups/${groupId}`, {
+          method: 'PUT',
+          headers: withBranchScope(selectedBranch?.id, {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          }),
+          body: JSON.stringify({ public_link_slug: autoSlug, public_website_enabled: true }),
+        }).catch(() => {});
+      }
+
+      setGroup(normalized);
     } catch (err: any) {
       setError(err.message);
       toast.error(err.message);
     } finally {
       setLoading(false);
     }
-  }, [groupId, token]);
+  }, [groupId, token, selectedBranch?.id]);
+
+  const handlePublicCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    const file = files[0];
+    if (!file || !token) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image');
+      return;
+    }
+    setPublicCoverUploading(true);
+    try {
+      const toUpload = await compressImageForUpload(file, PUBLIC_BANNER_IMAGE_OPTIONS);
+      const fd = new FormData();
+      fd.append('image', toUpload);
+      const res = await fetch('/api/upload-image', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Upload failed');
+      }
+      const url = (data as { url?: string }).url;
+      if (!url) throw new Error('No URL returned');
+      setGroup((prev) => (prev ? { ...prev, cover_image_url: url } : null));
+      if (groupId && token) {
+        const saveRes = await fetch(`/api/groups/${groupId}`, {
+          method: 'PUT',
+          headers: withBranchScope(selectedBranch?.id, {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          }),
+          body: JSON.stringify({ cover_image_url: url, public_website_enabled: true }),
+        });
+        if (!saveRes.ok) {
+          const errBody = await saveRes.json().catch(() => ({}));
+          throw new Error((errBody as { error?: string }).error || 'Could not save cover');
+        }
+      }
+      toast.success('Cover saved for your public page');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setPublicCoverUploading(false);
+    }
+  };
 
   const fetchGroupMembers = useCallback(async () => {
     if (!groupId || !token) return;
@@ -418,7 +617,7 @@ const MinistryDetail: React.FC = () => {
     setErrorMembers(null);
     try {
       const response = await fetch(`/api/group-members?group_id=${encodeURIComponent(groupId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -432,52 +631,111 @@ const MinistryDetail: React.FC = () => {
     } finally {
       setLoadingMembers(false);
     }
-  }, [groupId, token]);
+  }, [groupId, token, selectedBranch?.id]);
 
   const fetchSubgroups = useCallback(async () => {
     if (!groupId || !token) return;
     setLoadingSubgroups(true);
     setErrorSubgroups(null);
     try {
-      const response = await fetch(`/api/groups?parent_group_id=${encodeURIComponent(groupId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to fetch subgroups');
+      const rows: Group[] = [];
+      let offset = 0;
+      while (true) {
+        const response = await fetch(
+          `/api/groups?parent_group_id=${encodeURIComponent(groupId)}&offset=${offset}&limit=100`,
+          {
+            headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+          },
+        );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to fetch subgroups');
+        }
+        const data = await response.json();
+        const batch = Array.isArray(data) ? (data as Group[]) : Array.isArray(data?.groups) ? (data.groups as Group[]) : [];
+        rows.push(...batch);
+        if (batch.length < 100) break;
+        offset += batch.length;
       }
-      const data = await response.json();
-      setSubgroups(Array.isArray(data) ? data : []);
+      setSubgroups(rows);
     } catch (err: any) {
       setErrorSubgroups(err.message);
       toast.error(err.message);
     } finally {
       setLoadingSubgroups(false);
     }
-  }, [groupId, token]);
+  }, [groupId, token, selectedBranch?.id]);
+
+  const fetchGroupEvents = useCallback(async () => {
+    if (!groupId || !token) return;
+    setLoadingGroupEvents(true);
+    setErrorGroupEvents(null);
+    try {
+      const rows: GroupEventRow[] = [];
+      let offset = 0;
+      while (true) {
+        const response = await fetch(
+          `/api/groups/${encodeURIComponent(groupId)}/events?offset=${offset}&limit=100`,
+          {
+            headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error((data as { error?: string }).error || 'Failed to fetch group events');
+        }
+        const list = (data as { events?: unknown }).events;
+        const batch = Array.isArray(list) ? (list as GroupEventRow[]) : [];
+        rows.push(...batch);
+        if (batch.length < 100) break;
+        offset += batch.length;
+      }
+      setGroupEvents(rows);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch group events';
+      setErrorGroupEvents(msg);
+      setGroupEvents([]);
+      toast.error(msg);
+    } finally {
+      setLoadingGroupEvents(false);
+    }
+  }, [groupId, token, selectedBranch?.id]);
 
   const fetchPendingRequests = useCallback(async () => {
     if (!groupId || !token) return;
     setLoadingRequests(true);
     try {
-      const params = new URLSearchParams({ status: 'pending', group_id: groupId });
-      const res = await fetch(`/api/group-requests?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setPendingRequests([]);
-        toast.error((data as { error?: string }).error || 'Could not load join requests');
-        return;
+      const rows: GroupJoinRequestRow[] = [];
+      let offset = 0;
+      while (true) {
+        const params = new URLSearchParams({
+          status: 'pending',
+          group_id: groupId,
+          offset: String(offset),
+          limit: '100',
+        });
+        const res = await fetch(`/api/group-requests?${params.toString()}`, {
+          headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setPendingRequests([]);
+          toast.error((data as { error?: string }).error || 'Could not load join requests');
+          return;
+        }
+        const batch = Array.isArray(data) ? (data as GroupJoinRequestRow[]) : Array.isArray(data?.requests) ? (data.requests as GroupJoinRequestRow[]) : [];
+        rows.push(...batch);
+        if (batch.length < 100) break;
+        offset += batch.length;
       }
-      setPendingRequests(Array.isArray(data) ? data : []);
+      setPendingRequests(rows);
     } catch {
       setPendingRequests([]);
       toast.error('Could not load join requests');
     } finally {
       setLoadingRequests(false);
     }
-  }, [groupId, token]);
+  }, [groupId, token, selectedBranch?.id]);
 
   const handleApproveJoinRequest = async (requestId: string) => {
     if (!token) return;
@@ -485,7 +743,7 @@ const MinistryDetail: React.FC = () => {
     try {
       const res = await fetch(`/api/group-requests/${encodeURIComponent(requestId)}/approve`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -508,7 +766,7 @@ const MinistryDetail: React.FC = () => {
     try {
       const res = await fetch(`/api/group-requests/${encodeURIComponent(requestId)}/reject`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -535,7 +793,7 @@ const MinistryDetail: React.FC = () => {
     try {
       const res = await fetch(`/api/group-requests/${encodeURIComponent(requestId)}/ignore`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -554,21 +812,26 @@ const MinistryDetail: React.FC = () => {
     if (!token) return;
     setLoadingAvailableMembers(true);
     try {
-      const response = await fetch(`/api/members`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const params = new URLSearchParams();
+      if (group?.branch_id) {
+        params.set('branch_id', group.branch_id);
+      }
+      const qs = params.toString();
+      const response = await fetch(qs ? `/api/members?${qs}` : `/api/members`, {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to fetch available members');
       }
       const data = await response.json();
-      setAvailableMembers(Array.isArray(data) ? data : []);
+      setAvailableMembers(Array.isArray(data) ? data : Array.isArray(data?.members) ? data.members : []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setLoadingAvailableMembers(false);
     }
-  }, [token]);
+  }, [token, group?.branch_id, selectedBranch?.id]);
 
   const dedupedGroupMembers = useMemo(() => {
     const seen = new Set<string>();
@@ -583,7 +846,20 @@ const MinistryDetail: React.FC = () => {
       seen.add(mid);
       out.push(gm);
     }
-    return out;
+    const assignedMs = (gm: Record<string, unknown>) => {
+      const raw = gm.joined_at ?? gm.created_at ?? gm.joined_date;
+      if (raw == null || !String(raw).trim()) return null;
+      const t = new Date(String(raw)).getTime();
+      return Number.isNaN(t) ? null : t;
+    };
+    return [...out].sort((a, b) => {
+      const ma = assignedMs(a as Record<string, unknown>);
+      const mb = assignedMs(b as Record<string, unknown>);
+      if (ma != null && mb != null) return mb - ma;
+      if (mb != null) return 1;
+      if (ma != null) return -1;
+      return 0;
+    });
   }, [groupMembers]);
 
   const removeFromGroupConfirmMessage = useMemo(() => {
@@ -614,7 +890,10 @@ const MinistryDetail: React.FC = () => {
       for (const memberId of ids) {
         const response = await fetch(
           `/api/group-members?group_id=${encodeURIComponent(groupId)}&member_id=${encodeURIComponent(memberId)}`,
-          { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+          {
+            method: 'DELETE',
+            headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+          }
         );
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -637,28 +916,54 @@ const MinistryDetail: React.FC = () => {
     setIsManageSubgroupModalOpen(true);
   };
 
-  const handleDeleteSubgroup = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this subgroup?')) return;
-    if (!token) {
+  const executeDeleteSubgroup = useCallback(async () => {
+    const id = subgroupToDeleteId;
+    if (!id || !token) {
       toast.error('Authentication required.');
       return;
     }
     try {
       const response = await fetch(`/api/groups/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
         throw new Error((errBody as { error?: string }).error || 'Failed to delete subgroup');
       }
-      toast.success('Subgroup deleted');
+      toast.success('Subgroup moved to trash');
+      setSubgroupToDeleteId(null);
       fetchSubgroups();
       fetchGroupDetails();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete subgroup');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete subgroup');
     }
-  };
+  }, [subgroupToDeleteId, token, selectedBranch?.id, fetchSubgroups, fetchGroupDetails]);
+
+  const executeDeleteMinistry = useCallback(async () => {
+    if (!token || !groupId) {
+      toast.error('Authentication required.');
+      return;
+    }
+    if (group?.system_kind === 'all_members') {
+      toast.error('All Members is a system group and cannot be deleted.');
+      return;
+    }
+    try {
+      const response = await fetch(`/api/groups/${groupId}`, {
+        method: 'DELETE',
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error((errBody as { error?: string }).error || 'Failed to delete ministry');
+      }
+      toast.success('Ministry moved to trash');
+      navigate('/groups');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete ministry');
+    }
+  }, [token, groupId, selectedBranch?.id, navigate]);
 
   const handleCreateSubgroupClick = () => {
     setEditingSubgroup(null);
@@ -670,24 +975,35 @@ const MinistryDetail: React.FC = () => {
     try {
       const response = await fetch(`/api/groups/${groupId}`, {
         method: 'PUT',
-        headers: {
+        headers: withBranchScope(selectedBranch?.id, {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-        },
+        }),
         body: JSON.stringify({
-          public_website_enabled: group.public_website_enabled,
+          public_website_enabled: true,
           public_link_slug: group.public_link_slug,
           cover_image_url: group.cover_image_url,
           announcements_content: group.announcements_content,
           program_outline_content: group.program_outline_content,
           contact_email: group.contact_email,
-          contact_phone: group.contact_phone,
+          contact_phone: pubContactNational,
+          contact_phone_country_iso: pubContactCountryIso,
           join_link_enabled: group.join_link_enabled,
+          custom_fields:
+            group.custom_fields &&
+            typeof group.custom_fields === 'object' &&
+            !Array.isArray(group.custom_fields)
+              ? group.custom_fields
+              : {},
         }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to save settings');
+        const errorData = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          hint?: string;
+        };
+        const msg = errorData.error || 'Failed to save settings';
+        throw new Error(errorData.hint ? `${msg} ${errorData.hint}` : msg);
       }
       toast.success('Settings saved');
       fetchGroupDetails();
@@ -702,10 +1018,10 @@ const MinistryDetail: React.FC = () => {
     try {
       const response = await fetch(`/api/groups/${groupId}`, {
         method: 'PUT',
-        headers: {
+        headers: withBranchScope(selectedBranch?.id, {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
-        },
+        }),
         body: JSON.stringify({ join_link_enabled: enabled }),
       });
       if (!response.ok) throw new Error('Failed to update join link');
@@ -722,23 +1038,31 @@ const MinistryDetail: React.FC = () => {
       setLoading(false);
       setLoadingMembers(false);
       setLoadingSubgroups(false);
+      setLoadingGroupEvents(false);
+      setGroupEvents([]);
+      setErrorGroupEvents(null);
       return;
     }
 
     fetchGroupDetails();
     fetchGroupMembers();
     fetchSubgroups();
-    fetchAvailableMembers();
     fetchPendingRequests();
+    fetchGroupEvents();
   }, [
     groupId,
     token,
     fetchGroupDetails,
     fetchGroupMembers,
     fetchSubgroups,
-    fetchAvailableMembers,
     fetchPendingRequests,
+    fetchGroupEvents,
   ]);
+
+  useEffect(() => {
+    if (!token || !groupId) return;
+    void fetchAvailableMembers();
+  }, [token, groupId, group?.branch_id, fetchAvailableMembers]);
 
   const listMemberIds = useMemo(
     () =>
@@ -777,12 +1101,106 @@ const MinistryDetail: React.FC = () => {
     return memberSearchRows.filter((row) => searchRowMatches(row, q)).map((r) => r.gm);
   }, [dedupedGroupMembers, memberSearchQl, memberSearchQuery, memberSearchRows]);
 
+  const highlightMemberIds = useMemo(() => {
+    const h = searchParams.get('highlight');
+    if (!h?.trim()) return [] as string[];
+    return h
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }, [searchParams]);
+
+  function membershipAssignedMs(gm: Record<string, unknown>): number | null {
+    const raw = gm.joined_at ?? gm.created_at ?? gm.joined_date;
+    if (raw == null || !String(raw).trim()) return null;
+    const t = new Date(String(raw)).getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+
+  const dateFilteredGroupMembers = useMemo(() => {
+    if (!assignedRangeStart && !assignedRangeEnd) return filteredGroupMembers;
+    const startMs = assignedRangeStart
+      ? new Date(`${assignedRangeStart}T00:00:00`).getTime()
+      : null;
+    const endMs = assignedRangeEnd ? new Date(`${assignedRangeEnd}T23:59:59.999`).getTime() : null;
+    return filteredGroupMembers.filter((gm) => {
+      const ms = membershipAssignedMs(gm as Record<string, unknown>);
+      if (ms == null) return false;
+      if (startMs != null && Number.isFinite(startMs) && ms < startMs) return false;
+      if (endMs != null && Number.isFinite(endMs) && ms > endMs) return false;
+      return true;
+    });
+  }, [filteredGroupMembers, assignedRangeStart, assignedRangeEnd]);
+
+  useEffect(() => {
+    if (highlightMemberIds.length === 0) return;
+    setActiveTab('members');
+    setPulseHighlightIds(highlightMemberIds);
+    const t = window.setTimeout(() => setPulseHighlightIds([]), 4000);
+    return () => window.clearTimeout(t);
+  }, [highlightMemberIds.join(',')]);
+
+  useEffect(() => {
+    if (highlightMemberIds.length === 0 || loadingMembers) return;
+    const first = highlightMemberIds[0];
+    const id = window.requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-member-row-id="${first}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [highlightMemberIds.join(','), loadingMembers, dateFilteredGroupMembers.length]);
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'requests') setActiveTab('requests');
+  }, [searchParams]);
+
+  const highlightGroupRequestIdFromUrl = useMemo(() => {
+    const r = searchParams.get('openRequestId');
+    const t = r?.trim() ?? '';
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t) ? t : null;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!highlightGroupRequestIdFromUrl) return;
+    setActiveTab('requests');
+  }, [highlightGroupRequestIdFromUrl]);
+
+  useEffect(() => {
+    if (!highlightGroupRequestIdFromUrl || loadingRequests) return;
+    const found = pendingRequests.some((r: { id?: string }) => r.id === highlightGroupRequestIdFromUrl);
+    if (!found) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('openRequestId');
+        return next;
+      });
+      return;
+    }
+    setPulseHighlightRequestIds([highlightGroupRequestIdFromUrl]);
+    const tPulse = window.setTimeout(() => setPulseHighlightRequestIds([]), 4000);
+    const idRaf = window.requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-group-request-id="${highlightGroupRequestIdFromUrl}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openRequestId');
+      return next;
+    });
+    return () => {
+      window.clearTimeout(tPulse);
+      window.cancelAnimationFrame(idRaf);
+    };
+  }, [highlightGroupRequestIdFromUrl, loadingRequests, pendingRequests, setSearchParams]);
+
   const filteredListMemberIds = useMemo(
     () =>
-      filteredGroupMembers
+      dateFilteredGroupMembers
         .map((gm: { member_id?: string | null }) => gm.member_id)
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
-    [filteredGroupMembers]
+    [dateFilteredGroupMembers]
   );
 
   const allMembersSelected =
@@ -845,10 +1263,13 @@ const MinistryDetail: React.FC = () => {
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
+  const publicSlugTrimmed = (group?.public_link_slug ?? '').trim();
+  const publicWebsiteLive = !isPublicWebsiteExplicitlyOff(group?.public_website_enabled);
+
   const publicPageUrl = useMemo(() => {
-    if (!group?.public_website_enabled || !group?.public_link_slug) return '';
-    return `${origin}/public/groups/${group.public_link_slug}`;
-  }, [group?.public_website_enabled, group?.public_link_slug, origin]);
+    if (!publicSlugTrimmed) return '';
+    return `${origin}/public/groups/${publicSlugTrimmed}`;
+  }, [publicSlugTrimmed, origin]);
 
   const joinPageUrl = useMemo(() => {
     if (!group?.id || !group?.join_link_enabled) return '';
@@ -859,7 +1280,7 @@ const MinistryDetail: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (publicPageUrl) {
+      if (publicPageUrl && publicWebsiteLive) {
         try {
           const u = await QRCode.toDataURL(publicPageUrl, { width: 220, margin: 2 });
           if (!cancelled) setQrPublic(u);
@@ -883,23 +1304,28 @@ const MinistryDetail: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [publicPageUrl, joinPageUrl]);
+  }, [publicPageUrl, publicWebsiteLive, joinPageUrl]);
 
   useEffect(() => {
-    if (!joinLinkModalOpen) return;
+    if (!shareLinksModalOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setJoinLinkModalOpen(false);
+      if (e.key === 'Escape') setShareLinksModalOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [joinLinkModalOpen]);
+  }, [shareLinksModalOpen]);
 
   const leaderMember = useMemo(() => {
     if (!group?.leader_id) return null;
     return availableMembers.find((m) => m.id === group.leader_id) || null;
   }, [group?.leader_id, availableMembers]);
 
-  const eventsCount = 0;
+  const eventsCount = groupEvents.length;
+
+  const subgroupDeleteName = useMemo(() => {
+    const raw = subgroups.find((s) => s.id === subgroupToDeleteId)?.name ?? 'this subgroup';
+    return raw === 'this subgroup' ? raw : displayTitleWords(raw);
+  }, [subgroups, subgroupToDeleteId]);
 
   if (loading) {
     return (
@@ -913,7 +1339,7 @@ const MinistryDetail: React.FC = () => {
     return (
       <div className="flex flex-col flex-1 p-8 items-center justify-center gap-4">
         <p className="text-red-600 text-sm">{error}</p>
-        <Link to="/groups" className="text-indigo-600 font-medium text-sm hover:underline">
+        <Link to="/groups" className="text-blue-600 font-medium text-sm hover:underline">
           Back to groups
         </Link>
       </div>
@@ -924,123 +1350,29 @@ const MinistryDetail: React.FC = () => {
     return (
       <div className="flex flex-col flex-1 p-8 items-center justify-center gap-4">
         <h1 className="text-xl font-semibold text-gray-900">Ministry not found</h1>
-        <Link to="/groups" className="text-indigo-600 font-medium text-sm hover:underline">
+        <Link to="/groups" className="text-blue-600 font-medium text-sm hover:underline">
           Back to groups
         </Link>
       </div>
     );
   }
+  const isAllMembersGroup = group.system_kind === 'all_members';
+  const groupDisplayName = displayTitleWords(group.name);
 
   const tabs: { id: DetailTab; label: string; count?: number; dot?: boolean }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'members', label: 'Members', count: dedupedGroupMembers.length },
     { id: 'events', label: 'Events', count: eventsCount },
     { id: 'requests', label: 'Requests', count: pendingRequests.length, dot: pendingRequests.length > 0 },
+    { id: 'tasks', label: 'Tasks' },
     { id: 'subgroups', label: 'Subgroups', count: subgroups.length },
     { id: 'settings', label: 'Settings' },
   ];
 
-  const renderOverviewQrCards = () => (
-    <div ref={publicSectionRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
-      <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/90 to-white p-6 shadow-sm">
-        <div className="flex items-center gap-2 text-blue-900 font-semibold text-sm uppercase tracking-wide">
-          <Globe className="w-4 h-4" />
-          Public view link
-        </div>
-        <p className="mt-2 text-sm text-blue-900/70">
-          Share this QR code or link publicly so anyone can view group details and events.
-        </p>
-        <div className="mt-5 flex flex-col sm:flex-row gap-6 items-center">
-          <div className="shrink-0 w-[132px] h-[132px] bg-white rounded-xl border border-blue-100 flex items-center justify-center p-2">
-            {qrPublic ? (
-              <img src={qrPublic} alt="" className="w-full h-full object-contain" />
-            ) : (
-              <span className="text-xs text-center text-blue-800/60 px-2">
-                Set a public slug under Settings & enable public page
-              </span>
-            )}
-          </div>
-          <div className="flex-1 w-full min-w-0">
-            <div className="rounded-xl border border-blue-100 bg-white/80 px-3 py-2 text-xs text-gray-700 break-all font-mono">
-              {publicPageUrl || '—'}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!qrPublic}
-                onClick={() => qrPublic && downloadQrDataUrl(qrPublic, `${group.name}-public-qr.png`)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                Download
-              </button>
-              <button
-                type="button"
-                disabled={!publicPageUrl}
-                onClick={() => shareUrl(publicPageUrl, `${group.name} — public page`)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-blue-200 bg-white text-blue-800 hover:bg-blue-50 disabled:opacity-40"
-              >
-                <Share2 className="w-4 h-4" />
-                Share
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div ref={joinSectionRef} className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 to-white p-6 shadow-sm">
-        <div className="flex items-center gap-2 text-emerald-900 font-semibold text-sm uppercase tracking-wide">
-          <UserCheck className="w-4 h-4" />
-          Member join link
-        </div>
-        <p className="mt-2 text-sm text-emerald-900/70">
-          Each group (including subgroups) has its own link. Public (no login): directory members confirm name
-          and date of birth. When you approve, they are added to this group and all parent ministries.
-        </p>
-        <div className="mt-5 flex flex-col sm:flex-row gap-6 items-center">
-          <div className="shrink-0 w-[132px] h-[132px] bg-white rounded-xl border border-emerald-100 flex items-center justify-center p-2">
-            {qrJoin ? (
-              <img src={qrJoin} alt="" className="w-full h-full object-contain" />
-            ) : (
-              <span className="text-xs text-center text-emerald-800/60 px-2">
-                Enable join link under Settings
-              </span>
-            )}
-          </div>
-          <div className="flex-1 w-full min-w-0">
-            <div className="rounded-xl border border-emerald-100 bg-white/80 px-3 py-2 text-xs text-gray-700 break-all font-mono">
-              {joinPageUrl || '—'}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!qrJoin}
-                onClick={() => qrJoin && downloadQrDataUrl(qrJoin, `${group.name}-join-qr.png`)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 shadow-sm"
-              >
-                <Download className="w-4 h-4" />
-                Download
-              </button>
-              <button
-                type="button"
-                disabled={!joinPageUrl}
-                onClick={() => shareUrl(joinPageUrl, `${group.name} — join`)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 disabled:opacity-40"
-              >
-                <Share2 className="w-4 h-4" />
-                Share
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const renderLeaderCard = () => (
     <div className="mb-10">
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Group leader</p>
-      <div className="rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50/80 to-purple-50/50 p-6 shadow-sm">
+      <p className="text-xs font-semibold text-gray-400 mb-3">Group Leader</p>
+      <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 to-blue-50/50 p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
           <div className="shrink-0">
             {leaderMember?.memberimage_url || leaderMember?.member_url ? (
@@ -1050,7 +1382,7 @@ const MinistryDetail: React.FC = () => {
                 className="w-16 h-16 rounded-full object-cover border-4 border-white shadow"
               />
             ) : (
-              <div className="w-16 h-16 rounded-full bg-violet-200 text-violet-800 flex items-center justify-center text-lg font-bold border-4 border-white shadow">
+              <div className="w-16 h-16 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-lg font-bold border-4 border-white shadow">
                 {(group.profiles?.first_name?.[0] || 'L').toUpperCase()}
                 {(group.profiles?.last_name?.[0] || '').toUpperCase()}
               </div>
@@ -1081,7 +1413,7 @@ const MinistryDetail: React.FC = () => {
                   )}
                 </div>
               </div>
-              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-violet-100 text-violet-800 text-xs font-semibold border border-violet-200/80">
+              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-100 text-blue-800 text-xs font-semibold border border-blue-200/80">
                 <Crown className="w-3.5 h-3.5" />
                 Leader
               </div>
@@ -1097,7 +1429,10 @@ const MinistryDetail: React.FC = () => {
                   try {
                     const response = await fetch(`/api/groups/${groupId}`, {
                       method: 'PUT',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                      headers: withBranchScope(selectedBranch?.id, {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                      }),
                       body: JSON.stringify({ leader_id: newLeaderId }),
                     });
                     if (!response.ok) {
@@ -1110,7 +1445,7 @@ const MinistryDetail: React.FC = () => {
                     toast.error(err.message);
                   }
                 }}
-                className="w-full rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                className="w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
                 <option value="">No leader</option>
                 {availableMembers.map((member) => (
@@ -1129,13 +1464,13 @@ const MinistryDetail: React.FC = () => {
   const renderSubgroupGrid = () => (
     <div className="mb-10">
       <div className="flex items-center justify-between gap-3 mb-4">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+        <p className="text-xs font-semibold text-gray-400">
           Subgroups ({subgroups.length})
         </p>
         <button
           type="button"
           onClick={handleCreateSubgroupClick}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          className="text-sm font-medium text-blue-600 hover:text-blue-800"
         >
           + Create subgroup
         </button>
@@ -1154,8 +1489,8 @@ const MinistryDetail: React.FC = () => {
             <MinistryCard
               key={sg.id}
               ministry={sg}
-              onEdit={handleEditSubgroup}
-              onDelete={handleDeleteSubgroup}
+              onEdit={sg.system_kind === 'all_members' ? undefined : handleEditSubgroup}
+              onDelete={sg.system_kind === 'all_members' ? undefined : (id) => setSubgroupToDeleteId(id)}
             />
           ))}
         </div>
@@ -1165,7 +1500,7 @@ const MinistryDetail: React.FC = () => {
 
   const renderQuickStats = () => (
     <div>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick stats</p>
+      <p className="text-xs font-semibold text-gray-400 mb-3">Quick Stats</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Members', value: dedupedGroupMembers.length, icon: Users },
@@ -1179,9 +1514,9 @@ const MinistryDetail: React.FC = () => {
               accent ? 'border-amber-100 bg-amber-50/50' : 'border-gray-100 bg-white'
             }`}
           >
-            <Icon className={`w-4 h-4 ${accent ? 'text-amber-600' : 'text-indigo-500'}`} />
+            <Icon className={`w-4 h-4 ${accent ? 'text-amber-600' : 'text-blue-500'}`} />
             <p className={`mt-2 text-2xl font-bold ${accent ? 'text-amber-800' : 'text-gray-900'}`}>{value}</p>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-0.5">{label}</p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">{label}</p>
           </div>
         ))}
       </div>
@@ -1190,13 +1525,21 @@ const MinistryDetail: React.FC = () => {
 
   return (
     <div className="flex flex-col flex-1 bg-gray-50/80 min-h-0">
+      <input
+        ref={publicCoverFileRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        aria-hidden
+        onChange={(ev) => void handlePublicCoverFileChange(ev)}
+      />
       <div className="max-w-6xl mx-auto w-full px-4 md:px-8 py-8">
         <nav className="mb-6" aria-label="Breadcrumb">
           <ol className="flex flex-wrap items-center gap-x-1 gap-y-1 text-sm">
             <li className="inline-flex items-center gap-1">
               <Link
                 to="/groups"
-                className="inline-flex items-center gap-1.5 text-indigo-600 hover:text-indigo-800 font-medium"
+                className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium"
               >
                 <ArrowLeft className="w-4 h-4 shrink-0" />
                 Ministries
@@ -1207,10 +1550,10 @@ const MinistryDetail: React.FC = () => {
                 <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
                 <Link
                   to={`/groups/${crumb.id}`}
-                  className="text-indigo-600 hover:text-indigo-800 font-medium truncate max-w-[220px] md:max-w-xs"
-                  title={crumb.name}
+                  className="text-blue-600 hover:text-blue-800 font-medium truncate max-w-[220px] md:max-w-xs"
+                  title={displayTitleWords(crumb.name)}
                 >
-                  {crumb.name}
+                  {displayTitleWords(crumb.name)}
                 </Link>
               </li>
             ))}
@@ -1218,10 +1561,10 @@ const MinistryDetail: React.FC = () => {
               <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
               <span
                 className="font-semibold text-gray-900 truncate max-w-[240px] md:max-w-sm"
-                title={group.name}
+                title={groupDisplayName}
                 aria-current="page"
               >
-                {group.name}
+                {groupDisplayName}
               </span>
             </li>
           </ol>
@@ -1230,32 +1573,34 @@ const MinistryDetail: React.FC = () => {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8 mb-6">
           <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6">
             <div className="flex gap-4 min-w-0">
-              <div className="shrink-0 w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-lg">
+              <div className="shrink-0 w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow-lg">
                 <UserCircle2 className="w-8 h-8" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{group.name}</h1>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{groupDisplayName}</h1>
                   <span
                     className={`text-xs font-semibold px-2.5 py-0.5 rounded-lg border ${groupTypeBadgeClass(group.group_type)}`}
                   >
-                    {group.group_type || 'ministry'}
+                    {displayTitleWords((group.group_type || 'ministry').replace(/_/g, ' '))}
                   </span>
                 </div>
                 {group.description && (
-                  <p className="mt-2 text-gray-600 text-sm md:text-base max-w-3xl">{group.description}</p>
+                  <p className="mt-2 text-gray-600 text-sm md:text-base max-w-3xl">
+                    {displayTitleWords(group.description)}
+                  </p>
                 )}
                 <div className="flex flex-wrap gap-x-6 gap-y-2 mt-5 text-sm text-gray-600">
                   <span className="inline-flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-indigo-500" />
+                    <Users className="w-4 h-4 text-blue-500" />
                     <strong className="text-gray-900">{dedupedGroupMembers.length}</strong> members
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-indigo-500" />
+                    <Calendar className="w-4 h-4 text-blue-500" />
                     <strong className="text-gray-900">{eventsCount}</strong> events
                   </span>
                   <span className="inline-flex items-center gap-1.5">
-                    <GitBranch className="w-4 h-4 text-indigo-500" />
+                    <GitBranch className="w-4 h-4 text-blue-500" />
                     <strong className="text-gray-900">{subgroups.length}</strong> subgroups
                   </span>
                   <span
@@ -1275,28 +1620,28 @@ const MinistryDetail: React.FC = () => {
             <div className="flex flex-wrap gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => publicSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                onClick={() => setShareLinksModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
               >
-                Public QR
+                <Globe className="w-4 h-4" />
+                QR & share links
               </button>
               <button
                 type="button"
-                onClick={() => setJoinLinkModalOpen(true)}
-                className="px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
-              >
-                Join QR
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('members');
-                  toast.info('Tip: open Messages from the sidebar to email your congregation.');
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                onClick={() => setBulkSmsModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
               >
                 <Send className="w-4 h-4" />
                 Message all members
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteMinistryModalOpen(true)}
+                disabled={isAllMembersGroup}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-red-200 bg-white text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete ministry
               </button>
             </div>
           </div>
@@ -1310,7 +1655,7 @@ const MinistryDetail: React.FC = () => {
                   onClick={() => setActiveTab(t.id)}
                   className={`relative shrink-0 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                     activeTab === t.id
-                      ? 'text-indigo-600'
+                      ? 'text-blue-600'
                       : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
@@ -1320,7 +1665,7 @@ const MinistryDetail: React.FC = () => {
                   )}
                   {t.dot && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-red-500 align-middle" />}
                   {activeTab === t.id && (
-                    <span className="absolute left-3 right-3 bottom-0 h-0.5 rounded-full bg-indigo-600" />
+                    <span className="absolute left-3 right-3 bottom-0 h-0.5 rounded-full bg-blue-600" />
                   )}
                 </button>
               ))}
@@ -1330,7 +1675,6 @@ const MinistryDetail: React.FC = () => {
 
         {activeTab === 'overview' && (
           <div>
-            {renderOverviewQrCards()}
             {renderLeaderCard()}
             {renderSubgroupGrid()}
             {renderQuickStats()}
@@ -1353,7 +1697,7 @@ const MinistryDetail: React.FC = () => {
                     value={memberSearchQuery}
                     onChange={(e) => setMemberSearchQuery(e.target.value)}
                     placeholder="Search (typos OK) — name, phone, email…"
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-indigo-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     autoComplete="off"
                   />
                 </label>
@@ -1361,10 +1705,43 @@ const MinistryDetail: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsAddMembersModalOpen(true)}
-                className="shrink-0 self-start px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm md:self-center"
+                className="shrink-0 self-start px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-sm md:self-center"
               >
                 Add members
               </button>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 mb-4 px-1">
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+                Assigned from
+                <input
+                  type="date"
+                  value={assignedRangeStart}
+                  onChange={(e) => setAssignedRangeStart(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+                Assigned to
+                <input
+                  type="date"
+                  value={assignedRangeEnd}
+                  onChange={(e) => setAssignedRangeEnd(e.target.value)}
+                  className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-900"
+                />
+              </label>
+              {(assignedRangeStart || assignedRangeEnd) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignedRangeStart('');
+                    setAssignedRangeEnd('');
+                  }}
+                  className="text-sm text-blue-600 hover:underline pb-1"
+                >
+                  Clear dates
+                </button>
+              )}
             </div>
 
             {selectedMemberIds.length > 0 && (
@@ -1395,6 +1772,10 @@ const MinistryDetail: React.FC = () => {
               <div className="rounded-xl border border-dashed border-gray-200 py-12 text-center text-sm text-gray-500">
                 No members match “{memberSearchQuery.trim()}”. Try a different search.
               </div>
+            ) : dateFilteredGroupMembers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 py-12 text-center text-sm text-gray-500">
+                No members match this assigned date range. Adjust the dates or clear the filter.
+              </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-gray-100">
                 <table className="min-w-full">
@@ -1406,7 +1787,7 @@ const MinistryDetail: React.FC = () => {
                           type="checkbox"
                           checked={allMembersSelected}
                           onChange={toggleSelectAllMembers}
-                          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           aria-label={
                             memberSearchQl
                               ? 'Select all members matching search'
@@ -1414,25 +1795,28 @@ const MinistryDetail: React.FC = () => {
                           }
                         />
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Member
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
+                        Assigned
+                      </th>
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Phone
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Address
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Joined
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Status
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredGroupMembers.map((gm) => {
+                    {dateFilteredGroupMembers.map((gm) => {
                       const memberId = gm.member_id as string | null | undefined;
                       const roster = memberId
                         ? (availableMembers as any[]).find((m) => m.id === memberId)
@@ -1451,6 +1835,15 @@ const MinistryDetail: React.FC = () => {
                         roster?.dateJoined ?? roster?.date_joined ?? null;
                       const statusRaw = (roster?.status as string | undefined) || 'active';
                       const selected = Boolean(memberId && selectedMemberIds.includes(memberId));
+                      const rowHighlight =
+                        memberId &&
+                        (pulseHighlightIds.includes(memberId) || highlightMemberIds.includes(memberId));
+                      const gmRec = gm as Record<string, unknown>;
+                      const assignedRaw = gmRec.joined_at ?? gmRec.created_at ?? gmRec.joined_date;
+                      const assignedLabel =
+                        assignedRaw != null && String(assignedRaw).trim()
+                          ? formatCompactWeekdayDate(String(assignedRaw))
+                          : '—';
 
                       const openPanel = () => {
                         const m = memberFromGroupRow(gm, availableMembers as Record<string, unknown>[]);
@@ -1460,6 +1853,7 @@ const MinistryDetail: React.FC = () => {
                       return (
                         <tr
                           key={gm.id}
+                          data-member-row-id={memberId || undefined}
                           tabIndex={0}
                           onClick={(e) => {
                             if ((e.target as HTMLElement).closest('[data-group-member-select]')) return;
@@ -1472,9 +1866,9 @@ const MinistryDetail: React.FC = () => {
                               openPanel();
                             }
                           }}
-                          className={`border-b border-gray-100 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 cursor-pointer ${
-                            selected ? 'bg-indigo-50' : 'hover:bg-gray-50'
-                          }`}
+                          className={`border-b border-gray-100 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 cursor-pointer ${
+                            selected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                          } ${rowHighlight ? 'ring-2 ring-inset ring-amber-400 animate-pulse' : ''}`}
                         >
                           <td
                             data-group-member-select
@@ -1486,7 +1880,7 @@ const MinistryDetail: React.FC = () => {
                               type="checkbox"
                               checked={selected}
                               onChange={() => memberId && toggleMemberRowSelection(memberId)}
-                              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                               aria-label={`Select ${displayName}`}
                               disabled={!memberId}
                             />
@@ -1498,6 +1892,9 @@ const MinistryDetail: React.FC = () => {
                                 {displayName}
                               </span>
                             </div>
+                          </td>
+                          <td className="px-6 py-4 align-middle">
+                            <span className="text-gray-600 text-[14px]">{assignedLabel}</span>
                           </td>
                           <td className="px-6 py-4 align-middle">
                             <span className="text-gray-900 text-[14px]">{phone || 'N/A'}</span>
@@ -1514,13 +1911,13 @@ const MinistryDetail: React.FC = () => {
                             <span
                               className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
                                 statusRaw === 'active'
-                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
                                   : 'bg-gray-50 text-gray-700 border-gray-200'
                               }`}
                             >
                               <span
                                 className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-                                  statusRaw === 'active' ? 'bg-green-500' : 'bg-gray-400'
+                                  statusRaw === 'active' ? 'bg-blue-500' : 'bg-gray-400'
                                 }`}
                               />
                               {statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1)}
@@ -1537,9 +1934,63 @@ const MinistryDetail: React.FC = () => {
         )}
 
         {activeTab === 'events' && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center text-gray-500 text-sm">
-            <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            No events linked to this group yet.
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
+            {loadingGroupEvents ? (
+              <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                Loading events…
+              </div>
+            ) : errorGroupEvents ? (
+              <p className="text-sm text-red-600 text-center py-8">{errorGroupEvents}</p>
+            ) : groupEvents.length === 0 ? (
+              <div className="p-6 text-center text-gray-500 text-sm">
+                <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                No events linked to this group yet.
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {groupEvents.map((ev) => {
+                  const evCd = formatCalendarCountdown(ev.start_time);
+                  return (
+                    <li key={ev.id}>
+                      <Link
+                        to={`/events/${ev.id}`}
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-4 px-3 -mx-1 hover:bg-gray-50/80 rounded-xl transition-colors"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                            <Calendar className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{ev.title || 'Untitled event'}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {formatLongWeekdayDateTime(ev.start_time)}
+                              {evCd ? ` · ${evCd}` : ''}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {ev.event_type ? (
+                                <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-100">
+                                  {ev.event_type}
+                                </span>
+                              ) : null}
+                              {ev.status ? (
+                                <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                                  {ev.status}
+                                </span>
+                              ) : null}
+                              {ev.group_name ? (
+                                <span className="text-[11px] text-gray-600">{ev.group_name}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-gray-300 shrink-0 hidden sm:block" aria-hidden />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         )}
 
@@ -1566,19 +2017,19 @@ const MinistryDetail: React.FC = () => {
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50/90">
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Requester
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Date of birth
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Source
                       </th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">
                         Requested
                       </th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-6 py-4">
+                      <th className="text-right text-xs font-semibold text-gray-500 px-6 py-4">
                         Actions
                       </th>
                     </tr>
@@ -1597,21 +2048,18 @@ const MinistryDetail: React.FC = () => {
                       const dobRaw = r.dob ?? r.date_of_birth;
                       const dobLabel =
                         dobRaw && String(dobRaw).trim()
-                          ? new Date(dobRaw as string).toLocaleDateString()
+                          ? formatLongWeekdayDate(String(dobRaw)) || '—'
                           : '—';
                       const reqAt = r.requested_at || r.created_at;
-                      const reqLabel = reqAt
-                        ? new Date(reqAt as string).toLocaleString(undefined, {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })
-                        : '—';
+                      const reqLabel = reqAt ? formatLongWeekdayDateTime(String(reqAt)) || '—' : '—';
                       const busy = requestActionBusyId === r.id;
                       const canOpenRoster = verified && mid && roster;
+                      const rowRequestHighlight = pulseHighlightRequestIds.includes(String(r.id));
 
                       return (
                         <tr
                           key={r.id}
+                          data-group-request-id={r.id}
                           tabIndex={canOpenRoster ? 0 : undefined}
                           onClick={() => {
                             if (canOpenRoster) openMemberDetailFromJoinRequest(r);
@@ -1623,9 +2071,9 @@ const MinistryDetail: React.FC = () => {
                               openMemberDetailFromJoinRequest(r);
                             }
                           }}
-                          className={`border-b border-gray-100 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
+                          className={`border-b border-gray-100 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                             canOpenRoster ? 'cursor-pointer hover:bg-gray-50' : ''
-                          }`}
+                          } ${rowRequestHighlight ? 'ring-2 ring-inset ring-amber-400 animate-pulse' : ''}`}
                         >
                           <td className="px-6 py-4 align-middle">
                             <div className="flex items-center gap-3 min-w-0 max-w-xs">
@@ -1645,7 +2093,7 @@ const MinistryDetail: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 align-middle">
                             {verified ? (
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-emerald-50 text-emerald-800 border-emerald-200">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border bg-blue-50 text-blue-800 border-blue-200">
                                 Directory match
                               </span>
                             ) : (
@@ -1667,7 +2115,7 @@ const MinistryDetail: React.FC = () => {
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void handleApproveJoinRequest(r.id)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 shadow-sm"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 shadow-sm"
                               >
                                 <CheckCircle className="w-3.5 h-3.5" />
                                 Approve
@@ -1702,6 +2150,18 @@ const MinistryDetail: React.FC = () => {
           </div>
         )}
 
+        {activeTab === 'tasks' && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Tasks</h2>
+              <p className="mt-1 text-sm text-gray-500 max-w-2xl">
+                Follow-up tasks for this ministry or linked groups. Assign to staff and track checklist progress.
+              </p>
+            </div>
+            <GroupTasksSection groupId={groupId ?? null} openAssignOnMount={launchAssignFromUrl} />
+          </div>
+        )}
+
         {activeTab === 'subgroups' && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
             <div className="flex items-center justify-between mb-6">
@@ -1709,7 +2169,7 @@ const MinistryDetail: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCreateSubgroupClick}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
               >
                 Create subgroup
               </button>
@@ -1728,8 +2188,8 @@ const MinistryDetail: React.FC = () => {
                   <MinistryCard
                     key={subgroup.id}
                     ministry={subgroup}
-                    onEdit={handleEditSubgroup}
-                    onDelete={handleDeleteSubgroup}
+                    onEdit={subgroup.system_kind === 'all_members' ? undefined : handleEditSubgroup}
+                    onDelete={subgroup.system_kind === 'all_members' ? undefined : (id) => setSubgroupToDeleteId(id)}
                   />
                 ))}
               </div>
@@ -1740,41 +2200,66 @@ const MinistryDetail: React.FC = () => {
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Public page</h2>
-              <label className="flex items-center justify-between gap-4 mb-4">
-                <span className="text-sm font-medium text-gray-800">Enable public website</span>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Public page</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Your public ministry page is <strong>on by default</strong>. Set a <strong>public slug</strong> below,
+                then save. The URL and QR on Overview use this slug.
+              </p>
+              <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50/80 p-4">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Public slug</label>
                 <input
-                  type="checkbox"
-                  checked={group.public_website_enabled || false}
+                  type="text"
+                  value={group.public_link_slug || ''}
                   onChange={(e) =>
-                    setGroup((prev) => (prev ? { ...prev, public_website_enabled: e.target.checked } : null))
+                    setGroup((prev) => (prev ? { ...prev, public_link_slug: e.target.value } : null))
                   }
-                  className="h-5 w-5 rounded border-gray-300 text-indigo-600"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  placeholder="youth-ministry"
                 />
-              </label>
-              {group.public_website_enabled && (
-                <div className="space-y-3 p-4 rounded-xl bg-gray-50 border border-gray-100 mb-4">
+                <p className="mt-2 font-mono text-[11px] text-gray-700 break-all">
+                  {publicSlugTrimmed
+                    ? `${origin}/public/groups/${publicSlugTrimmed}`
+                    : '— /public/groups/your-slug will appear here'}
+                </p>
+              </div>
+              <div className="space-y-3 p-4 rounded-xl bg-gray-50 border border-gray-100 mb-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Public slug</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Public cover photo</label>
+                    <p className="text-[11px] text-gray-400 mb-2">
+                      Same as <strong>Overview → Add cover photo</strong>. Wide banner on the public page.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={publicCoverUploading}
+                        onClick={() => publicCoverFileRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {publicCoverUploading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Upload className="h-3.5 w-3.5" aria-hidden />
+                        )}
+                        Upload image
+                      </button>
+                      {group.cover_image_url?.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => setGroup((prev) => (prev ? { ...prev, cover_image_url: '' } : null))}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
                     <input
                       type="text"
-                      value={group.public_link_slug || ''}
-                      onChange={(e) =>
-                        setGroup((prev) => (prev ? { ...prev, public_link_slug: e.target.value } : null))
-                      }
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                      placeholder="youth-ministry"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Cover image URL</label>
-                    <input
-                      type="text"
+                      placeholder="Or paste image URL…"
                       value={group.cover_image_url || ''}
                       onChange={(e) =>
                         setGroup((prev) => (prev ? { ...prev, cover_image_url: e.target.value } : null))
                       }
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                      className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
                     />
                   </div>
                   <div>
@@ -1811,33 +2296,58 @@ const MinistryDetail: React.FC = () => {
                         className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Contact phone</label>
-                      <input
-                        type="text"
-                        value={group.contact_phone || ''}
-                        onChange={(e) =>
-                          setGroup((prev) => (prev ? { ...prev, contact_phone: e.target.value } : null))
-                        }
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                    <div className="md:col-span-2">
+                      <PhoneCountryInput
+                        label="Contact phone"
+                        countryIso={pubContactCountryIso}
+                        onCountryChange={setPubContactCountryIso}
+                        national={pubContactNational}
+                        onNationalChange={setPubContactNational}
+                        className="[&_label]:text-xs [&_label]:font-medium [&_label]:text-gray-500 [&_label]:mb-1 [&_p]:text-[10px] [&_select]:py-2 [&_select]:text-sm [&_input]:py-2 [&_input]:text-sm"
                       />
                     </div>
                   </div>
                 </div>
-              )}
+              {groupCustomFieldDefs.length > 0 ? (
+                <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-5 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Additional fields</h3>
+                  <CustomFieldsSection
+                    definitions={groupCustomFieldDefs}
+                    values={
+                      group.custom_fields &&
+                      typeof group.custom_fields === 'object' &&
+                      !Array.isArray(group.custom_fields)
+                        ? group.custom_fields
+                        : {}
+                    }
+                    onChange={(key, value) =>
+                      setGroup((prev) => {
+                        if (!prev) return null;
+                        const cur = prev.custom_fields;
+                        const base =
+                          cur && typeof cur === 'object' && !Array.isArray(cur)
+                            ? { ...cur }
+                            : ({} as Record<string, unknown>);
+                        base[key] = value;
+                        return { ...prev, custom_fields: base };
+                      })
+                    }
+                  />
+                </div>
+              ) : null}
               <label className="flex items-center justify-between gap-4 mb-4">
                 <span className="text-sm font-medium text-gray-800">Allow public join requests</span>
                 <input
                   type="checkbox"
                   checked={group.join_link_enabled || false}
                   onChange={(e) => updateJoinLink(e.target.checked)}
-                  className="h-5 w-5 rounded border-gray-300 text-indigo-600"
+                  className="h-5 w-5 rounded border-gray-300 text-blue-600"
                 />
               </label>
               <button
                 type="button"
                 onClick={handleSavePublicWebsiteSettings}
-                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700"
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
               >
                 Save settings
               </button>
@@ -1846,90 +2356,189 @@ const MinistryDetail: React.FC = () => {
         )}
       </div>
 
-      {joinLinkModalOpen && (
+      {shareLinksModalOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 bg-slate-900/45 backdrop-blur-[2px]"
           role="presentation"
-          onClick={() => setJoinLinkModalOpen(false)}
+          onClick={() => setShareLinksModalOpen(false)}
           aria-hidden="true"
         >
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="join-link-modal-title"
-            className="w-full max-w-md rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/95 via-white to-white p-6 shadow-2xl shadow-emerald-900/10"
+            aria-labelledby="share-links-modal-title"
+            className="my-4 w-full max-w-lg rounded-2xl border border-blue-200/80 bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-emerald-900 font-semibold text-sm uppercase tracking-wide">
-                  <UserCheck className="w-4 h-4 shrink-0" aria-hidden />
-                  <span id="join-link-modal-title">Member join link</span>
+                <div
+                  id="share-links-modal-title"
+                  className="flex items-center gap-2 text-sm font-semibold text-blue-900"
+                >
+                  <Globe className="h-4 w-4 shrink-0" aria-hidden />
+                  Public Ministry & Join
                 </div>
-                <p className="mt-2 text-sm text-emerald-900/75 leading-relaxed">
-                  Share this QR or link so directory members can request to join{' '}
-                  <span className="font-medium text-emerald-950">{group.name}</span>. They confirm first name, last
-                  name, and date of birth; you approve under Requests.
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  <span className="font-medium text-slate-800">{groupDisplayName}</span> — share the{' '}
+                  <strong>public page</strong> for your mini-site, or the <strong>join link</strong> for a shortcut to
+                  the request form.
                 </p>
               </div>
               <button
                 type="button"
                 aria-label="Close"
-                onClick={() => setJoinLinkModalOpen(false)}
-                className="shrink-0 rounded-xl p-2 text-emerald-800/80 hover:bg-emerald-100/80 hover:text-emerald-950 transition-colors"
+                onClick={() => setShareLinksModalOpen(false)}
+                className="shrink-0 rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-5 flex flex-col sm:flex-row gap-6 items-center">
-              <div className="shrink-0 w-[140px] h-[140px] bg-white rounded-xl border border-emerald-100 flex items-center justify-center p-2 shadow-sm">
-                {qrJoin ? (
-                  <img src={qrJoin} alt="" className="w-full h-full object-contain" />
-                ) : (
-                  <span className="text-xs text-center text-emerald-800/60 px-2 leading-snug">
-                    Enable &quot;Allow public join requests&quot; under Settings to generate a QR code.
-                  </span>
-                )}
+            <div className="mt-6 space-y-8">
+              <div>
+                <p className="text-[11px] font-semibold text-blue-800">Ministry Public Page</p>
+                <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+                  <div className="flex h-[140px] w-[140px] shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-slate-50 p-2">
+                    {qrPublic ? (
+                      <img src={qrPublic} alt="" className="h-full w-full object-contain" />
+                    ) : (
+                      <span className="px-2 text-center text-xs text-slate-500">
+                        {!publicSlugTrimmed
+                          ? 'Add a public slug under Settings'
+                          : !publicWebsiteLive
+                            ? 'Public page is turned off for this ministry.'
+                            : 'Generating…'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-800 break-all">
+                      {publicPageUrl || '—'}
+                    </div>
+                    {publicPageUrl && !publicWebsiteLive ? (
+                      <p className="mt-2 text-[11px] text-amber-800">
+                        Public page is off for this ministry (database opt-out).
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2 items-center">
+                      <button
+                        type="button"
+                        disabled={!qrPublic}
+                        onClick={() =>
+                          qrPublic && downloadQrDataUrl(qrPublic, `${groupDisplayName}-public-ministry-qr.png`)
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        QR
+                      </button>
+                      {publicPageUrl ? (
+                        <Link
+                          to={`/public/groups/${publicSlugTrimmed}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Access
+                        </Link>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={!publicPageUrl}
+                        onClick={() => copyLinkToClipboard('Public link', publicPageUrl)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:opacity-40"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!publicPageUrl}
+                        onClick={() => shareUrl(publicPageUrl, `${groupDisplayName} — public page`)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:opacity-40"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        Share
+                      </button>
+                      <button
+                        type="button"
+                        disabled={publicCoverUploading || !token}
+                        onClick={() => publicCoverFileRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+                        title={
+                          group.cover_image_url?.trim()
+                            ? 'Replace the public page banner — choose a new image to overwrite the current one'
+                            : 'Add a banner image for the public ministry page'
+                        }
+                        aria-label={
+                          group.cover_image_url?.trim()
+                            ? 'Replace public page cover photo'
+                            : 'Add public page cover photo'
+                        }
+                      >
+                        {publicCoverUploading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Upload className="h-3.5 w-3.5" aria-hidden />
+                        )}
+                        {group.cover_image_url?.trim() ? 'Replace cover' : 'Add cover'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex-1 w-full min-w-0">
-                <p className="text-[11px] font-medium text-emerald-900/60 uppercase tracking-wide mb-1.5">
-                  Link
-                </p>
-                <div className="rounded-xl border border-emerald-100 bg-white/90 px-3 py-2.5 text-xs text-gray-800 break-all font-mono leading-relaxed">
-                  {joinPageUrl || '—'}
+
+              <div className="border-t border-slate-100 pt-6">
+                <p className="text-[11px] font-semibold text-blue-800">Direct Join Request</p>
+                <div className="mt-3 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+                  <div className="flex h-[140px] w-[140px] shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50/50 p-2">
+                    {qrJoin ? (
+                      <img src={qrJoin} alt="" className="h-full w-full object-contain" />
+                    ) : (
+                      <span className="px-2 text-center text-xs text-slate-500">
+                        Enable public join requests
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-800 break-all">
+                      {joinPageUrl || '—'}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={!qrJoin}
+                        onClick={() =>
+                          qrJoin && downloadQrDataUrl(qrJoin, `${groupDisplayName}-join-request-qr.png`)
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        QR
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!joinPageUrl}
+                        onClick={() => copyLinkToClipboard('Join link', joinPageUrl)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:opacity-40"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!joinPageUrl}
+                        onClick={() => joinPageUrl && shareUrl(joinPageUrl, `${groupDisplayName} — join`)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:opacity-40"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        Share
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={!qrJoin}
-                    onClick={() => qrJoin && downloadQrDataUrl(qrJoin, `${group.name}-join-qr.png`)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 shadow-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download QR
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!joinPageUrl}
-                    onClick={() => joinPageUrl && shareUrl(joinPageUrl, `${group.name} — join`)}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50 disabled:opacity-40"
-                  >
-                    <Share2 className="w-4 h-4" />
-                    Share link
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setJoinLinkModalOpen(false);
-                    joinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    if (activeTab !== 'overview') setActiveTab('overview');
-                  }}
-                  className="mt-4 w-full sm:w-auto text-sm font-medium text-emerald-800 hover:text-emerald-950 underline-offset-2 hover:underline"
-                >
-                  View full details on Overview
-                </button>
               </div>
             </div>
           </div>
@@ -1985,6 +2594,34 @@ const MinistryDetail: React.FC = () => {
         variant="caution"
       />
 
+      <DeleteModal
+        isOpen={deleteMinistryModalOpen}
+        onClose={() => setDeleteMinistryModalOpen(false)}
+        onConfirm={() => {
+          if (isAllMembersGroup) {
+            setDeleteMinistryModalOpen(false);
+            return;
+          }
+          void executeDeleteMinistry();
+        }}
+        title={isAllMembersGroup ? 'System group' : 'Move this ministry to trash?'}
+        message={
+          isAllMembersGroup
+            ? '“All Members” is a system default group and cannot be deleted.'
+            : `“${groupDisplayName}” will be hidden from the ministries list and moved to trash for ${30} days. You can restore it from Ministries → Deleted Ministries.\n\nExisting events are kept, but this ministry will be unlinked and members who were on the roster through it will be removed from those events.\n\nMember profiles are not deleted.`
+        }
+        confirmLabel={isAllMembersGroup ? 'OK' : 'Move to trash'}
+      />
+
+      <DeleteModal
+        isOpen={!!subgroupToDeleteId}
+        onClose={() => setSubgroupToDeleteId(null)}
+        onConfirm={() => void executeDeleteSubgroup()}
+        title="Delete this subgroup?"
+        message={`“${subgroupDeleteName}” will be moved to trash (${30} days). Restore from Ministries → Deleted Ministries.\n\nLinked events stay, but this subgroup is unlinked and its roster members are removed from those events.`}
+        confirmLabel="Move to trash"
+      />
+
       <ManageSubgroupModal
         isOpen={isManageSubgroupModalOpen}
         onClose={() => {
@@ -1998,6 +2635,19 @@ const MinistryDetail: React.FC = () => {
           setEditingSubgroup(null);
         }}
       />
+
+      {group && (
+        <BulkSmsComposeModal
+          isOpen={bulkSmsModalOpen}
+          onClose={() => setBulkSmsModalOpen(false)}
+          mode="group"
+          lockedGroup={{
+            id: group.id,
+            name: groupDisplayName,
+            memberCount: dedupedGroupMembers.length,
+          }}
+        />
+      )}
     </div>
   );
 };

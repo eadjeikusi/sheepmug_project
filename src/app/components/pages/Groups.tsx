@@ -32,7 +32,7 @@ export default function Groups() {
   const getGroupTypeColor = (type: Group['type']) => {
     switch (type) {
       case 'youth': return 'bg-orange-50 text-orange-700';
-      case 'music': return 'bg-purple-50 text-purple-700';
+      case 'music': return 'bg-blue-50 text-blue-700';
       case 'ministry': return 'bg-blue-50 text-blue-700';
       default: return 'bg-gray-50 text-gray-700';
     }
@@ -67,7 +67,7 @@ export default function Groups() {
         </div>
         <button
           onClick={() => toast.info('Add Group modal would open')}
-          className="flex items-center px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm text-[14px]"
+          className="flex items-center px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm text-[14px]"
         >
           <Plus className="w-4 h-4 mr-2" />
           Create Group
@@ -197,7 +197,7 @@ export default function Groups() {
                     navigator.clipboard.writeText(group.joinLink);
                     toast.success('Join link copied!');
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-all"
+                  className="flex items-center w-full px-3 py-2 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all"
                 >
                   <Link2 className="w-4 h-4 mr-2" />
                   Copy Join Link

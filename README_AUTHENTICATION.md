@@ -1,5 +1,7 @@
 # ChurchHub Authentication - Quick Start
 
+> Consolidated project docs: `docs/PROJECT_DOCUMENTATION.md`
+
 ## ✅ What's Been Implemented
 
 Your ChurchHub application now has **fully functional authentication** with:

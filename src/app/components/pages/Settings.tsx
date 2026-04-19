@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { User, Bell, Shield, Database, Palette, Globe, Users, CheckSquare, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, MapPin, Building2, ChevronRight, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router';
+import { User, Bell, Database, Users, CheckSquare, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useBranch } from '../../contexts/BranchContext';
@@ -7,41 +8,44 @@ import { useAuth } from '../../contexts/AuthContext';
 import DatabaseConnectionTest from '../DatabaseConnectionTest';
 import BranchModal from '../modals/BranchModal';
 import { useApp } from '../../contexts/AppContext';
+import { withBranchScope } from '../../utils/branchScopeHeaders';
+import { PERMISSION_CATALOG, resolveImpliedPermissions } from '../../../permissions/catalog';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
+import { useGroupTypeOptions } from '../../hooks/useGroupTypeOptions';
+import type { MemberStatusOption, GroupTypeOption, CustomFieldDefinition, Organization } from '../../../types';
+import EventTypes from './EventTypes';
+import EventOutlineTemplates from './EventOutlineTemplates';
+import { notificationsApi } from '../../utils/api';
+import { formatNotificationDateTime } from '@/utils/dateDisplayFormat';
 
-type Permission = {
-  id: string;
-  name: string;
-  description: string;
-};
+type ApiRoleRow = { id: string; name: string; permissions: string[] };
 
-type Role = {
-  id: string;
-  name: string;
-  color: string;
-  description: string;
-  permissions: Set<string>;
-};
-
-type FieldType = 'text' | 'number' | 'email' | 'phone' | 'date' | 'dropdown' | 'checkbox' | 'textarea' | 'file';
-
-type CustomField = {
-  id: string;
+type FieldDraft = {
   label: string;
-  fieldType: FieldType;
+  field_type: string;
   required: boolean;
-  placeholder?: string;
-  options?: string[]; // For dropdown
-  defaultValue?: string;
-  appliesTo: ('member' | 'event')[];
+  placeholder: string;
+  options: string[];
+  default_value: string;
+  applies_to: ('member' | 'event' | 'group')[];
+  show_on_public: boolean;
 };
 
-type EventType = {
-  id: string;
-  name: string;
-  emoji: string;
-  color: string;
-  isDefault: boolean;
-};
+type SettingsTab =
+  | 'general'
+  | 'notifications'
+  | 'notificationsQA'
+  | 'staff'
+  | 'permissions'
+  | 'customFields'
+  | 'eventTypes'
+  | 'programTemplates'
+  | 'memberStatuses'
+  | 'groupTypes'
+  | 'integrations'
+  | 'branches'
+  | 'database';
 
 type Ministry = {
   id: string;
@@ -49,75 +53,1425 @@ type Ministry = {
   children?: Ministry[];
 };
 
-const allPermissions: Permission[] = [
-  { id: 'view_dashboard', name: 'View Dashboard', description: 'Access dashboard and analytics' },
-  { id: 'view_members', name: 'View Members', description: 'View member list and details' },
-  { id: 'add_members', name: 'Add Members', description: 'Register new members' },
-  { id: 'edit_members', name: 'Edit Members', description: 'Modify member information' },
-  { id: 'delete_members', name: 'Delete Members', description: 'Remove members from system' },
-  { id: 'view_groups', name: 'View Groups', description: 'View ministry groups' },
-  { id: 'manage_groups', name: 'Manage Groups', description: 'Create, edit, and delete groups' },
-  { id: 'assign_groups', name: 'Assign to Groups', description: 'Add/remove members from groups' },
-  { id: 'view_branches', name: 'View Branches', description: 'View church branches' },
-  { id: 'manage_branches', name: 'Manage Branches', description: 'Create and edit branches' },
-  { id: 'view_events', name: 'View Events', description: 'View scheduled events' },
-  { id: 'manage_events', name: 'Manage Events', description: 'Create, edit, and delete events' },
-  { id: 'track_attendance', name: 'Track Attendance', description: 'Mark attendance for events' },
-  { id: 'view_analytics', name: 'View Analytics', description: 'Access reports and analytics' },
-  { id: 'send_messages', name: 'Send Messages', description: 'Send messages to members' },
-  { id: 'manage_notifications', name: 'Manage Notifications', description: 'Send system notifications' },
-  { id: 'export_data', name: 'Export Data', description: 'Export data to CSV/PDF' },
-  { id: 'manage_permissions', name: 'Manage Permissions', description: 'Assign roles and permissions' },
-  { id: 'system_settings', name: 'System Settings', description: 'Configure system-wide settings' },
+const SETTINGS_TAB_IDS: SettingsTab[] = [
+  'general',
+  'notifications',
+  'notificationsQA',
+  'staff',
+  'permissions',
+  'customFields',
+  'eventTypes',
+  'programTemplates',
+  'memberStatuses',
+  'groupTypes',
+  'integrations',
+  'branches',
+  'database',
 ];
 
-const defaultRoles: Role[] = [
-  {
-    id: 'admin',
-    name: 'Admin',
-    color: 'bg-red-500',
-    description: 'Full system access with all permissions',
-    permissions: new Set(allPermissions.map(p => p.id)),
-  },
-  {
-    id: 'pastor',
-    name: 'Pastor',
-    color: 'bg-indigo-500',
-    description: 'Senior leadership with broad access',
-    permissions: new Set([
-      'view_dashboard', 'view_members', 'add_members', 'edit_members',
-      'view_groups', 'manage_groups', 'assign_groups', 'view_branches',
-      'view_events', 'manage_events', 'track_attendance', 'view_analytics',
-      'send_messages', 'manage_notifications', 'export_data'
-    ]),
-  },
-  {
-    id: 'group_leader',
-    name: 'Group Leader',
-    color: 'bg-green-500',
-    description: 'Manage specific ministry groups',
-    permissions: new Set([
-      'view_dashboard', 'view_members', 'view_groups', 'assign_groups',
-      'view_events', 'track_attendance', 'send_messages'
-    ]),
-  },
-  {
-    id: 'volunteer',
-    name: 'Volunteer',
-    color: 'bg-blue-500',
-    description: 'Basic access for volunteers',
-    permissions: new Set([
-      'view_dashboard', 'view_members', 'view_groups', 'view_events'
-    ]),
-  },
-];
+function isSettingsTab(value: string): value is SettingsTab {
+  return SETTINGS_TAB_IDS.includes(value as SettingsTab);
+}
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'general' | 'permissions' | 'customFields' | 'eventTypes' | 'integrations' | 'branches' | 'database'>('general');
-  const [roles, setRoles] = useState<Role[]>(defaultRoles);
-  const { selectedBranch, setSelectedBranch, branches, refreshBranches } = useBranch();
-  const { currentOrganization } = useApp();
-  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { selectedBranch, setSelectedBranch, branches, refreshBranches, loading: branchLoading } = useBranch();
+  const { currentOrganization, setCurrentOrganization } = useApp();
+  const { user, token } = useAuth();
+  const canSwitchBranch = user?.is_org_owner === true;
+  const { can } = usePermissions();
+  const canEditOrgName = can('edit_organization_name');
+
+  const [orgNameDraft, setOrgNameDraft] = useState('');
+  const [orgNameLoading, setOrgNameLoading] = useState(false);
+  const [orgNameSaving, setOrgNameSaving] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setOrgNameLoading(true);
+    void (async () => {
+      try {
+        const res = await fetch('/api/org/organization', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const err = typeof (data as { error?: string }).error === 'string' ? (data as { error: string }).error : 'Failed to load organization';
+          throw new Error(err);
+        }
+        const org = (data as { organization?: Record<string, unknown> }).organization;
+        if (cancelled || !org) return;
+        if (typeof org.name === 'string') setOrgNameDraft(org.name);
+        setCurrentOrganization((prev) => {
+          if (!prev) return org as Organization;
+          return { ...prev, ...org } as Organization;
+        });
+      } catch (e: unknown) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load organization');
+      } finally {
+        if (!cancelled) setOrgNameLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, setCurrentOrganization]);
+
+  const saveOrganizationName = async () => {
+    if (!token || !canEditOrgName) return;
+    const name = orgNameDraft.trim();
+    if (!name) {
+      toast.error('Enter an organization name');
+      return;
+    }
+    setOrgNameSaving(true);
+    try {
+      const res = await fetch('/api/org/organization', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof (data as { error?: string }).error === 'string' ? (data as { error: string }).error : 'Save failed');
+      }
+      const org = (data as { organization?: Record<string, unknown> }).organization;
+      if (org) {
+        setCurrentOrganization((prev) => {
+          if (!prev) return org as Organization;
+          return { ...prev, ...org } as Organization;
+        });
+      }
+      toast.success('Organization name saved');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setOrgNameSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const raw = searchParams.get('tab');
+    if (raw && isSettingsTab(raw)) setActiveTab(raw);
+    else if (!raw) setActiveTab('general');
+  }, [searchParams]);
+
+  const goSettingsTab = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams(tab === 'general' ? {} : { tab }, { replace: true });
+  };
+
+  const fetchNotificationPrefs = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/notification-preferences/me', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to load notification settings');
+      const p = (data as { preferences?: Record<string, unknown> }).preferences || {};
+      setNotificationPrefs({
+        mute_all: Boolean(p.mute_all),
+        tasks_enabled: p.tasks_enabled !== false,
+        attendance_enabled: p.attendance_enabled !== false,
+        events_enabled: p.events_enabled !== false,
+        requests_enabled: p.requests_enabled !== false,
+        assignments_enabled: p.assignments_enabled !== false,
+        permissions_enabled: p.permissions_enabled !== false,
+        member_care_enabled: p.member_care_enabled !== false,
+        leader_updates_enabled: p.leader_updates_enabled !== false,
+        granular_preferences:
+          p.granular_preferences && typeof p.granular_preferences === 'object' && !Array.isArray(p.granular_preferences)
+            ? Object.fromEntries(
+                Object.entries(p.granular_preferences as Record<string, unknown>).filter(([, v]) => typeof v === 'boolean'),
+              )
+            : {},
+      });
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load notification settings');
+    }
+  }, [selectedBranch?.id, token]);
+
+  useEffect(() => {
+    if (activeTab === 'notifications' && token) {
+      void fetchNotificationPrefs();
+    }
+  }, [activeTab, fetchNotificationPrefs, token]);
+
+  const updateNotificationPref = async (key: string, value: boolean) => {
+    if (!token) return;
+    setNotificationPrefs((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setNotificationPrefsSaving(true);
+    try {
+      const res = await fetch('/api/notification-preferences/me', {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ [key]: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to save notification settings');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save notification settings');
+      await fetchNotificationPrefs();
+    } finally {
+      setNotificationPrefsSaving(false);
+    }
+  };
+
+  const updateNotificationGranularPref = async (key: string, value: boolean) => {
+    if (!token) return;
+    setNotificationPrefs((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        granular_preferences: {
+          ...prev.granular_preferences,
+          [key]: value,
+        },
+      };
+    });
+    setNotificationPrefsSaving(true);
+    try {
+      const nextGranular = {
+        ...(notificationPrefs?.granular_preferences || {}),
+        [key]: value,
+      };
+      const res = await fetch('/api/notification-preferences/me', {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ granular_preferences: nextGranular }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to save notification settings');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save notification settings');
+      await fetchNotificationPrefs();
+    } finally {
+      setNotificationPrefsSaving(false);
+    }
+  };
+
+  const [apiRoles, setApiRoles] = useState<ApiRoleRow[]>([]);
+  const [notificationPrefs, setNotificationPrefs] = useState<{
+    mute_all: boolean;
+    tasks_enabled: boolean;
+    attendance_enabled: boolean;
+    events_enabled: boolean;
+    requests_enabled: boolean;
+    assignments_enabled: boolean;
+    permissions_enabled: boolean;
+    member_care_enabled: boolean;
+    leader_updates_enabled: boolean;
+    granular_preferences: Record<string, boolean>;
+  } | null>(null);
+  const [notificationPrefsSaving, setNotificationPrefsSaving] = useState(false);
+  const [expandedNotificationSections, setExpandedNotificationSections] = useState<Set<string>>(
+    () => new Set(['tasks_enabled', 'events_enabled']),
+  );
+  const [notificationQaTypes, setNotificationQaTypes] = useState<
+    {
+      type: string;
+      category: string;
+      severity: 'low' | 'medium' | 'high';
+      title: string;
+      message: string;
+      entity_type: string;
+      action_path: string;
+    }[]
+  >([]);
+  const [notificationQaLoading, setNotificationQaLoading] = useState(false);
+  const [notificationQaSending, setNotificationQaSending] = useState<string | null>(null);
+  const [notificationQaActorId, setNotificationQaActorId] = useState('');
+  const [notificationQaRecipientId, setNotificationQaRecipientId] = useState('');
+  const [notificationQaRecipientFeed, setNotificationQaRecipientFeed] = useState<
+    {
+      id: string;
+      type: string;
+      category: string;
+      title: string;
+      message: string;
+      read_at: string | null;
+      created_at: string;
+      action_path: string | null;
+    }[]
+  >([]);
+  const [notificationQaUnreadCount, setNotificationQaUnreadCount] = useState(0);
+  const [notificationQaLastStatusByType, setNotificationQaLastStatusByType] = useState<Record<string, string>>({});
+  const [notificationQaForceSend, setNotificationQaForceSend] = useState(false);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [permDraft, setPermDraft] = useState<Set<string>>(new Set());
+  const [savingRole, setSavingRole] = useState(false);
+  const [expandedPermCats, setExpandedPermCats] = useState<Set<string>>(
+    () => new Set(PERMISSION_CATALOG.map((c) => c.id)),
+  );
+  const [staffRoleUpdating, setStaffRoleUpdating] = useState<string | null>(null);
+  const canUseNotificationQa = can('manage_permissions');
+
+  const selectedRole = apiRoles.find((r) => r.id === selectedRoleId) ?? null;
+
+  /** Match server MEMBER_STATUS_OPTION_WRITE_PERMS and who can open /settings (Root.tsx). */
+  const canConfigureMemberStatuses =
+    can('manage_member_statuses') ||
+    can('system_settings') ||
+    can('manage_permissions') ||
+    can('manage_staff');
+
+  const canConfigureGroupTypes =
+    can('manage_groups') ||
+    can('system_settings') ||
+    can('manage_permissions') ||
+    can('manage_staff');
+
+  const memberStatusesTabActive = activeTab === 'memberStatuses';
+  const groupTypesTabActive = activeTab === 'groupTypes';
+  const customFieldsTabActive = activeTab === 'customFields';
+  const {
+    options: memberStatusOptions,
+    loading: memberStatusOptionsLoading,
+    refresh: refreshMemberStatusOptions,
+  } = useMemberStatusOptions(memberStatusesTabActive);
+  const {
+    options: groupTypeOptions,
+    loading: groupTypeOptionsLoading,
+    refresh: refreshGroupTypeOptions,
+    tableMissing: groupTypeTableMissing,
+  } = useGroupTypeOptions(groupTypesTabActive);
+  const canConfigureCustomFields =
+    can('system_settings') || can('manage_permissions') || can('manage_staff');
+
+  const [customFieldsSchemaHint, setCustomFieldsSchemaHint] = useState<string | null>(null);
+
+  const fetchCustomFieldDefinitions = useCallback(async () => {
+    if (!token) return;
+    setCustomFieldsLoading(true);
+    try {
+      const res = await fetch('/api/custom-field-definitions', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errMsg =
+          typeof (data as { error?: string }).error === 'string'
+            ? (data as { error: string }).error
+            : 'Load failed';
+        const hint =
+          typeof (data as { hint?: string }).hint === 'string' ? (data as { hint: string }).hint : null;
+        if (res.status === 503 && hint) setCustomFieldsSchemaHint(hint);
+        else setCustomFieldsSchemaHint(null);
+        setCustomFieldDefinitions([]);
+        throw new Error(errMsg);
+      }
+      setCustomFieldsSchemaHint(null);
+      setCustomFieldDefinitions(Array.isArray(data) ? (data as CustomFieldDefinition[]) : []);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not load custom fields');
+    } finally {
+      setCustomFieldsLoading(false);
+    }
+  }, [token, selectedBranch?.id]);
+
+  useEffect(() => {
+    if (customFieldsTabActive && token) void fetchCustomFieldDefinitions();
+  }, [customFieldsTabActive, token, fetchCustomFieldDefinitions]);
+  const [memberStatusNewLabel, setMemberStatusNewLabel] = useState('');
+  const [memberStatusNewColor, setMemberStatusNewColor] = useState('');
+  const [memberStatusBusy, setMemberStatusBusy] = useState(false);
+
+  const MEMBER_STATUS_COLOR_PRESETS: { value: string; label: string }[] = [
+    { value: '', label: 'Default' },
+    { value: 'green', label: 'Green' },
+    { value: 'blue', label: 'Blue' },
+    { value: 'indigo', label: 'Indigo' },
+    { value: 'violet', label: 'Violet' },
+    { value: 'amber', label: 'Amber' },
+    { value: 'red', label: 'Red' },
+    { value: 'rose', label: 'Rose' },
+    { value: 'gray', label: 'Gray' },
+    { value: 'slate', label: 'Slate' },
+  ];
+
+  const sortedMemberStatusOptions = useMemo(() => {
+    return [...memberStatusOptions].sort(
+      (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label),
+    );
+  }, [memberStatusOptions]);
+
+  const sortedGroupTypeOptions = useMemo(() => {
+    return [...groupTypeOptions].sort(
+      (a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label),
+    );
+  }, [groupTypeOptions]);
+
+  const [groupTypeNewLabel, setGroupTypeNewLabel] = useState('');
+  const [groupTypeBusy, setGroupTypeBusy] = useState(false);
+
+  const seedMemberStatusDefaults = async () => {
+    if (!token || !canConfigureMemberStatuses) return;
+    setMemberStatusBusy(true);
+    try {
+      const res = await fetch('/api/member-status-options/seed-defaults', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Seed failed');
+      toast.success('Default member statuses added');
+      await refreshMemberStatusOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not add defaults');
+    } finally {
+      setMemberStatusBusy(false);
+    }
+  };
+
+  const addMemberStatusOption = async () => {
+    if (!token || !canConfigureMemberStatuses) return;
+    const label = memberStatusNewLabel.trim();
+    if (!label) {
+      toast.error('Enter a status label');
+      return;
+    }
+    setMemberStatusBusy(true);
+    try {
+      const res = await fetch('/api/member-status-options', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          label,
+          color: memberStatusNewColor.trim() || null,
+          sort_order: sortedMemberStatusOptions.length,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Add failed');
+      toast.success('Status added');
+      setMemberStatusNewLabel('');
+      setMemberStatusNewColor('');
+      await refreshMemberStatusOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not add status');
+    } finally {
+      setMemberStatusBusy(false);
+    }
+  };
+
+  const patchMemberStatusOption = async (id: string, patch: Partial<Pick<MemberStatusOption, 'label' | 'color' | 'sort_order'>>) => {
+    if (!token || !canConfigureMemberStatuses) return;
+    setMemberStatusBusy(true);
+    try {
+      const res = await fetch(`/api/member-status-options/${id}`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Update failed');
+      await refreshMemberStatusOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setMemberStatusBusy(false);
+    }
+  };
+
+  const deleteMemberStatusOption = async (id: string) => {
+    if (!token || !canConfigureMemberStatuses) return;
+    setMemberStatusBusy(true);
+    try {
+      const res = await fetch(`/api/member-status-options/${id}`, {
+        method: 'DELETE',
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Delete failed');
+      toast.success('Status removed');
+      await refreshMemberStatusOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setMemberStatusBusy(false);
+    }
+  };
+
+  const swapMemberStatusSort = async (index: number, dir: -1 | 1) => {
+    if (!token) return;
+    const list = sortedMemberStatusOptions;
+    const j = index + dir;
+    if (j < 0 || j >= list.length) return;
+    const a = list[index];
+    const b = list[j];
+    const ao = a.sort_order;
+    const bo = b.sort_order;
+    setMemberStatusBusy(true);
+    try {
+      const headers = withBranchScope(selectedBranch?.id, {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      });
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/member-status-options/${a.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ sort_order: bo }),
+        }),
+        fetch(`/api/member-status-options/${b.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ sort_order: ao }),
+        }),
+      ]);
+      const d1 = await r1.json().catch(() => ({}));
+      const d2 = await r2.json().catch(() => ({}));
+      if (!r1.ok || !r2.ok) {
+        throw new Error(
+          [d1, d2].map((d) => (typeof d?.error === 'string' ? d.error : '')).filter(Boolean).join(' ') ||
+            'Reorder failed',
+        );
+      }
+      await refreshMemberStatusOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not reorder');
+    } finally {
+      setMemberStatusBusy(false);
+    }
+  };
+
+  const seedGroupTypeDefaults = async () => {
+    if (!token || !canConfigureGroupTypes) return;
+    setGroupTypeBusy(true);
+    try {
+      const res = await fetch('/api/group-type-options/seed-defaults', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Seed failed');
+      toast.success('Default group types added');
+      await refreshGroupTypeOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not add defaults');
+    } finally {
+      setGroupTypeBusy(false);
+    }
+  };
+
+  const addGroupTypeOption = async () => {
+    if (!token || !canConfigureGroupTypes) return;
+    const label = groupTypeNewLabel.trim();
+    if (!label) {
+      toast.error('Enter a group type label');
+      return;
+    }
+    setGroupTypeBusy(true);
+    try {
+      const res = await fetch('/api/group-type-options', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          label,
+          sort_order: sortedGroupTypeOptions.length,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Add failed');
+      toast.success('Group type added');
+      setGroupTypeNewLabel('');
+      await refreshGroupTypeOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not add group type');
+    } finally {
+      setGroupTypeBusy(false);
+    }
+  };
+
+  const patchGroupTypeOption = async (
+    id: string,
+    patch: Partial<Pick<GroupTypeOption, 'label' | 'sort_order'>>,
+  ) => {
+    if (!token || !canConfigureGroupTypes) return;
+    setGroupTypeBusy(true);
+    try {
+      const res = await fetch(`/api/group-type-options/${id}`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Update failed');
+      await refreshGroupTypeOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setGroupTypeBusy(false);
+    }
+  };
+
+  const deleteGroupTypeOption = async (id: string) => {
+    if (!token || !canConfigureGroupTypes) return;
+    setGroupTypeBusy(true);
+    try {
+      const res = await fetch(`/api/group-type-options/${id}`, {
+        method: 'DELETE',
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Delete failed');
+      toast.success('Group type removed');
+      await refreshGroupTypeOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setGroupTypeBusy(false);
+    }
+  };
+
+  const swapGroupTypeSort = async (index: number, dir: -1 | 1) => {
+    if (!token) return;
+    const list = sortedGroupTypeOptions;
+    const j = index + dir;
+    if (j < 0 || j >= list.length) return;
+    const a = list[index];
+    const b = list[j];
+    const ao = a.sort_order;
+    const bo = b.sort_order;
+    setGroupTypeBusy(true);
+    try {
+      const headers = withBranchScope(selectedBranch?.id, {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      });
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/group-type-options/${a.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ sort_order: bo }),
+        }),
+        fetch(`/api/group-type-options/${b.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ sort_order: ao }),
+        }),
+      ]);
+      const d1 = await r1.json().catch(() => ({}));
+      const d2 = await r2.json().catch(() => ({}));
+      if (!r1.ok || !r2.ok) {
+        throw new Error(
+          [d1, d2].map((d) => (typeof (d as { error?: string }).error === 'string' ? (d as { error: string }).error : '')).filter(Boolean).join(' ') ||
+            'Reorder failed',
+        );
+      }
+      await refreshGroupTypeOptions();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Could not reorder');
+    } finally {
+      setGroupTypeBusy(false);
+    }
+  };
+
+  const fetchOrgRoles = useCallback(async () => {
+    if (!token) return;
+    setRolesLoading(true);
+    try {
+      const res = await fetch('/api/org/roles', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load roles');
+      const list: ApiRoleRow[] = (data.roles || []).map((r: { id: string; name: string; permissions: unknown }) => ({
+        id: r.id,
+        name: r.name,
+        permissions: Array.isArray(r.permissions) ? (r.permissions as string[]) : [],
+      }));
+      setApiRoles(list);
+      setSelectedRoleId((cur) => {
+        if (cur && list.some((x) => x.id === cur)) return cur;
+        return list[0]?.id ?? null;
+      });
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to load roles');
+    } finally {
+      setRolesLoading(false);
+    }
+  }, [token, selectedBranch?.id]);
+
+  useEffect(() => {
+    if (selectedRoleId) {
+      const r = apiRoles.find((x) => x.id === selectedRoleId);
+      if (r) setPermDraft(new Set(r.permissions));
+    }
+  }, [selectedRoleId, apiRoles]);
+
+  useEffect(() => {
+    if (activeTab === 'permissions' && token && can('manage_permissions')) void fetchOrgRoles();
+  }, [activeTab, token, fetchOrgRoles, can]);
+
+  const persistRolePermissions = async () => {
+    if (!token || !selectedRoleId) return;
+    setSavingRole(true);
+    try {
+      const res = await fetch(`/api/org/roles/${selectedRoleId}`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ permission_ids: [...permDraft] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      toast.success('Role permissions updated');
+      void fetchOrgRoles();
+    } catch (e: any) {
+      toast.error(e?.message || 'Save failed');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const createOrgRole = async () => {
+    const name = newRoleName.trim();
+    if (!token || !name) {
+      toast.error('Enter a role name');
+      return;
+    }
+    try {
+      const res = await fetch('/api/org/roles', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ name, permission_ids: [] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Create failed');
+      toast.success('Role created');
+      setNewRoleName('');
+      await fetchOrgRoles();
+      if (data.role?.id) setSelectedRoleId(data.role.id);
+    } catch (e: any) {
+      toast.error(e?.message || 'Create failed');
+    }
+  };
+
+  const deleteOrgRole = async (id: string) => {
+    if (!token) return;
+    if (!confirm('Delete this role? Users must be reassigned first if the role is in use.')) return;
+    try {
+      const res = await fetch(`/api/org/roles/${id}`, {
+        method: 'DELETE',
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      toast.success('Role deleted');
+      if (selectedRoleId === id) setSelectedRoleId(null);
+      void fetchOrgRoles();
+    } catch (e: any) {
+      toast.error(e?.message || 'Delete failed');
+    }
+  };
+
+  const patchStaffRole = async (profileId: string, roleId: string | null) => {
+    if (!token) return;
+    setStaffRoleUpdating(profileId);
+    try {
+      const res = await fetch(`/api/org/staff/${profileId}/role`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ role_id: roleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast.success('Role assigned');
+      void fetchStaffList();
+      void fetchStaffProfileGroups();
+    } catch (e: any) {
+      toast.error(e?.message || 'Update failed');
+    } finally {
+      setStaffRoleUpdating(null);
+    }
+  };
+
+  const createStaffProfileGroup = async () => {
+    if (!token || !newStaffGroupName.trim()) return;
+    if (!newStaffGroupRoleId) {
+      toast.error('Choose a role for this group.');
+      return;
+    }
+    setCreatingStaffGroup(true);
+    try {
+      const res = await fetch('/api/org/staff-profile-groups', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ name: newStaffGroupName.trim(), role_id: newStaffGroupRoleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Create failed');
+      toast.success('Staff access group created');
+      setNewStaffGroupName('');
+      setNewStaffGroupRoleId('');
+      void fetchStaffProfileGroups();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Create failed');
+    } finally {
+      setCreatingStaffGroup(false);
+    }
+  };
+
+  const patchStaffProfileGroupRole = async (groupId: string, roleId: string | null) => {
+    if (!token) return;
+    const g = staffProfileGroups.find((x) => x.id === groupId);
+    const n = g?.member_count ?? 0;
+    if (
+      !confirm(
+        roleId
+          ? `Update this group’s role?${n > 0 ? ` This will set all ${n} member(s) to this role.` : ' New members will use this role.'}`
+          : `Remove the group’s role?${n > 0 ? ` This will clear the role for ${n} member(s).` : ''}`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/org/staff-profile-groups/${encodeURIComponent(groupId)}`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ role_id: roleId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast.success('Group updated');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const deleteStaffProfileGroup = async (groupId: string) => {
+    if (!token) return;
+    if (
+      !confirm(
+        'Delete this staff access group?\n\n' +
+          'Members will be removed from the group and their assigned role will be cleared. They will lose access to the platform until an administrator assigns a role again under Branch staff.\n\n' +
+          'This does not delete their login account, but they cannot use the app without a role and active access.',
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`/api/org/staff-profile-groups/${encodeURIComponent(groupId)}`, {
+        method: 'DELETE',
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      toast.success('Group deleted');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const addStaffToProfileGroup = async (groupId: string, profileId: string) => {
+    if (!token || !profileId) return;
+    try {
+      const res = await fetch(`/api/org/staff-profile-groups/${encodeURIComponent(groupId)}/members`, {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ profile_id: profileId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Add failed');
+      toast.success('Added to group');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Add failed');
+    }
+  };
+
+  const removeStaffFromProfileGroup = async (groupId: string, profileId: string) => {
+    if (!token) return;
+    if (!confirm('Remove this person from the group? Their role will be cleared unless you assign one under Branch staff.')) return;
+    try {
+      const res = await fetch(
+        `/api/org/staff-profile-groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(profileId)}`,
+        {
+          method: 'DELETE',
+          headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Remove failed');
+      toast.success('Removed from group');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Remove failed');
+    }
+  };
+
+  const patchStaffPlatformAccess = async (profileId: string, is_active: boolean) => {
+    if (!token) return;
+    if (
+      !is_active &&
+      !confirm(
+        'Suspend this user’s platform access?\n\nThey will be signed out and cannot use the app until access is restored here.',
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`/api/org/staff/${encodeURIComponent(profileId)}/access`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ is_active }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast.success(is_active ? 'Access restored' : 'Access suspended');
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const patchStaffGroupSuspended = async (groupId: string, suspended: boolean) => {
+    if (!token) return;
+    if (
+      suspended &&
+      !confirm(
+        'Suspend this staff access group?\n\nAll members will lose platform access until the group is unsuspended.',
+      )
+    )
+      return;
+    try {
+      const res = await fetch(`/api/org/staff-profile-groups/${encodeURIComponent(groupId)}`, {
+        method: 'PATCH',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ suspended }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      toast.success(suspended ? 'Group suspended' : 'Group unsuspended');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    }
+  };
+
+  const togglePermDraft = (id: string) => {
+    setPermDraft((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        const expanded = resolveImpliedPermissions(next);
+        for (const imp of expanded) next.add(imp);
+      }
+      return next;
+    });
+  };
+
+  const impliedByOther = useMemo(() => {
+    return resolveImpliedPermissions(permDraft);
+  }, [permDraft]);
+
+  const toggleCategoryAll = (_catId: string, ids: string[]) => {
+    const allOn = ids.every((id) => permDraft.has(id));
+    setPermDraft((prev) => {
+      const next = new Set(prev);
+      if (allOn) {
+        for (const id of ids) next.delete(id);
+      } else {
+        for (const id of ids) next.add(id);
+        const expanded = resolveImpliedPermissions(next);
+        for (const imp of expanded) next.add(imp);
+      }
+      return next;
+    });
+  };
+
+  const [staffList, setStaffList] = useState<
+    {
+      id: string;
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      branch_id: string | null;
+      role_id: string | null;
+      is_org_owner?: boolean | null;
+      is_active?: boolean;
+      staff_access_group_name?: string | null;
+      ministry_scope_group_ids?: string[];
+      created_at: string | null;
+    }[]
+  >([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [ministryGroupNameById, setMinistryGroupNameById] = useState<Map<string, string>>(() => new Map());
+  const [ministryModalProfileId, setMinistryModalProfileId] = useState<string | null>(null);
+  const [ministryModalGroups, setMinistryModalGroups] = useState<
+    { id: string; name: string; system_kind?: string | null }[]
+  >([]);
+  const [ministryModalSelected, setMinistryModalSelected] = useState<Set<string>>(() => new Set());
+  const [ministryModalLoading, setMinistryModalLoading] = useState(false);
+  const [ministryModalSaving, setMinistryModalSaving] = useState(false);
+  const [leaderForm, setLeaderForm] = useState({ firstName: '', lastName: '', email: '', password: '' });
+  const [leaderSubmitting, setLeaderSubmitting] = useState(false);
+
+  type StaffProfileGroupRow = {
+    id: string;
+    name: string;
+    role_id: string | null;
+    suspended?: boolean;
+    member_count: number;
+    members: { profile_id: string; email: string | null; first_name: string | null; last_name: string | null }[];
+  };
+  const [staffProfileGroups, setStaffProfileGroups] = useState<StaffProfileGroupRow[]>([]);
+  const [staffGroupsLoading, setStaffGroupsLoading] = useState(false);
+  const [newStaffGroupName, setNewStaffGroupName] = useState('');
+  const [newStaffGroupRoleId, setNewStaffGroupRoleId] = useState('');
+  const [creatingStaffGroup, setCreatingStaffGroup] = useState(false);
+  const [staffGroupExpanded, setStaffGroupExpanded] = useState<Record<string, boolean>>({});
+  const [bulkModalGroupId, setBulkModalGroupId] = useState<string | null>(null);
+  const [bulkModalStep, setBulkModalStep] = useState<'pick' | 'confirm'>('pick');
+  const [bulkModalSearch, setBulkModalSearch] = useState('');
+  const [bulkModalSelected, setBulkModalSelected] = useState<Set<string>>(new Set());
+  const [bulkModalSubmitting, setBulkModalSubmitting] = useState(false);
+  const qaActors = useMemo(
+    () =>
+      staffList.map((row) => ({
+        id: row.id,
+        name: [row.first_name || '', row.last_name || ''].join(' ').trim() || row.email || 'Staff user',
+        email: row.email || '',
+      })),
+    [staffList],
+  );
+
+  const notificationQaTypeGroups = useMemo(() => {
+    const byCategory = new Map<string, typeof notificationQaTypes>();
+    for (const item of notificationQaTypes) {
+      const list = byCategory.get(item.category) || [];
+      list.push(item);
+      byCategory.set(item.category, list);
+    }
+    return [...byCategory.entries()];
+  }, [notificationQaTypes]);
+
+  const fetchStaffProfileGroups = useCallback(async () => {
+    if (!token) return;
+    setStaffGroupsLoading(true);
+    try {
+      const res = await fetch('/api/org/staff-profile-groups', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load staff access groups');
+      setStaffProfileGroups(Array.isArray(data.groups) ? data.groups : []);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to load staff access groups';
+      toast.error(msg);
+      setStaffProfileGroups([]);
+    } finally {
+      setStaffGroupsLoading(false);
+    }
+  }, [token, selectedBranch?.id]);
+
+  const profileIdToStaffGroupId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of staffProfileGroups) {
+      for (const mem of g.members) {
+        m.set(mem.profile_id, g.id);
+      }
+    }
+    return m;
+  }, [staffProfileGroups]);
+
+  const fetchStaffList = useCallback(async () => {
+    if (!token) return;
+    setStaffLoading(true);
+    try {
+      const res = await fetch('/api/org/staff', {
+        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load staff');
+      setStaffList(Array.isArray(data.staff) ? data.staff : []);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to load staff');
+    } finally {
+      setStaffLoading(false);
+    }
+  }, [token, selectedBranch?.id]);
+
+  const fetchNotificationQaTypes = useCallback(async () => {
+    if (!token || !canUseNotificationQa) return;
+    setNotificationQaLoading(true);
+    try {
+      const data = (await notificationsApi.listTestTypes()) as {
+        types?: {
+          type: string;
+          category: string;
+          severity: 'low' | 'medium' | 'high';
+          title: string;
+          message: string;
+          entity_type: string;
+          action_path: string;
+        }[];
+      };
+      const list = Array.isArray(data.types) ? data.types : [];
+      setNotificationQaTypes(list);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load notification QA types');
+      setNotificationQaTypes([]);
+    } finally {
+      setNotificationQaLoading(false);
+    }
+  }, [token, canUseNotificationQa]);
+
+  const fetchNotificationQaPreview = useCallback(async () => {
+    if (!token || !canUseNotificationQa || !notificationQaRecipientId) {
+      setNotificationQaRecipientFeed([]);
+      setNotificationQaUnreadCount(0);
+      return;
+    }
+    try {
+      const [feedRes, unreadRes] = await Promise.all([
+        notificationsApi.testPreview(notificationQaRecipientId, 25) as Promise<{ notifications?: Record<string, unknown>[] }>,
+        notificationsApi.testPreviewUnreadCount(notificationQaRecipientId) as Promise<{ unread_count?: number }>,
+      ]);
+      const rows = Array.isArray(feedRes.notifications) ? feedRes.notifications : [];
+      setNotificationQaRecipientFeed(
+        rows.map((n) => ({
+          id: String(n.id || ''),
+          type: String(n.type || ''),
+          category: String(n.category || ''),
+          title: String(n.title || ''),
+          message: String(n.message || ''),
+          read_at: typeof n.read_at === 'string' ? n.read_at : null,
+          created_at: typeof n.created_at === 'string' ? n.created_at : new Date().toISOString(),
+          action_path: typeof n.action_path === 'string' ? n.action_path : null,
+        })),
+      );
+      setNotificationQaUnreadCount(Number(unreadRes.unread_count || 0));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load recipient preview');
+    }
+  }, [token, canUseNotificationQa, notificationQaRecipientId]);
+
+  const sendNotificationQaType = useCallback(
+    async (type: string) => {
+      if (!token || !canUseNotificationQa || !notificationQaRecipientId) {
+        toast.error('Choose recipient first');
+        return;
+      }
+      setNotificationQaSending(type);
+      try {
+        const data = (await notificationsApi.testSend({
+          type,
+          recipient_profile_id: notificationQaRecipientId,
+          actor_profile_id: notificationQaActorId || undefined,
+          force: notificationQaForceSend || undefined,
+        })) as { status?: string; delivered?: boolean; inserted?: boolean };
+        const inserted = data.inserted !== false;
+        const status = typeof data.status === 'string' ? data.status : data.delivered ? 'delivered' : 'sent';
+        setNotificationQaLastStatusByType((prev) => ({ ...prev, [type]: status }));
+        if (inserted) {
+          toast.success(`Test sent: ${type} (${status})`);
+        } else {
+          toast.message(
+            `Skipped ${type}: same QA type for this recipient was sent in the last 60 minutes. Enable "Force send" to insert another row.`,
+          );
+        }
+        await fetchNotificationQaPreview();
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to send test notification';
+        setNotificationQaLastStatusByType((prev) => ({ ...prev, [type]: 'failed' }));
+        toast.error(msg);
+      } finally {
+        setNotificationQaSending(null);
+      }
+    },
+    [token, canUseNotificationQa, notificationQaRecipientId, notificationQaActorId, notificationQaForceSend, fetchNotificationQaPreview],
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'staff' || !token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          new URL('/api/groups?tree=1&include_system=1', window.location.origin).toString(),
+          { headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }) },
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || cancelled) return;
+        const m = new Map<string, string>();
+        const gList = Array.isArray(data) ? data : Array.isArray(data?.groups) ? data.groups : [];
+        for (const g of gList) {
+          const row = g as { id?: string; name?: string };
+          if (row.id && typeof row.name === 'string') m.set(row.id, row.name);
+        }
+        if (!cancelled) setMinistryGroupNameById(m);
+      } catch {
+        /* */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, token, selectedBranch?.id]);
+
+  const openMinistryScopeModal = useCallback(
+    async (profileId: string) => {
+      if (!token) return;
+      setMinistryModalProfileId(profileId);
+      setMinistryModalLoading(true);
+      try {
+        const [grRes, scRes] = await Promise.all([
+          fetch(new URL('/api/groups?tree=1&include_system=1', window.location.origin).toString(), {
+            headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+          }),
+          fetch(`/api/org/staff/${encodeURIComponent(profileId)}/ministry-scope`, {
+            headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+          }),
+        ]);
+        const gData = await grRes.json().catch(() => ({}));
+        const sData = await scRes.json().catch(() => ({}));
+        if (!grRes.ok) {
+          throw new Error(typeof (gData as { error?: string }).error === 'string' ? (gData as { error: string }).error : 'Failed to load groups');
+        }
+        if (!scRes.ok) {
+          throw new Error(typeof (sData as { error?: string }).error === 'string' ? (sData as { error: string }).error : 'Failed to load scope');
+        }
+        const gArr = Array.isArray(gData) ? gData : Array.isArray(gData?.groups) ? gData.groups : [];
+        const list = (gArr as { id: string; name: string; system_kind?: string | null }[]).map((g) => ({
+            id: g.id,
+            name: (g.name || '').trim() || 'Ministry',
+            system_kind: g.system_kind ?? null,
+          }));
+        setMinistryModalGroups(list.sort((a, b) => a.name.localeCompare(b.name)));
+        const ids = Array.isArray((sData as { group_ids?: string[] }).group_ids)
+          ? (sData as { group_ids: string[] }).group_ids
+          : [];
+        setMinistryModalSelected(new Set(ids.filter((x) => typeof x === 'string' && x.length > 0)));
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Failed to open editor');
+        setMinistryModalProfileId(null);
+        setMinistryModalGroups([]);
+        setMinistryModalSelected(new Set());
+      } finally {
+        setMinistryModalLoading(false);
+      }
+    },
+    [token, selectedBranch?.id],
+  );
+
+  const saveMinistryScopeModal = useCallback(async () => {
+    if (!token || !ministryModalProfileId) return;
+    setMinistryModalSaving(true);
+    try {
+      const res = await fetch(`/api/org/staff/${encodeURIComponent(ministryModalProfileId)}/ministry-scope`, {
+        method: 'PUT',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({ group_ids: [...ministryModalSelected] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof (data as { error?: string }).error === 'string' ? (data as { error: string }).error : 'Save failed');
+      }
+      toast.success('Ministry scope saved');
+      setMinistryModalProfileId(null);
+      setMinistryModalGroups([]);
+      setMinistryModalSelected(new Set());
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setMinistryModalSaving(false);
+    }
+  }, [token, ministryModalProfileId, ministryModalSelected, selectedBranch?.id, fetchStaffList]);
+
+  const bulkEligibleStaff = useMemo(() => {
+    const q = bulkModalSearch.trim().toLowerCase();
+    return staffList.filter((row) => {
+      if (row.is_org_owner === true) return false;
+      if (profileIdToStaffGroupId.has(row.id)) return false;
+      if (!q) return true;
+      const name = [row.first_name, row.last_name].filter(Boolean).join(' ').toLowerCase();
+      return name.includes(q) || (row.email || '').toLowerCase().includes(q);
+    });
+  }, [staffList, profileIdToStaffGroupId, bulkModalSearch]);
+
+  const submitBulkAddMembers = async () => {
+    if (!token || !bulkModalGroupId || bulkModalSelected.size === 0) return;
+    setBulkModalSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/org/staff-profile-groups/${encodeURIComponent(bulkModalGroupId)}/members/bulk`,
+        {
+          method: 'POST',
+          headers: withBranchScope(selectedBranch?.id, {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({ profile_ids: [...bulkModalSelected] }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Bulk add failed');
+      const added = (data.added as string[]) || [];
+      const skipped = (data.skipped as { profile_id: string; reason: string }[]) || [];
+      toast.success(`Added ${added.length} member(s)${skipped.length ? `; ${skipped.length} skipped` : ''}`);
+      setBulkModalGroupId(null);
+      setBulkModalStep('pick');
+      setBulkModalSelected(new Set());
+      setBulkModalSearch('');
+      void fetchStaffProfileGroups();
+      void fetchStaffList();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Bulk add failed');
+    } finally {
+      setBulkModalSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      activeTab === 'staff' &&
+      token &&
+      (can('manage_staff') || can('manage_permissions'))
+    ) {
+      void fetchStaffList();
+    }
+  }, [activeTab, token, fetchStaffList, can]);
+
+  useEffect(() => {
+    if (
+      activeTab === 'staff' &&
+      token &&
+      (can('manage_staff') || can('manage_permissions'))
+    ) {
+      void fetchOrgRoles();
+    }
+  }, [activeTab, token, can, fetchOrgRoles]);
+
+  useEffect(() => {
+    if (
+      activeTab === 'staff' &&
+      token &&
+      (can('manage_staff') || can('manage_permissions'))
+    ) {
+      void fetchStaffProfileGroups();
+    }
+  }, [activeTab, token, can, fetchStaffProfileGroups]);
+
+  useEffect(() => {
+    if (activeTab === 'notificationsQA' && token && canUseNotificationQa) {
+      void fetchStaffList();
+      void fetchNotificationQaTypes();
+    }
+  }, [activeTab, token, canUseNotificationQa, fetchStaffList, fetchNotificationQaTypes]);
+
+  useEffect(() => {
+    if (!canUseNotificationQa) return;
+    if (!notificationQaActorId && qaActors.length > 0) setNotificationQaActorId(qaActors[0].id);
+    if (!notificationQaRecipientId && qaActors.length > 0) setNotificationQaRecipientId(qaActors[0].id);
+  }, [canUseNotificationQa, qaActors, notificationQaActorId, notificationQaRecipientId]);
+
+  useEffect(() => {
+    if (activeTab !== 'notificationsQA' || !canUseNotificationQa) return;
+    void fetchNotificationQaPreview();
+  }, [activeTab, canUseNotificationQa, fetchNotificationQaPreview]);
+
+  const handleCreateGroupLeader = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) {
+      toast.error('Sign in required');
+      return;
+    }
+    setLeaderSubmitting(true);
+    try {
+      const res = await fetch('/api/org/group-leaders', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          first_name: leaderForm.firstName.trim(),
+          last_name: leaderForm.lastName.trim(),
+          email: leaderForm.email.trim(),
+          password: leaderForm.password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.details || 'Failed to create account');
+      toast.success('Group leader account created. They can sign in with this email and password.');
+      setLeaderForm({ firstName: '', lastName: '', email: '', password: '' });
+      void fetchStaffList();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to create account');
+    } finally {
+      setLeaderSubmitting(false);
+    }
+  };
   
   // Debug: Check auth status on component mount
   useEffect(() => {
@@ -125,7 +1479,7 @@ export default function Settings() {
   
   const [showAssignLeaderModal, setShowAssignLeaderModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState('');
-  const [selectedRole, setSelectedRole] = useState('group_leader');
+  const [assignLeaderRoleType, setAssignLeaderRoleType] = useState('group_leader');
   const [selectedMinistries, setSelectedMinistries] = useState<string[]>([]);
   const [expandedMinistries, setExpandedMinistries] = useState<Set<string>>(new Set());
   
@@ -134,36 +1488,20 @@ export default function Settings() {
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [editingBranch, setEditingBranch] = useState<any | null>(null);
   const [loadingBranches, setLoadingBranches] = useState(false);
-  const [customFields, setCustomFields] = useState<CustomField[]>([
-    {
-      id: '1',
-      label: 'Emergency Contact',
-      fieldType: 'phone',
-      required: true,
-      placeholder: 'Enter emergency contact number',
-      appliesTo: ['member'],
-    },
-    {
-      id: '2',
-      label: 'Preferred Ministry',
-      fieldType: 'dropdown',
-      required: false,
-      options: ['Worship Team', 'Children Ministry', 'Youth Ministry', 'Outreach'],
-      appliesTo: ['member'],
-    },
-  ]);
+  const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomFieldDefinition[]>([]);
+  const [customFieldsLoading, setCustomFieldsLoading] = useState(false);
   const [showFieldEditor, setShowFieldEditor] = useState(false);
-  const [editingField, setEditingField] = useState<CustomField | null>(null);
-
-  // Event Types
-  const [eventTypes, setEventTypes] = useState<EventType[]>([
-    { id: '1', name: 'Service', emoji: '⛪', color: 'bg-purple-500', isDefault: true },
-    { id: '2', name: 'Meeting', emoji: '👥', color: 'bg-blue-500', isDefault: true },
-    { id: '3', name: 'Conference', emoji: '🎯', color: 'bg-orange-500', isDefault: true },
-    { id: '4', name: 'Other', emoji: '📅', color: 'bg-gray-500', isDefault: true },
-  ]);
-  const [showEventTypeEditor, setShowEventTypeEditor] = useState(false);
-  const [editingEventType, setEditingEventType] = useState<EventType | null>(null);
+  const [editingDefinitionId, setEditingDefinitionId] = useState<string | null>(null);
+  const [fieldDraft, setFieldDraft] = useState<FieldDraft>({
+    label: '',
+    field_type: 'text',
+    required: false,
+    placeholder: '',
+    options: [],
+    default_value: '',
+    applies_to: ['member'],
+    show_on_public: false,
+  });
 
   // Integration states
   const [integrationTab, setIntegrationTab] = useState<'whatsapp' | 'sms' | 'email'>('whatsapp');
@@ -171,32 +1509,12 @@ export default function Settings() {
   const [smsEnabled, setSmsEnabled] = useState(false);
   const [emailEnabled, setEmailEnabled] = useState(false);
 
-  const togglePermission = (roleId: string, permissionId: string) => {
-    setRoles(roles.map(role => {
-      if (role.id === roleId) {
-        const newPermissions = new Set(role.permissions);
-        if (newPermissions.has(permissionId)) {
-          newPermissions.delete(permissionId);
-        } else {
-          newPermissions.add(permissionId);
-        }
-        return { ...role, permissions: newPermissions };
-      }
-      return role;
-    }));
-  };
-
-  const handleSavePermissions = () => {
-    // In real implementation, this would save to backend
-    toast.success('Permissions saved successfully!');
-  };
-
   // Sample data for member selection
   const mockMembers = [
-    { id: '1', name: 'Emma Thompson', email: 'emma.t@church.com', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100' },
-    { id: '2', name: 'David Martinez', email: 'david.m@church.com', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100' },
-    { id: '3', name: 'Lisa Anderson', email: 'lisa.a@church.com', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100' },
-    { id: '4', name: 'James Wilson', email: 'james.w@church.com', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100' },
+    { id: '1', name: 'Emma Thompson', email: 'emma.t@church.com', avatar: '' },
+    { id: '2', name: 'David Martinez', email: 'david.m@church.com', avatar: '' },
+    { id: '3', name: 'Lisa Anderson', email: 'lisa.a@church.com', avatar: '' },
+    { id: '4', name: 'James Wilson', email: 'james.w@church.com', avatar: '' },
   ];
 
   // Sample ministries with tree structure
@@ -261,7 +1579,7 @@ export default function Settings() {
     toast.success('Leader assigned successfully!');
     setShowAssignLeaderModal(false);
     setSelectedMember('');
-    setSelectedRole('group_leader');
+    setAssignLeaderRoleType('group_leader');
     setSelectedMinistries([]);
     setExpandedMinistries(new Set());
   };
@@ -302,7 +1620,7 @@ export default function Settings() {
           }}
           className={`w-full px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left flex items-center ${
             isSelected
-              ? 'border-purple-500 bg-purple-100 text-purple-700'
+              ? 'border-blue-500 bg-blue-100 text-blue-700'
               : 'border-gray-200 hover:border-gray-300 text-gray-700 bg-white'
           }`}
           style={{ marginLeft: `${level * 20}px` }}
@@ -340,90 +1658,94 @@ export default function Settings() {
   };
 
   const fetchBranches = useCallback(async () => {
+    if (!token) return;
     setLoadingBranches(true);
-    setTimeout(() => {
-      setDbBranches(branches || []);
+    try {
+      const res = await fetch('/api/branches', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Failed to load branches');
+      setDbBranches(Array.isArray(data) ? data : []);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load branches');
+    } finally {
       setLoadingBranches(false);
-    }, 500);
-  }, [branches]);
+    }
+  }, [token]);
 
-  // Fetch branches from database (Mocked)
   useEffect(() => {
     if (activeTab === 'branches') {
-      fetchBranches();
+      void fetchBranches();
     }
   }, [activeTab, fetchBranches]);
 
   const handleSaveBranch = async (branchData: any) => {
-    toast.success(editingBranch ? 'Branch updated successfully!' : 'Branch created successfully!');
+    if (!token) return;
+    try {
+      const isEdit = !!branchData.id;
+      const url = isEdit ? `/api/branches/${branchData.id}` : '/api/branches';
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(branchData),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Failed to save branch');
+      }
+      toast.success(isEdit ? 'Branch updated successfully!' : 'Branch created successfully!');
     setShowBranchModal(false);
     setEditingBranch(null);
+      await fetchBranches();
+      await refreshBranches();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save branch');
+    }
   };
 
-  const handleDeleteBranch = async (branchId: string) => {
-    if (!confirm('Are you sure you want to delete this branch? This action cannot be undone.')) {
+  const handleDeleteBranch = async (branchId: string, branchName: string) => {
+    if (!token) {
       return;
     }
+    const confirmText = `DELETE ${branchName}`.trim();
+    const warningMessage =
+      'WARNING: You are about to permanently delete this branch.\n\n' +
+      `Branch: ${branchName}\n` +
+      'This action cannot be undone.\n\n' +
+      `Type "${confirmText}" to continue.`;
+    const typed = window.prompt(warningMessage);
+    if (!typed || typed.trim() !== confirmText) {
+      toast.error('Branch delete cancelled. Confirmation text did not match.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/branches/${branchId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Failed to delete branch');
+    }
     toast.success('Branch deleted successfully!');
+      await fetchBranches();
+      await refreshBranches();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to delete branch');
+    }
   };
-
-  const settingsSections = [
-    {
-      icon: User,
-      title: 'Profile Settings',
-      description: 'Manage your account information and preferences',
-      color: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-    },
-    {
-      icon: Bell,
-      title: 'Notifications',
-      description: 'Configure how you receive notifications',
-      color: 'bg-purple-50',
-      iconColor: 'text-purple-600',
-    },
-    {
-      icon: Shield,
-      title: 'Privacy & Security',
-      description: 'Control your privacy and security settings',
-      color: 'bg-green-50',
-      iconColor: 'text-green-600',
-    },
-    {
-      icon: Database,
-      title: 'Data Management',
-      description: 'Import, export, and manage your data',
-      color: 'bg-orange-50',
-      iconColor: 'text-orange-600',
-    },
-    {
-      icon: Palette,
-      title: 'Appearance',
-      description: 'Customize the look and feel',
-      color: 'bg-pink-50',
-      iconColor: 'text-pink-600',
-    },
-    {
-      icon: Globe,
-      title: 'Church Settings',
-      description: 'Configure church-wide settings',
-      color: 'bg-indigo-50',
-      iconColor: 'text-indigo-600',
-    },
-  ];
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="font-semibold text-gray-900 text-[24px]">Settings</h1>
-        <p className="mt-2 text-gray-500">Manage your application settings and preferences</p>
-      </div>
-
       {/* Tabs */}
-      <div className="flex items-center space-x-2 border-b border-gray-200">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-gray-200">
         <button
-          onClick={() => setActiveTab('general')}
+          type="button"
+          onClick={() => goSettingsTab('general')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'general'
               ? 'border-gray-900 text-gray-900'
@@ -433,7 +1755,46 @@ export default function Settings() {
           General Settings
         </button>
         <button
-          onClick={() => setActiveTab('permissions')}
+          type="button"
+          onClick={() => goSettingsTab('notifications')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+            activeTab === 'notifications'
+              ? 'border-gray-900 text-gray-900'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Bell className="w-4 h-4 inline mr-2" />
+          Notifications
+        </button>
+        {canUseNotificationQa && (
+          <button
+            type="button"
+            onClick={() => goSettingsTab('notificationsQA')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+              activeTab === 'notificationsQA'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <CheckSquare className="w-4 h-4 inline mr-2" />
+            Notification QA
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => goSettingsTab('staff')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+            activeTab === 'staff'
+              ? 'border-gray-900 text-gray-900'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <User className="w-4 h-4 inline mr-2" />
+          Staff / Leaders
+        </button>
+        <button
+          type="button"
+          onClick={() => goSettingsTab('permissions')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'permissions'
               ? 'border-gray-900 text-gray-900'
@@ -444,7 +1805,8 @@ export default function Settings() {
           Roles & Permissions
         </button>
         <button
-          onClick={() => setActiveTab('customFields')}
+          type="button"
+          onClick={() => goSettingsTab('customFields')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'customFields'
               ? 'border-gray-900 text-gray-900'
@@ -454,8 +1816,10 @@ export default function Settings() {
           <Type className="w-4 h-4 inline mr-2" />
           Custom Fields
         </button>
+        {can('manage_event_types') && (
         <button
-          onClick={() => setActiveTab('eventTypes')}
+            type="button"
+            onClick={() => goSettingsTab('eventTypes')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'eventTypes'
               ? 'border-gray-900 text-gray-900'
@@ -465,8 +1829,48 @@ export default function Settings() {
           <Tag className="w-4 h-4 inline mr-2" />
           Event Types
         </button>
+        )}
+        {can('manage_program_templates') && (
         <button
-          onClick={() => setActiveTab('integrations')}
+            type="button"
+            onClick={() => goSettingsTab('programTemplates')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+              activeTab === 'programTemplates'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4 inline mr-2" />
+            Program templates
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => goSettingsTab('memberStatuses')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+            activeTab === 'memberStatuses'
+              ? 'border-gray-900 text-gray-900'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <UserCircle2 className="w-4 h-4 inline mr-2" />
+          Member statuses
+        </button>
+        <button
+          type="button"
+          onClick={() => goSettingsTab('groupTypes')}
+          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
+            activeTab === 'groupTypes'
+              ? 'border-gray-900 text-gray-900'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Layers className="w-4 h-4 inline mr-2" />
+          Group types
+        </button>
+        <button
+          type="button"
+          onClick={() => goSettingsTab('integrations')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'integrations'
               ? 'border-gray-900 text-gray-900'
@@ -477,7 +1881,8 @@ export default function Settings() {
           Integrations
         </button>
         <button
-          onClick={() => setActiveTab('branches')}
+          type="button"
+          onClick={() => goSettingsTab('branches')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'branches'
               ? 'border-gray-900 text-gray-900'
@@ -488,7 +1893,8 @@ export default function Settings() {
           Branch Selection
         </button>
         <button
-          onClick={() => setActiveTab('database')}
+          type="button"
+          onClick={() => goSettingsTab('database')}
           className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
             activeTab === 'database'
               ? 'border-gray-900 text-gray-900'
@@ -502,487 +1908,1273 @@ export default function Settings() {
 
       {/* General Settings Tab */}
       {activeTab === 'general' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {settingsSections.map((section, index) => (
-            <motion.div
-              key={section.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              onClick={() => toast.info(`Opening ${section.title}...`)}
-              className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer group"
-            >
-              <div className={`w-12 h-12 ${section.color} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
-                <section.icon className={`w-6 h-6 ${section.iconColor}`} />
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm max-w-2xl">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <Building2 className="w-5 h-5 text-blue-600" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{section.title}</h3>
-              <p className="text-sm text-gray-600">{section.description}</p>
-              <div className="mt-4 text-sm text-indigo-600 font-medium group-hover:translate-x-1 transition-transform inline-flex items-center">
-                Configure →
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900">Organization name</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Shown in the app header and elsewhere. Organization owners may always edit; other staff need the
+                  &quot;Edit organization name&quot; permission in Roles.
+                </p>
+                <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={orgNameDraft}
+                      onChange={(e) => setOrgNameDraft(e.target.value)}
+                      disabled={orgNameLoading || !canEditOrgName}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-500"
+                      placeholder={currentOrganization?.name || 'Your organization'}
+                    />
+                  </div>
+                  {canEditOrgName && (
+                    <button
+                      type="button"
+                      onClick={() => void saveOrganizationName()}
+                      disabled={orgNameSaving || orgNameLoading}
+                      className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50 shrink-0"
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      {orgNameSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  )}
               </div>
-            </motion.div>
-          ))}
+                {!canEditOrgName && (
+                  <p className="mt-3 text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                    You can view the name. Ask an owner or administrator to grant &quot;Edit organization name&quot; in
+                    Roles &amp; permissions if you need to change it.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+
+      {activeTab === 'notifications' && (
+        <div className="space-y-6 max-w-3xl">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-gray-900">Notification Settings</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Control which notifications you receive in real-time. These changes affect only your account.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
+            {notificationPrefs == null ? (
+              <p className="text-sm text-gray-500">Loading notification preferences...</p>
+            ) : (
+              <>
+                <label className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">Mute all notifications</span>
+                    <p className="text-xs text-gray-500 mt-1">Pause every in-app notification until you re-enable them.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(notificationPrefs.mute_all)}
+                    disabled={notificationPrefsSaving}
+                    onChange={(e) => void updateNotificationPref('mute_all', e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </label>
+
+                {[
+                  {
+                    key: 'tasks_enabled',
+                    label: 'Tasks',
+                    description: 'Updates related to assigned work and completion status.',
+                    examples: [
+                      { toggleKey: 'task_assigned', title: 'Task assigned', desc: 'Get notified when a task is assigned to you.' },
+                      { toggleKey: 'task_completed', title: 'Task completed', desc: 'Leaders can see when assigned tasks are completed.' },
+                      { toggleKey: 'task_overdue', title: 'Task overdue', desc: 'Reminders for pending items that passed due date.' },
+                    ],
+                  },
+                  {
+                    key: 'attendance_enabled',
+                    label: 'Attendance',
+                    description: 'Reminders and updates for attendance tracking windows.',
+                    examples: [
+                      { toggleKey: 'attendance_start_reminder', title: 'Take attendance reminder', desc: 'Alert 5 minutes before event starts.' },
+                      { toggleKey: 'attendance_close_reminder', title: 'Closing reminder', desc: 'Alert 10 minutes before attendance close time.' },
+                      { toggleKey: 'attendance_missed', title: 'Attendance missed', desc: 'Flag when attendance was not taken on time.' },
+                    ],
+                  },
+                  {
+                    key: 'events_enabled',
+                    label: 'Events',
+                    description: 'Changes made to event schedule and event details.',
+                    examples: [
+                      { toggleKey: 'event_created', title: 'Event created', desc: 'See newly created events for your branch.' },
+                      { toggleKey: 'event_updated', title: 'Event updated', desc: 'Get updates when event time/location changes.' },
+                      { toggleKey: 'event_changes_summary', title: 'Event changes summary', desc: 'Quick view of major event edits.' },
+                    ],
+                  },
+                  {
+                    key: 'requests_enabled',
+                    label: 'Requests',
+                    description: 'Approvals and updates for member/group requests.',
+                    examples: [
+                      { toggleKey: 'member_request', title: 'Member requests', desc: 'Notify approvers when member requests come in.' },
+                      { toggleKey: 'group_join_request', title: 'Group join requests', desc: 'Notify approvers of pending group join requests.' },
+                      { toggleKey: 'request_approval_updates', title: 'Approval updates', desc: 'See when requests are approved/rejected.' },
+                    ],
+                  },
+                  {
+                    key: 'assignments_enabled',
+                    label: 'Assignments',
+                    description: 'Member and group assignment changes.',
+                    examples: [
+                      { toggleKey: 'member_assigned', title: 'Member assigned', desc: 'Alert when a member is assigned to a group.' },
+                      { toggleKey: 'group_assignment_changes', title: 'Group assignment changes', desc: 'Track assignment updates to ministries.' },
+                      { toggleKey: 'role_assignment_flow', title: 'Role assignment flow', desc: 'Visibility into assignment actions.' },
+                    ],
+                  },
+                  {
+                    key: 'permissions_enabled',
+                    label: 'Permissions',
+                    description: 'Security-relevant updates to access and permissions.',
+                    examples: [
+                      { toggleKey: 'permission_changed', title: 'Permission changed', desc: 'Get notified when your access is modified.' },
+                      { toggleKey: 'role_updated', title: 'Role updated', desc: 'See updates to role-based access.' },
+                      { toggleKey: 'account_access_changed', title: 'Account access changed', desc: 'Alert when account status is enabled/disabled.' },
+                    ],
+                  },
+                  {
+                    key: 'member_care_enabled',
+                    label: 'Member Care',
+                    description: 'Health alerts for member attendance and follow-up.',
+                    examples: [
+                      { toggleKey: 'low_attendance_alert', title: 'Low attendance alert', desc: 'Flag members missing frequent services.' },
+                      { toggleKey: 'follow_up_needed', title: 'Follow-up needed', desc: 'Prompt checkups for members needing attention.' },
+                      { toggleKey: 'care_risk_trend', title: 'Care risk trend', desc: 'Summary of members entering risk state.' },
+                    ],
+                  },
+                  {
+                    key: 'leader_updates_enabled',
+                    label: 'Leader Updates',
+                    description: 'Progress updates to help leaders monitor activity.',
+                    examples: [
+                      { toggleKey: 'team_activity', title: 'Team activity', desc: 'Leader visibility on team execution progress.' },
+                      { toggleKey: 'completion_highlights', title: 'Completion highlights', desc: 'Celebrate completed actions and milestones.' },
+                      { toggleKey: 'stale_action_alerts', title: 'Stale action alerts', desc: 'Notify leaders when updates are missing.' },
+                    ],
+                  },
+                ].map((section) => {
+                  const checked = Boolean((notificationPrefs as Record<string, unknown>)[section.key]);
+                  const expanded = expandedNotificationSections.has(section.key);
+                  return (
+                    <div key={section.key} className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 bg-gray-50/60">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedNotificationSections((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(section.key)) next.delete(section.key);
+                              else next.add(section.key);
+                              return next;
+                            })
+                          }
+                          className="flex items-center gap-2 text-left"
+                        >
+                          {expanded ? (
+                            <ChevronDown className="w-4 h-4 text-gray-500" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-500" />
+                          )}
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{section.label}</p>
+                            <p className="text-xs text-gray-500">{section.description}</p>
+                          </div>
+                        </button>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={notificationPrefsSaving || notificationPrefs.mute_all}
+                          onChange={(e) => void updateNotificationPref(section.key, e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </div>
+                      {expanded && (
+                        <div className="px-4 py-3 bg-white">
+                          <p className="text-xs font-medium text-gray-600 mb-2">Included notifications</p>
+                          <ul className="space-y-2">
+                            {section.examples.map((ex) => (
+                              <li key={ex.title} className="rounded-lg border border-gray-100 px-3 py-2">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm text-gray-900">{ex.title}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">{ex.desc}</p>
+                                  </div>
+                                  <input
+                                    type="checkbox"
+                                    checked={notificationPrefs.granular_preferences[ex.toggleKey] !== false}
+                                    disabled={notificationPrefsSaving || notificationPrefs.mute_all || !checked}
+                                    onChange={(e) => void updateNotificationGranularPref(ex.toggleKey, e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mt-1"
+                                  />
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'notificationsQA' && (
+        <div className="space-y-6">
+          {!canUseNotificationQa ? (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+              You do not have permission to use Notification QA. Ask an owner or user with manage permissions access.
+            </div>
+          ) : (
+            <>
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 className="text-base font-semibold text-gray-900">Notification QA Console</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Test sender/admin and recipient/user flows with all implemented notification types.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Acting as (sender/admin)</label>
+                    <select
+                      value={notificationQaActorId}
+                      onChange={(e) => setNotificationQaActorId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    >
+                      {qaActors.map((actor) => (
+                        <option key={actor.id} value={actor.id}>
+                          {actor.name}
+                          {actor.email ? ` (${actor.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+            </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Receiving as (recipient/user)</label>
+                    <select
+                      value={notificationQaRecipientId}
+                      onChange={(e) => setNotificationQaRecipientId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    >
+                      {qaActors.map((actor) => (
+                        <option key={actor.id} value={actor.id}>
+                          {actor.name}
+                          {actor.email ? ` (${actor.email})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <label className="mt-4 flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={notificationQaForceSend}
+                    onChange={(e) => setNotificationQaForceSend(e.target.checked)}
+                    className="rounded border-gray-300"
+                  />
+                  <span>Force send (bypass 60-minute dedupe; creates a new DB row each time)</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                <div className="xl:col-span-3 space-y-4">
+                  <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Send test notifications</h3>
+                      {notificationQaLoading && <span className="text-xs text-gray-500">Loading types...</span>}
+                    </div>
+                    <div className="space-y-4 mt-4">
+                      {notificationQaTypeGroups.length === 0 ? (
+                        <p className="text-sm text-gray-500">No test types loaded.</p>
+                      ) : (
+                        notificationQaTypeGroups.map(([category, items]) => (
+                          <div key={category} className="rounded-xl border border-gray-200 p-4">
+                            <p className="text-xs font-semibold text-gray-600 mb-3">{category}</p>
+                            <div className="space-y-2">
+                              {items.map((item) => {
+                                const status = notificationQaLastStatusByType[item.type];
+                                return (
+                                  <div
+                                    key={item.type}
+                                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2"
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium text-gray-900">{item.type}</p>
+                                      <p className="text-xs text-gray-500">{item.title}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      {status ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700">
+                                          {status}
+                                        </span>
+                                      ) : null}
+            <button
+                                        type="button"
+                                        onClick={() => void sendNotificationQaType(item.type)}
+                                        disabled={!notificationQaRecipientId || notificationQaSending === item.type}
+                                        className="px-3 py-1.5 bg-gray-900 text-white rounded-md text-xs font-medium disabled:opacity-50"
+                                      >
+                                        {notificationQaSending === item.type ? 'Sending...' : 'Send'}
+            </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+          </div>
+
+                <div className="xl:col-span-2">
+                  <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">Recipient preview</h3>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        Unread: {notificationQaUnreadCount}
+                      </span>
+                </div>
+                <button
+                      type="button"
+                      onClick={() => void fetchNotificationQaPreview()}
+                      disabled={!notificationQaRecipientId}
+                      className="px-3 py-1.5 border border-gray-200 rounded-md text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Refresh preview
+                </button>
+                    <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                      {notificationQaRecipientFeed.length === 0 ? (
+                        <p className="text-sm text-gray-500">No notifications yet for selected recipient.</p>
+                      ) : (
+                        notificationQaRecipientFeed.map((n) => (
+                          <div key={n.id} className="rounded-lg border border-gray-100 px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-xs font-medium text-gray-900">{n.type}</p>
+                              <span
+                                className={`text-[11px] px-2 py-0.5 rounded-full ${
+                                  n.read_at ? 'bg-gray-100 text-gray-600' : 'bg-blue-50 text-blue-700'
+                                }`}
+                              >
+                                {n.read_at ? 'read' : 'unread'}
+                              </span>
+              </div>
+                            <p className="text-xs text-gray-800 mt-1">{n.title}</p>
+                            <p className="text-xs text-gray-500 mt-1">{n.message}</p>
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              {formatNotificationDateTime(n.created_at)}
+                              {n.action_path ? ` • ${n.action_path}` : ''}
+                            </p>
+            </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'staff' && (
+        <div className="space-y-8 max-w-3xl">
+          {!(can('manage_staff') || can('manage_permissions')) ? (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+              You do not have permission to view staff accounts. Ask an administrator.
+            </div>
+          ) : (
+            <>
+                        <div>
+            <h2 className="font-semibold text-gray-900 text-lg">Group leader accounts</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Create a login for a group leader in your organization. They use the same sign-in page as you. Their
+              profile is scoped to the branch selected in the header (
+              <span className="font-medium text-gray-700">{selectedBranch?.name || 'current branch'}</span>
+              ). For testing, new accounts skip email verification unless you set{' '}
+              <code className="text-xs bg-gray-100 px-1 rounded">AUTH_EMAIL_AUTO_CONFIRM=false</code> on the server.
+            </p>
+                        </div>
+
+          <form onSubmit={handleCreateGroupLeader} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">First name</label>
+                <input
+                  type="text"
+                  required
+                  value={leaderForm.firstName}
+                  onChange={(ev) => setLeaderForm((f) => ({ ...f, firstName: ev.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+                      </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Last name</label>
+                <input
+                  type="text"
+                  required
+                  value={leaderForm.lastName}
+                  onChange={(ev) => setLeaderForm((f) => ({ ...f, lastName: ev.target.value }))}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                />
+                      </div>
+                      </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+              <input
+                type="email"
+                required
+                autoComplete="off"
+                value={leaderForm.email}
+                onChange={(ev) => setLeaderForm((f) => ({ ...f, email: ev.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </div>
+                        <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Initial password</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                autoComplete="new-password"
+                value={leaderForm.password}
+                onChange={(ev) => setLeaderForm((f) => ({ ...f, password: ev.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-400">Share this once; ask them to change it after first login when you enable that flow.</p>
+                        </div>
+            <button
+              type="submit"
+              disabled={leaderSubmitting || !token}
+              className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              {leaderSubmitting ? 'Creating…' : 'Create leader account'}
+            </button>
+          </form>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 space-y-1">
+              <h3 className="text-sm font-semibold text-gray-900">Staff access groups</h3>
+              <p className="text-xs text-gray-500">
+                Named groups of staff accounts (not ministry groups). Assign a role to the group once, then add people—
+                their login permissions follow the group role. The organization owner cannot be added. Each person can
+                belong to at most one staff access group; changing role from the staff table below removes them from a
+                group.
+              </p>
+                      </div>
+            <div className="px-6 py-4 space-y-4">
+              {staffGroupsLoading ? (
+                <p className="text-sm text-gray-500">Loading groups…</p>
+              ) : (
+                <>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">New group name</label>
+                      <input
+                        type="text"
+                        value={newStaffGroupName}
+                        onChange={(e) => setNewStaffGroupName(e.target.value)}
+                        placeholder="e.g. Campus leaders"
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="w-full sm:w-56">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Role for group</label>
+                      <select
+                        value={newStaffGroupRoleId}
+                        onChange={(e) => setNewStaffGroupRoleId(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                      >
+                        <option value="">Select role…</option>
+                        {apiRoles.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                      </div>
+                    <button
+                      type="button"
+                      disabled={creatingStaffGroup || !token || !newStaffGroupName.trim() || !newStaffGroupRoleId}
+                      onClick={() => void createStaffProfileGroup()}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 shrink-0"
+                    >
+                      {creatingStaffGroup ? 'Creating…' : 'Create group'}
+                        </button>
+                      </div>
+
+                  {staffProfileGroups.length === 0 ? (
+                    <p className="text-sm text-gray-500">No staff access groups yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {staffProfileGroups.map((g) => {
+                        const expanded = staffGroupExpanded[g.id] === true;
+                        return (
+                          <li
+                            key={g.id}
+                            className="rounded-xl border border-gray-100 bg-gray-50/80 overflow-hidden"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStaffGroupExpanded((prev) => ({
+                                    ...prev,
+                                    [g.id]: !prev[g.id],
+                                  }))
+                                }
+                                className="p-1 rounded hover:bg-gray-200 text-gray-600"
+                                aria-expanded={expanded}
+                              >
+                                <ChevronDown
+                                  className={`w-4 h-4 transition ${expanded ? '' : '-rotate-90'}`}
+                                />
+                              </button>
+                              <span className="font-medium text-sm text-gray-900">{g.name}</span>
+                              <span className="text-xs text-gray-500">
+                                {g.member_count} member{g.member_count === 1 ? '' : 's'}
+                              </span>
+                              {g.suspended === true && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                                  Suspended
+                                </span>
+                              )}
+                              <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={g.suspended === true}
+                                  onChange={(e) => void patchStaffGroupSuspended(g.id, e.target.checked)}
+                                  className="rounded border-gray-300"
+                                />
+                                Suspend group
+                              </label>
+                              <div className="ml-auto flex flex-wrap items-center gap-2">
+                                <select
+                                  value={g.role_id || ''}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    void patchStaffProfileGroupRole(g.id, v === '' ? null : v);
+                                  }}
+                                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 max-w-[200px]"
+                                >
+                                  <option value="">No role</option>
+                                  {apiRoles.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                      {r.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => void deleteStaffProfileGroup(g.id)}
+                                  className="text-xs text-red-600 hover:underline"
+                                >
+                                  Delete group
+                                </button>
+                        </div>
+                      </div>
+                            {expanded && (
+                              <div className="px-3 pb-3 pt-0 border-t border-gray-100 bg-white space-y-2">
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBulkModalGroupId(g.id);
+                                      setBulkModalStep('pick');
+                                      setBulkModalSelected(new Set());
+                                      setBulkModalSearch('');
+                                    }}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                                  >
+                                    Add multiple…
+                                  </button>
+                                  <span className="text-xs text-gray-400">|</span>
+                                  <span className="text-xs font-medium text-gray-600">Add one</span>
+                                  <select
+                                    className="text-xs border border-gray-200 rounded-lg px-2 py-1 max-w-[240px]"
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                      const v = e.target.value;
+                                      if (v) {
+                                        void addStaffToProfileGroup(g.id, v);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Choose profile…</option>
+                                    {staffList
+                                      .filter(
+                                        (row) =>
+                                          row.is_org_owner !== true &&
+                                          !profileIdToStaffGroupId.has(row.id),
+                                      )
+                                      .map((row) => (
+                                        <option key={row.id} value={row.id}>
+                                          {[row.first_name, row.last_name].filter(Boolean).join(' ') ||
+                                            row.email ||
+                                            row.id.slice(0, 8)}
+                                        </option>
+                                      ))}
+                      </select>
+                      </div>
+                                {g.members.length === 0 ? (
+                                  <p className="text-xs text-gray-500">No members yet.</p>
+                                ) : (
+                                  <ul className="text-xs space-y-1">
+                                    {g.members.map((m) => (
+                                      <li
+                                        key={m.profile_id}
+                                        className="flex items-center justify-between gap-2 py-1 border-b border-gray-50 last:border-0"
+                                      >
+                                        <span>
+                                          {[m.first_name, m.last_name].filter(Boolean).join(' ') || '—'}{' '}
+                                          <span className="text-gray-500">{m.email || ''}</span>
+                      </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => void removeStaffFromProfileGroup(g.id, m.profile_id)}
+                                          className="text-red-600 hover:underline shrink-0"
+                                        >
+                                          Remove
+                        </button>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                      </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Branch staff</h3>
+              <button
+                type="button"
+                onClick={() => void fetchStaffList()}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                Refresh
+              </button>
+                        </div>
+            {staffLoading ? (
+              <div className="p-8 text-center text-sm text-gray-500">Loading…</div>
+            ) : staffList.length === 0 ? (
+              <div className="p-8 text-center text-sm text-gray-500">
+                No staff for this branch yet. Create a leader account below.
+                      </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                    <tr>
+                      <th className="px-4 py-2">Name</th>
+                      <th className="px-4 py-2">Email</th>
+                      <th className="px-4 py-2">Access group</th>
+                      <th className="px-4 py-2">Role</th>
+                      <th className="px-4 py-2">Ministry scope</th>
+                      <th className="px-4 py-2">Platform access</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {staffList.map((row) => (
+                      <tr key={row.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <span className="inline-flex items-center gap-2 flex-wrap">
+                            {[row.first_name, row.last_name].filter(Boolean).join(' ') || '—'}
+                            {row.is_org_owner === true && (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                                Owner
+                        </span>
+                            )}
+                        </span>
+                    </td>
+                        <td className="px-4 py-2 text-gray-600">{row.email || '—'}</td>
+                        <td className="px-4 py-2 text-gray-700 max-w-[10rem] truncate" title={row.staff_access_group_name || undefined}>
+                          {row.staff_access_group_name || '—'}
+                        </td>
+                        <td className="px-4 py-2">
+                          {row.is_org_owner === true ? (
+                            <span className="text-sm text-gray-700">
+                              {row.role_id
+                                ? apiRoles.find((r) => r.id === row.role_id)?.name ?? 'Role'
+                                : '—'}{' '}
+                              <span className="text-xs font-normal text-gray-500">(owner — full access)</span>
+                      </span>
+                          ) : can('manage_permissions') ? (
+                            <select
+                              className="text-sm border border-gray-200 rounded-lg px-2 py-1 max-w-[220px]"
+                              value={row.role_id || ''}
+                              disabled={staffRoleUpdating === row.id}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                void patchStaffRole(row.id, v === '' ? null : v);
+                              }}
+                            >
+                              <option value="">No role</option>
+                              {apiRoles.map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-gray-500 font-mono text-xs">{row.role_id || '—'}</span>
+                          )}
+                    </td>
+                        <td className="px-4 py-2 align-top">
+                          {row.is_org_owner === true ? (
+                            <span className="text-xs text-gray-500">Full branch (owner)</span>
+                          ) : (
+                            <div className="flex flex-col gap-1 max-w-[14rem]">
+                              <span className="text-xs text-gray-700 line-clamp-2" title={(row.ministry_scope_group_ids || []).map((id) => ministryGroupNameById.get(id) || id).join(', ') || undefined}>
+                                {(row.ministry_scope_group_ids || []).length === 0
+                                  ? 'Default: all members in branch'
+                                  : (row.ministry_scope_group_ids || [])
+                                      .map((id) => ministryGroupNameById.get(id) || id.slice(0, 8))
+                                      .join(', ')}
+                              </span>
+                              {(can('manage_staff') || can('manage_permissions')) && (
+                                <button
+                                  type="button"
+                                  onClick={() => void openMinistryScopeModal(row.id)}
+                                  className="text-left text-xs font-medium text-blue-600 hover:text-blue-800"
+                                >
+                                  Edit ministries…
+                        </button>
+                              )}
+                      </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2">
+                          {row.is_org_owner === true ? (
+                            <span className="text-xs text-gray-500">—</span>
+                          ) : can('manage_staff') || can('manage_permissions') ? (
+                            <select
+                              className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+                              value={row.is_active === false ? 'suspended' : 'active'}
+                              onChange={(e) => {
+                                const active = e.target.value === 'active';
+                                void patchStaffPlatformAccess(row.id, active);
+                              }}
+                            >
+                              <option value="active">Active</option>
+                              <option value="suspended">Suspended</option>
+                            </select>
+                          ) : (
+                            <span className="text-xs text-gray-500">
+                              {row.is_active === false ? 'Suspended' : 'Active'}
+                            </span>
+                          )}
+                    </td>
+                  </tr>
+                    ))}
+                </tbody>
+              </table>
+              </div>
+            )}
+            </div>
+
+          {ministryModalProfileId ? (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ministry-scope-title"
+            >
+              <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+                <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center gap-3">
+                  <h3 id="ministry-scope-title" className="font-semibold text-gray-900">
+                    Ministry visibility
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMinistryModalProfileId(null);
+                      setMinistryModalGroups([]);
+                      setMinistryModalSelected(new Set());
+                    }}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1 text-sm text-gray-600">
+                  <p className="mb-3">
+                    Choose which ministries this staff member can see. Select <strong>All Members</strong> for full-branch
+                    access, and/or specific ministries (subgroups inherit from parents).
+                  </p>
+                  {ministryModalLoading ? (
+                    <div className="py-8 text-center text-gray-500">Loading…</div>
+                  ) : (
+                    <ul className="space-y-2 max-h-[50vh] overflow-y-auto">
+                      {ministryModalGroups.map((g) => (
+                        <li key={g.id}>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="mt-1 rounded border-gray-300"
+                              checked={ministryModalSelected.has(g.id)}
+                              onChange={(e) => {
+                                setMinistryModalSelected((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(g.id);
+                                  else next.delete(g.id);
+                                  return next;
+                                });
+                              }}
+                            />
+                            <span>
+                              <span className="font-medium text-gray-900">{g.name}</span>
+                              {g.system_kind === 'all_members' ? (
+                                <span className="ml-2 text-xs text-amber-700">Full branch</span>
+                              ) : null}
+                            </span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMinistryModalProfileId(null);
+                      setMinistryModalGroups([]);
+                      setMinistryModalSelected(new Set());
+                    }}
+                    className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+                  >
+                    Cancel
+                </button>
+                  <button
+                    type="button"
+                    disabled={ministryModalSaving || ministryModalLoading}
+                    onClick={() => void saveMinistryScopeModal()}
+                    className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {ministryModalSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+          ) : null}
+
+          {bulkModalGroupId ? (
+            <div
+              className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="bulk-add-staff-title"
+            >
+              <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+                <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center gap-3">
+                  <h3 id="bulk-add-staff-title" className="font-semibold text-gray-900">
+                    {bulkModalStep === 'pick' ? 'Add members to group' : 'Confirm selection'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkModalGroupId(null);
+                      setBulkModalStep('pick');
+                      setBulkModalSelected(new Set());
+                      setBulkModalSearch('');
+                    }}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                    aria-label="Close"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                    </div>
+                {bulkModalStep === 'pick' ? (
+                  <>
+                    <div className="p-3 border-b border-gray-100">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          value={bulkModalSearch}
+                          onChange={(e) => setBulkModalSearch(e.target.value)}
+                          placeholder="Search by name or email…"
+                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg"
+                        />
+                    </div>
+                  </div>
+                    <div className="overflow-y-auto flex-1 p-3 max-h-64 space-y-1">
+                      {bulkEligibleStaff.length === 0 ? (
+                        <p className="text-sm text-gray-500">No eligible staff match.</p>
+                      ) : (
+                        bulkEligibleStaff.map((row) => (
+                          <label
+                            key={row.id}
+                            className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={bulkModalSelected.has(row.id)}
+                              onChange={() => {
+                                setBulkModalSelected((prev) => {
+                                  const n = new Set(prev);
+                                  if (n.has(row.id)) n.delete(row.id);
+                                  else n.add(row.id);
+                                  return n;
+                                });
+                              }}
+                              className="rounded border-gray-300"
+                            />
+                            <span className="font-medium text-gray-900">
+                              {[row.first_name, row.last_name].filter(Boolean).join(' ') || '—'}
+                            </span>
+                            <span className="text-xs text-gray-500 truncate">{row.email || ''}</span>
+                          </label>
+                        ))
+                            )}
+                          </div>
+                    <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                        onClick={() => {
+                          setBulkModalGroupId(null);
+                          setBulkModalStep('pick');
+                          setBulkModalSelected(new Set());
+                          setBulkModalSearch('');
+                        }}
+                      >
+                        Cancel
+                        </button>
+                      <button
+                        type="button"
+                        disabled={bulkModalSelected.size === 0}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50"
+                        onClick={() => setBulkModalStep('confirm')}
+                      >
+                        Review ({bulkModalSelected.size})
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-4 overflow-y-auto max-h-64 text-sm space-y-2">
+                      <p className="text-gray-600">
+                        Add <strong>{bulkModalSelected.size}</strong> people to this group. Their role will match the
+                        group&apos;s assigned role.
+                      </p>
+                      <ul className="space-y-1 border border-gray-100 rounded-lg p-2 bg-gray-50/80 max-h-48 overflow-y-auto">
+                        {[...bulkModalSelected].map((id) => {
+                          const r = staffList.find((x) => x.id === id);
+                          return (
+                            <li key={id} className="text-xs">
+                              <span className="font-medium text-gray-900">
+                                {r ? [r.first_name, r.last_name].filter(Boolean).join(' ') : id}
+                              </span>
+                              {r?.email ? <span className="text-gray-500"> — {r.email}</span> : null}
+                            </li>
+                      );
+                    })}
+                      </ul>
+                  </div>
+                    <div className="p-4 border-t border-gray-100 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+                        onClick={() => setBulkModalStep('pick')}
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bulkModalSubmitting}
+                        onClick={() => void submitBulkAddMembers()}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50"
+                      >
+                        {bulkModalSubmitting ? 'Adding…' : 'Confirm'}
+                      </button>
+                    </div>
+                  </>
+                  )}
+                </div>
+              </div>
+          ) : null}
+            </>
+          )}
+          </div>
       )}
 
       {/* Permissions Tab */}
       {activeTab === 'permissions' && (
         <div className="space-y-6">
-          {/* Header with Save Button */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-900 text-[16px]">Manage User Roles</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Configure permissions for different user roles in your organization
-              </p>
-            </div>
-            <button
-              onClick={handleSavePermissions}
-              className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all text-[14px]"
-            >
-              <Save className="w-4 h-4 mr-2" />
-              Save Changes
-            </button>
-          </div>
-
-          {/* Leaders Assignment Section */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            {/* Section Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
-              <div className="flex items-center justify-between">
+          {!can('manage_permissions') ? (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+              You do not have permission to manage roles. Ask an organization administrator.
+                </div>
+          ) : rolesLoading ? (
+            <p className="text-sm text-gray-500">Loading roles…</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-4 justify-between">
                 <div>
-                  <h3 className="font-semibold text-gray-900 text-[16px]">Leaders & Ministry Assignments</h3>
+                  <h2 className="font-semibold text-gray-900 text-lg">Roles & permissions</h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    Assign members as leaders and manage their ministry responsibilities
+                    Create roles and assign categorized permissions. Organization owners always have full access.
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowAssignLeaderModal(true)}
-                  className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-[14px]"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Assign Leader
-                </button>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={newRoleName}
+                    onChange={(e) => setNewRoleName(e.target.value)}
+                    placeholder="New role name"
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void createOrgRole()}
+                    className="flex items-center px-3 py-2 bg-gray-900 text-white rounded-lg text-sm"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add role
+                  </button>
               </div>
-            </div>
-
-            {/* Leaders Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Leader
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Ministries
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {/* Leader Row 1 */}
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop"
-                          alt="Leader"
-                          className="w-10 h-10 rounded-xl object-cover"
-                        />
-                        <div>
-                          <p className="font-medium text-gray-900 text-[13px]">John Smith</p>
-                          <p className="text-sm text-gray-500">john.smith@church.com</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <select className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option>Pastor</option>
-                        <option>Group Leader</option>
-                        <option>Volunteer</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Worship Team
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Sound
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Media
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Leader Row 2 */}
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop"
-                          alt="Leader"
-                          className="w-10 h-10 rounded-xl object-cover"
-                        />
-                        <div>
-                          <p className="font-medium text-gray-900 text-[13px]">Sarah Johnson</p>
-                          <p className="text-sm text-gray-500">sarah.j@church.com</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <select className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option>Group Leader</option>
-                        <option>Pastor</option>
-                        <option>Volunteer</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Youth Ministry
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Sunday School
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Leader Row 3 */}
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop"
-                          alt="Leader"
-                          className="w-10 h-10 rounded-xl object-cover"
-                        />
-                        <div>
-                          <p className="font-medium text-gray-900 text-[13px]">Michael Chen</p>
-                          <p className="text-sm text-gray-500">m.chen@church.com</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <select className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option>Pastor</option>
-                        <option>Group Leader</option>
-                        <option>Volunteer</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Outreach
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Community
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Missions
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Events
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Leader Row 4 */}
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop"
-                          alt="Leader"
-                          className="w-10 h-10 rounded-xl object-cover"
-                        />
-                        <div>
-                          <p className="font-medium text-gray-900 text-[13px]">Emily Davis</p>
-                          <p className="text-sm text-gray-500">emily.d@church.com</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <select className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option>Group Leader</option>
-                        <option>Pastor</option>
-                        <option>Volunteer</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Prayer Ministry
-                        </span>
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-100 text-purple-700">
-                          Intercession
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end space-x-2">
-                        <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Table Footer */}
-            <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-              <p className="text-sm text-gray-600">
-                Showing <span className="font-medium">4</span> leaders
-              </p>
-              <div className="flex items-center space-x-2">
-                <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-white rounded-lg border border-gray-200 transition-all">
-                  Previous
-                </button>
-                <button className="px-3 py-1.5 text-sm text-gray-600 hover:bg-white rounded-lg border border-gray-200 transition-all">
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Roles Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {roles.map((role) => (
-              <div
-                key={role.id}
-                className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
-              >
-                {/* Role Header */}
-                <div className={`${role.color} px-6 py-4`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-semibold text-white text-[15px]">{role.name}</h3>
-                      <p className="text-sm text-white/90 mt-1">{role.description}</p>
-                    </div>
-                    <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1.5">
-                      <span className="text-sm font-medium text-white">
-                        {role.permissions.size}/{allPermissions.length}
-                      </span>
-                    </div>
-                  </div>
                 </div>
 
-                {/* Permissions List */}
-                <div className="p-6">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    Permissions
-                  </h4>
-                  <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {allPermissions.map((permission) => {
-                      const hasPermission = role.permissions.has(permission.id);
-                      const isAdmin = role.id === 'admin';
-                      
-                      return (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500">Roles</p>
+                  <ul className="rounded-2xl border border-gray-200 bg-white divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
+                    {apiRoles.map((r) => (
+                      <li key={r.id}>
                         <button
-                          key={permission.id}
-                          onClick={() => !isAdmin && togglePermission(role.id, permission.id)}
-                          disabled={isAdmin}
-                          className={`w-full flex items-start space-x-3 p-3 rounded-lg transition-all text-left ${
-                            isAdmin
-                              ? 'bg-gray-50 cursor-not-allowed opacity-75'
-                              : 'hover:bg-gray-50 cursor-pointer'
-                          }`}
+                          type="button"
+                          onClick={() => setSelectedRoleId(r.id)}
+                          className={
+                            selectedRoleId === r.id
+                              ? 'w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-gray-50 bg-blue-50 text-blue-900'
+                              : 'w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-gray-50'
+                          }
                         >
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
-                            hasPermission
-                              ? `${role.color} border-transparent`
-                              : 'bg-white border-gray-300'
-                          }`}>
-                            {hasPermission && (
-                              <CheckSquare className="w-3 h-3 text-white" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-900 text-[13px]">{permission.name}</p>
-                            <p className="text-gray-500 mt-0.5 text-[12px]">{permission.description}</p>
-                          </div>
+                          <span className="font-medium">{r.name}</span>
+                          <span className="text-xs text-gray-400">{r.permissions.length} perms</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                  {role.id === 'admin' && (
-                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
-                      <p className="text-sm text-yellow-800">
-                        🔒 Admin role has all permissions by default and cannot be modified
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="lg:col-span-8 space-y-4">
+                  {selectedRole ? (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="font-medium text-gray-900">{selectedRole.name}</h3>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={savingRole}
+                            onClick={() => void persistRolePermissions()}
+                            className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg text-sm disabled:opacity-50"
+                          >
+                            <Save className="w-4 h-4 mr-2" />
+                            {savingRole ? 'Saving…' : 'Save permissions'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteOrgRole(selectedRole.id)}
+                            className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          >
+                            Delete role
+                          </button>
+              </div>
+                </div>
+                      <p className="text-xs text-gray-500">
+                        Assign staff to roles from the <strong>Staff / Leaders</strong> tab.
                       </p>
-                    </div>
+
+                      <div className="space-y-3">
+                        {PERMISSION_CATALOG.map((cat) => {
+                          const ids = cat.permissions.map((p) => p.id);
+                          const expanded = expandedPermCats.has(cat.id);
+                          return (
+                            <div key={cat.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                              <button
+                                type="button"
+                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 text-left"
+                                onClick={() => {
+                                  setExpandedPermCats((prev) => {
+                                    const n = new Set(prev);
+                                    if (n.has(cat.id)) n.delete(cat.id);
+                                    else n.add(cat.id);
+                                    return n;
+                                  });
+                                }}
+                              >
+                                <span className="font-medium text-gray-900 text-sm">{cat.label}</span>
+                                <span className="text-xs text-gray-500 flex items-center">
+                                  {ids.filter((id) => permDraft.has(id)).length}/{ids.length}
+                                  <ChevronDown
+                                    className={'w-4 h-4 ml-1 transition ' + (expanded ? 'rotate-180' : '')}
+                                  />
+                                </span>
+                              </button>
+                              {expanded && (
+                                <div className="p-3 border-t border-gray-100 space-y-2">
+                                  <button
+                                    type="button"
+                                    className="text-xs text-blue-600 mb-2"
+                                    onClick={() => toggleCategoryAll(cat.id, ids)}
+                                  >
+                                    Toggle all in this category
+                                  </button>
+                                  {cat.permissions.map((p) => {
+                                    const isImplied = !permDraft.has(p.id) && impliedByOther.has(p.id);
+                                    return (
+                                    <label
+                                      key={p.id}
+                                      className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={permDraft.has(p.id)}
+                                        onChange={() => togglePermDraft(p.id)}
+                                        className="mt-1 rounded border-gray-300"
+                                      />
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-900">
+                                          {p.name}
+                                          {isImplied && (
+                                            <span className="ml-2 text-xs font-normal text-blue-500">(included)</span>
+                                          )}
+                                        </p>
+                                        <p className="text-xs text-gray-500">{p.description}</p>
+                                      </div>
+                                    </label>
+                                    );
+                                  })}
+              </div>
+                              )}
+            </div>
+                          );
+                        })}
+          </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select or create a role.</p>
                   )}
-                </div>
               </div>
-            ))}
-          </div>
+                </div>
 
-          {/* Permission Categories Legend */}
-          <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-900 mb-4">Permission Categories</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Users className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Member Management</p>
-                  <p className="text-sm text-gray-500 mt-0.5">View, add, edit, and delete members</p>
-                </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-sm text-gray-700">
+                Changes apply immediately for users with this role after you save. Organization owners bypass permission checks in the API.
               </div>
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Shield className="w-4 h-4 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">Group Management</p>
-                  <p className="text-sm text-gray-500 mt-0.5">Manage ministries and assign members</p>
-                </div>
-              </div>
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Database className="w-4 h-4 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">System Access</p>
-                  <p className="text-sm text-gray-500 mt-0.5">Analytics, exports, and settings</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6">
-            <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-gray-900">About Roles & Permissions</h4>
-                <p className="text-sm text-gray-600 mt-2">
-                  Roles define what users can do in the system. Assign roles to users to control their access levels. Changes to permissions will take effect immediately for all users with that role.
-                </p>
-                <div className="mt-3 flex items-center space-x-4 text-xs text-gray-500">
-                  <span>• Admin: Full access</span>
-                  <span>• Pastor: Leadership access</span>
-                  <span>• Group Leader: Ministry management</span>
-                  <span>• Volunteer: Basic access</span>
-                </div>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
       {/* Custom Fields Tab */}
       {activeTab === 'customFields' && (
         <div className="space-y-6">
-          {/* Header with Add Button */}
+          {customFieldsSchemaHint ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-semibold text-amber-900">Database setup required</p>
+              <p className="mt-2 leading-relaxed text-amber-900/90">{customFieldsSchemaHint}</p>
+              <button
+                type="button"
+                onClick={() => void fetchCustomFieldDefinitions()}
+                className="mt-3 text-sm font-semibold text-amber-900 underline decoration-amber-700/60 hover:decoration-amber-900"
+              >
+                Retry after running the migration
+              </button>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Manage Custom Fields</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Add and configure custom fields for members and events
+                Define fields for member profiles, events, and the public ministry page. Values are stored per record.
               </p>
             </div>
             <button
+              type="button"
+              disabled={!token || !canConfigureCustomFields || !!customFieldsSchemaHint}
               onClick={() => {
-                setEditingField(null);
+                setEditingDefinitionId(null);
+                setFieldDraft({
+                  label: '',
+                  field_type: 'text',
+                  required: false,
+                  placeholder: '',
+                  options: [],
+                  default_value: '',
+                  applies_to: ['member'],
+                  show_on_public: false,
+                });
                 setShowFieldEditor(true);
               }}
-              className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all"
+              className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all disabled:opacity-50"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Field
             </button>
           </div>
 
-          {/* Custom Fields Grid */}
+          {!canConfigureCustomFields ? (
+            <p className="text-sm text-gray-600">You need system settings (or staff/permissions admin) access to manage custom fields.</p>
+          ) : customFieldsLoading ? (
+            <p className="text-sm text-gray-500">Loading…</p>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {customFields.map((field) => (
+              {customFieldDefinitions.map((field) => (
               <div
                 key={field.id}
                 className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
               >
-                {/* Field Header */}
                 <div className="bg-gray-50 px-6 py-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">{field.label}</h3>
-                      <p className="text-sm text-gray-500 mt-1">{field.fieldType}</p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          {field.field_type} · <span className="font-mono text-xs">{field.field_key}</span>
+                        </p>
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
+                          type="button"
                         onClick={() => {
-                          setEditingField(field);
+                            setEditingDefinitionId(field.id);
+                            const opts = Array.isArray(field.options) ? field.options.map((x) => String(x)) : [];
+                            setFieldDraft({
+                              label: field.label,
+                              field_type: field.field_type,
+                              required: field.required,
+                              placeholder: field.placeholder || '',
+                              options: opts,
+                              default_value: field.default_value || '',
+                              applies_to: [...field.applies_to] as ('member' | 'event' | 'group')[],
+                              show_on_public: field.show_on_public,
+                            });
                           setShowFieldEditor(true);
                         }}
                         className="text-gray-500 hover:text-gray-700"
@@ -990,9 +3182,32 @@ export default function Settings() {
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => {
-                          setCustomFields(customFields.filter(f => f.id !== field.id));
-                          toast.success('Field deleted successfully!');
+                          type="button"
+                          onClick={async () => {
+                            if (!token || !window.confirm('Delete this custom field definition?')) return;
+                            try {
+                              const res = await fetch(`/api/custom-field-definitions/${field.id}`, {
+                                method: 'DELETE',
+                                headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+                              });
+                              const data = await res.json().catch(() => ({}));
+                              if (!res.ok) {
+                                const errMsg =
+                                  typeof (data as { error?: string }).error === 'string'
+                                    ? (data as { error: string }).error
+                                    : 'Delete failed';
+                                const hint =
+                                  typeof (data as { hint?: string }).hint === 'string'
+                                    ? (data as { hint: string }).hint
+                                    : null;
+                                if (res.status === 503 && hint) setCustomFieldsSchemaHint(hint);
+                                throw new Error(errMsg);
+                              }
+                              toast.success('Field removed');
+                              await fetchCustomFieldDefinitions();
+                            } catch (e: unknown) {
+                              toast.error(e instanceof Error ? e.message : 'Delete failed');
+                            }
                         }}
                         className="text-gray-500 hover:text-gray-700"
                       >
@@ -1001,61 +3216,24 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-
-                {/* Field Details */}
                 <div className="p-6">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    Details
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <CheckSquare className="w-4 h-4 text-gray-500" />
-                      <p className="text-sm text-gray-500">
-                        {field.required ? 'Required' : 'Optional'}
-                      </p>
+                    <h4 className="text-xs font-semibold text-gray-500r mb-3">Details</h4>
+                    <div className="space-y-2 text-sm text-gray-500">
+                      <p>{field.required ? 'Required' : 'Optional'}</p>
+                      {field.show_on_public ? <p>Show on public ministry page when set</p> : null}
+                      <p>Applies to: {field.applies_to.join(', ')}</p>
                     </div>
-                    {field.placeholder && (
-                      <div className="flex items-center space-x-2">
-                        <Type className="w-4 h-4 text-gray-500" />
-                        <p className="text-sm text-gray-500">
-                          Placeholder: {field.placeholder}
-                        </p>
-                      </div>
-                    )}
-                    {field.options && (
-                      <div className="flex items-center space-x-2">
-                        <List className="w-4 h-4 text-gray-500" />
-                        <p className="text-sm text-gray-500">
-                          Options: {field.options.join(', ')}
-                        </p>
-                      </div>
-                    )}
-                    {field.defaultValue && (
-                      <div className="flex items-center space-x-2">
-                        <CheckCircle className="w-4 h-4 text-gray-500" />
-                        <p className="text-sm text-gray-500">
-                          Default Value: {field.defaultValue}
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-2">
-                      <Users className="w-4 h-4 text-gray-500" />
-                      <p className="text-sm text-gray-500">
-                        Applies To: {field.appliesTo.join(', ')}
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </div>
             ))}
           </div>
+          )}
 
-          {/* Field Editor */}
-          {showFieldEditor && (
+          {showFieldEditor && canConfigureCustomFields && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mt-6">
               <div className="bg-gray-50 px-6 py-4">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  {editingField ? 'Edit Field' : 'Add New Field'}
+                  {editingDefinitionId ? 'Edit Field' : 'Add New Field'}
                 </h3>
               </div>
               <div className="p-6">
@@ -1064,25 +3242,17 @@ export default function Settings() {
                     <label className="text-sm font-medium text-gray-700">Label</label>
                     <input
                       type="text"
-                      value={editingField?.label || ''}
-                      onChange={(e) => {
-                        if (editingField) {
-                          setEditingField({ ...editingField, label: e.target.value });
-                        }
-                      }}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      value={fieldDraft.label}
+                      onChange={(e) => setFieldDraft((d) => ({ ...d, label: e.target.value }))}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Field Type</label>
                     <select
-                      value={editingField?.fieldType || 'text'}
-                      onChange={(e) => {
-                        if (editingField) {
-                          setEditingField({ ...editingField, fieldType: e.target.value as FieldType });
-                        }
-                      }}
-                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                      value={fieldDraft.field_type}
+                      onChange={(e) => setFieldDraft((d) => ({ ...d, field_type: e.target.value }))}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     >
                       <option value="text">Text</option>
                       <option value="number">Number</option>
@@ -1092,164 +3262,163 @@ export default function Settings() {
                       <option value="dropdown">Dropdown</option>
                       <option value="checkbox">Checkbox</option>
                       <option value="textarea">Textarea</option>
-                      <option value="file">File</option>
+                      <option value="file">File (not supported in forms yet)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Required</label>
-                    <div className="mt-1">
-                      <label className="inline-flex items-center">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                         <input
                           type="checkbox"
-                          checked={editingField?.required || false}
-                          onChange={(e) => {
-                            if (editingField) {
-                              setEditingField({ ...editingField, required: e.target.checked });
-                            }
-                          }}
-                          className="form-checkbox h-4 w-4 text-indigo-600"
-                        />
-                        <span className="ml-2 text-sm text-gray-500">This field is required</span>
+                        checked={fieldDraft.required}
+                        onChange={(e) => setFieldDraft((d) => ({ ...d, required: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                      />
+                      Required
                       </label>
                     </div>
-                  </div>
-                  {editingField?.fieldType === 'text' && (
+                  {['text', 'textarea'].includes(fieldDraft.field_type) && (
                     <div>
                       <label className="text-sm font-medium text-gray-700">Placeholder</label>
                       <input
                         type="text"
-                        value={editingField?.placeholder || ''}
-                        onChange={(e) => {
-                          if (editingField) {
-                            setEditingField({ ...editingField, placeholder: e.target.value });
-                          }
-                        }}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        value={fieldDraft.placeholder}
+                        onChange={(e) => setFieldDraft((d) => ({ ...d, placeholder: e.target.value }))}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm"
                       />
                     </div>
                   )}
-                  {editingField?.fieldType === 'dropdown' && (
+                  {fieldDraft.field_type === 'dropdown' && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Options</label>
+                      <label className="text-sm font-medium text-gray-700">Options (comma-separated)</label>
                       <input
                         type="text"
-                        value={editingField?.options?.join(', ') || ''}
-                        onChange={(e) => {
-                          if (editingField) {
-                            setEditingField({ ...editingField, options: e.target.value.split(',').map(o => o.trim()) });
-                          }
-                        }}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        value={fieldDraft.options.join(', ')}
+                        onChange={(e) =>
+                          setFieldDraft((d) => ({
+                            ...d,
+                            options: e.target.value.split(',').map((o) => o.trim()).filter(Boolean),
+                          }))
+                        }
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm"
                       />
                     </div>
                   )}
-                  {editingField?.fieldType === 'checkbox' && (
+                  {fieldDraft.field_type === 'checkbox' && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Default Value</label>
-                      <div className="mt-1">
-                        <label className="inline-flex items-center">
+                      <label className="text-sm font-medium text-gray-700">Default (checked)</label>
+                      <label className="mt-1 flex items-center gap-2">
                           <input
                             type="checkbox"
-                            checked={editingField?.defaultValue === 'true'}
-                            onChange={(e) => {
-                              if (editingField) {
-                                setEditingField({ ...editingField, defaultValue: e.target.checked ? 'true' : 'false' });
-                              }
-                            }}
-                            className="form-checkbox h-4 w-4 text-indigo-600"
-                          />
-                          <span className="ml-2 text-sm text-gray-500">Checked by default</span>
+                          checked={fieldDraft.default_value === 'true'}
+                          onChange={(e) =>
+                            setFieldDraft((d) => ({ ...d, default_value: e.target.checked ? 'true' : '' }))
+                          }
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                        />
+                        <span className="text-sm text-gray-600">On by default for new records</span>
                         </label>
-                      </div>
                     </div>
                   )}
-                  {editingField?.fieldType === 'textarea' && (
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Placeholder</label>
+                    <label className="text-sm font-medium text-gray-700">Applies to</label>
+                    <div className="mt-2 flex flex-wrap gap-4">
+                      {(['member', 'event', 'group'] as const).map((scope) => (
+                        <label key={scope} className="inline-flex items-center gap-2 text-sm text-gray-600">
                       <input
-                        type="text"
-                        value={editingField?.placeholder || ''}
+                            type="checkbox"
+                            checked={fieldDraft.applies_to.includes(scope)}
                         onChange={(e) => {
-                          if (editingField) {
-                            setEditingField({ ...editingField, placeholder: e.target.value });
-                          }
-                        }}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      />
+                              setFieldDraft((d) => ({
+                                ...d,
+                                applies_to: e.target.checked
+                                  ? [...d.applies_to, scope]
+                                  : d.applies_to.filter((x) => x !== scope),
+                              }));
+                            }}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                          />
+                          {scope === 'member' ? 'Members' : scope === 'event' ? 'Events' : 'Group public page'}
+                        </label>
+                      ))}
                     </div>
-                  )}
-                  {editingField?.fieldType === 'file' && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Placeholder</label>
-                      <input
-                        type="text"
-                        value={editingField?.placeholder || ''}
-                        onChange={(e) => {
-                          if (editingField) {
-                            setEditingField({ ...editingField, placeholder: e.target.value });
-                          }
-                        }}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      />
                     </div>
-                  )}
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Applies To</label>
-                    <div className="mt-1">
-                      <label className="inline-flex items-center">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
                         <input
                           type="checkbox"
-                          checked={editingField?.appliesTo.includes('member')}
-                          onChange={(e) => {
-                            if (editingField) {
-                              const newAppliesTo = e.target.checked
-                                ? [...editingField.appliesTo, 'member']
-                                : editingField.appliesTo.filter(a => a !== 'member');
-                              setEditingField({ ...editingField, appliesTo: newAppliesTo });
-                            }
-                          }}
-                          className="form-checkbox h-4 w-4 text-indigo-600"
-                        />
-                        <span className="ml-2 text-sm text-gray-500">Members</span>
-                      </label>
-                      <label className="inline-flex items-center ml-4">
-                        <input
-                          type="checkbox"
-                          checked={editingField?.appliesTo.includes('event')}
-                          onChange={(e) => {
-                            if (editingField) {
-                              const newAppliesTo = e.target.checked
-                                ? [...editingField.appliesTo, 'event']
-                                : editingField.appliesTo.filter(a => a !== 'event');
-                              setEditingField({ ...editingField, appliesTo: newAppliesTo });
-                            }
-                          }}
-                          className="form-checkbox h-4 w-4 text-indigo-600"
-                        />
-                        <span className="ml-2 text-sm text-gray-500">Events</span>
+                        checked={fieldDraft.show_on_public}
+                        onChange={(e) => setFieldDraft((d) => ({ ...d, show_on_public: e.target.checked }))}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                      />
+                      Show on public ministry page (when the field applies to events or groups)
                       </label>
                     </div>
                   </div>
-                </div>
-                <div className="mt-6 flex justify-end">
+                <div className="mt-6 flex justify-end gap-3">
                   <button
+                    type="button"
                     onClick={() => setShowFieldEditor(false)}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-all"
+                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-all"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
-                      if (editingField) {
-                        setCustomFields(customFields.map(f => f.id === editingField.id ? editingField : f));
-                        toast.success('Field updated successfully!');
-                      } else {
-                        setCustomFields([...customFields, { ...editingField!, id: (customFields.length + 1).toString() }]);
-                        toast.success('Field added successfully!');
+                    type="button"
+                    onClick={async () => {
+                      if (!token) return;
+                      const label = fieldDraft.label.trim();
+                      if (!label) {
+                        toast.error('Enter a label');
+                        return;
                       }
+                      if (fieldDraft.applies_to.length === 0) {
+                        toast.error('Select at least one: Members, Events, or Group public page');
+                        return;
+                      }
+                      try {
+                        const body: Record<string, unknown> = {
+                          label,
+                          field_type: fieldDraft.field_type,
+                          required: fieldDraft.required,
+                          placeholder: fieldDraft.placeholder.trim() || null,
+                          options: fieldDraft.field_type === 'dropdown' ? fieldDraft.options : [],
+                          default_value: fieldDraft.default_value.trim() || null,
+                          applies_to: fieldDraft.applies_to,
+                          show_on_public: fieldDraft.show_on_public,
+                          sort_order: customFieldDefinitions.length,
+                        };
+                        const url = editingDefinitionId
+                          ? `/api/custom-field-definitions/${editingDefinitionId}`
+                          : '/api/custom-field-definitions';
+                        const res = await fetch(url, {
+                          method: editingDefinitionId ? 'PATCH' : 'POST',
+                          headers: withBranchScope(selectedBranch?.id, {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                          }),
+                          body: JSON.stringify(body),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          const errMsg =
+                            typeof (data as { error?: string }).error === 'string'
+                              ? (data as { error: string }).error
+                              : 'Save failed';
+                          const hint =
+                            typeof (data as { hint?: string }).hint === 'string'
+                              ? (data as { hint: string }).hint
+                              : null;
+                          if (res.status === 503 && hint) setCustomFieldsSchemaHint(hint);
+                          throw new Error(errMsg);
+                        }
+                        toast.success(editingDefinitionId ? 'Field updated' : 'Field created');
                       setShowFieldEditor(false);
+                        await fetchCustomFieldDefinitions();
+                      } catch (e: unknown) {
+                        toast.error(e instanceof Error ? e.message : 'Save failed');
+                      }
                     }}
-                    className="ml-4 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all"
+                    className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all"
                   >
                     Save
                   </button>
@@ -1261,220 +3430,394 @@ export default function Settings() {
       )}
 
       {/* Event Types Tab */}
-      {activeTab === 'eventTypes' && (
+      {activeTab === 'eventTypes' &&
+        (can('manage_event_types') ? (
+          <EventTypes embedded />
+        ) : (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+            You do not have permission to manage event types.
+          </div>
+        ))}
+
+      {/* Program templates Tab */}
+      {activeTab === 'programTemplates' &&
+        (can('manage_program_templates') ? (
+          <EventOutlineTemplates embedded />
+        ) : (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+            You do not have permission to manage program templates.
+          </div>
+        ))}
+
+      {/* Member statuses Tab */}
+      {activeTab === 'memberStatuses' && (
         <div className="space-y-6">
-          {/* Header with Add Button */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Manage Event Types</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Member statuses</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Customize the types of events available in your church
+                Labels available when editing members. The value stored on each member matches the label text exactly.
               </p>
             </div>
+            <div className="flex flex-wrap gap-2">
+              {canConfigureMemberStatuses && memberStatusOptions.length === 0 && (
             <button
-              onClick={() => {
-                setEditingEventType({
-                  id: '',
-                  name: '',
-                  emoji: '📅',
-                  color: 'bg-gray-500',
-                  isDefault: false
-                });
-                setShowEventTypeEditor(true);
-              }}
-              className="flex items-center px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Event Type
+                  type="button"
+                  onClick={() => void seedMemberStatusDefaults()}
+                  disabled={memberStatusBusy || !token}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Load default labels
             </button>
+              )}
+            </div>
           </div>
 
-          {/* Event Types Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {eventTypes.map((eventType, index) => (
-              <motion.div
-                key={eventType.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-all"
-              >
-                {/* Header */}
-                <div className={`${eventType.color} px-6 py-4`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center text-2xl">
-                        {eventType.emoji}
+          {!canConfigureMemberStatuses && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+              You can view status labels below. Adding or editing requires <strong>System settings</strong>,{' '}
+              <strong>Manage staff</strong>, <strong>Manage roles &amp; permissions</strong>, or{' '}
+              <strong>Manage member statuses</strong> (configure under Roles &amp; Permissions).
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">{eventType.name}</h3>
-                        {eventType.isDefault && (
-                          <span className="text-xs text-white/80">Default Type</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          )}
 
-                {/* Actions */}
-                <div className="p-4 flex items-center justify-end space-x-2">
-                  <button
-                    onClick={() => {
-                      setEditingEventType(eventType);
-                      setShowEventTypeEditor(true);
-                    }}
-                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-all"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  {!eventType.isDefault && (
-                    <button
-                      onClick={() => {
-                        setEventTypes(eventTypes.filter(et => et.id !== eventType.id));
-                        toast.success('Event type deleted successfully!');
-                      }}
-                      className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Event Type Editor */}
-          {showEventTypeEditor && editingEventType && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50 px-6 py-4">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingEventType.id ? 'Edit Event Type' : 'Add New Event Type'}
-                </h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  {/* Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Event Type Name
-                    </label>
-                    <input
-                      type="text"
-                      value={editingEventType.name}
-                      onChange={(e) => setEditingEventType({ ...editingEventType, name: e.target.value })}
-                      placeholder="e.g., Baptism, Retreat, Workshop"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                    />
-                  </div>
-
-                  {/* Emoji Icon */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Icon (Emoji)
-                    </label>
-                    <div className="flex items-center space-x-3">
-                      <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-3xl border-2 border-gray-200">
-                        {editingEventType.emoji}
-                      </div>
+          {memberStatusOptionsLoading ? (
+            <p className="text-sm text-gray-500">Loading…</p>
+          ) : (
+            <>
+              {canConfigureMemberStatuses && (
+                <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Add status</h3>
+                  <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1">Label</label>
                       <input
                         type="text"
-                        value={editingEventType.emoji}
-                        onChange={(e) => setEditingEventType({ ...editingEventType, emoji: e.target.value })}
-                        placeholder="📅"
-                        maxLength={2}
-                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                        value={memberStatusNewLabel}
+                        onChange={(e) => setMemberStatusNewLabel(e.target.value)}
+                        placeholder="e.g. Active, Transferred"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                       />
+                      </div>
+                    <div className="w-full md:w-48">
+                      <label className="block text-xs text-gray-500 mb-1">Badge color</label>
+                      <select
+                        value={memberStatusNewColor}
+                        onChange={(e) => setMemberStatusNewColor(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                      >
+                        {MEMBER_STATUS_COLOR_PRESETS.map((p) => (
+                          <option key={p.value || 'default'} value={p.value}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">Paste an emoji to use as the icon</p>
-                  </div>
-
-                  {/* Color */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Color Theme
-                    </label>
-                    <div className="grid grid-cols-4 gap-3">
-                      {[
-                        { value: 'bg-purple-500', label: 'Purple' },
-                        { value: 'bg-blue-500', label: 'Blue' },
-                        { value: 'bg-green-500', label: 'Green' },
-                        { value: 'bg-yellow-500', label: 'Yellow' },
-                        { value: 'bg-orange-500', label: 'Orange' },
-                        { value: 'bg-red-500', label: 'Red' },
-                        { value: 'bg-pink-500', label: 'Pink' },
-                        { value: 'bg-gray-500', label: 'Gray' },
-                      ].map((colorOption) => (
-                        <button
-                          key={colorOption.value}
-                          onClick={() => setEditingEventType({ ...editingEventType, color: colorOption.value })}
-                          className={`p-3 rounded-xl border-2 transition-all ${
-                            editingEventType.color === colorOption.value
-                              ? 'border-gray-900 shadow-sm'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className={`w-full h-8 ${colorOption.value} rounded-lg mb-2`}></div>
-                          <p className="text-xs font-medium text-gray-700">{colorOption.label}</p>
-                        </button>
-                      ))}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void addMemberStatusOption()}
+                      disabled={memberStatusBusy}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
+              )}
 
-                {/* Action Buttons */}
-                <div className="mt-6 flex justify-end space-x-3">
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                {sortedMemberStatusOptions.length === 0 ? (
+                  <p className="p-6 text-sm text-gray-500">
+                    No statuses yet.
+                    {canConfigureMemberStatuses
+                      ? ' Use “Load default labels” or add your own above.'
+                      : ' Ask an administrator to configure statuses.'}
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {sortedMemberStatusOptions.map((row, index) => (
+                      <li key={row.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex items-center gap-2 sm:w-10 shrink-0">
+                          {canConfigureMemberStatuses && (
+                            <>
                   <button
-                    onClick={() => {
-                      setShowEventTypeEditor(false);
-                      setEditingEventType(null);
-                    }}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all"
-                  >
-                    Cancel
+                                type="button"
+                                aria-label="Move up"
+                                disabled={memberStatusBusy || index === 0}
+                                onClick={() => void swapMemberStatusSort(index, -1)}
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <ArrowUp className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => {
-                      if (!editingEventType.name.trim()) {
-                        toast.error('Please enter a name for the event type');
-                        return;
-                      }
-                      
-                      if (editingEventType.id) {
-                        // Update existing
-                        setEventTypes(eventTypes.map(et => 
-                          et.id === editingEventType.id ? editingEventType : et
-                        ));
-                        toast.success('Event type updated successfully!');
-                      } else {
-                        // Add new
-                        setEventTypes([...eventTypes, { 
-                          ...editingEventType, 
-                          id: (eventTypes.length + 1).toString() 
-                        }]);
-                        toast.success('Event type added successfully!');
-                      }
-                      setShowEventTypeEditor(false);
-                      setEditingEventType(null);
-                    }}
-                    className="px-6 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-all"
-                  >
-                    {editingEventType.id ? 'Update' : 'Add'} Event Type
-                  </button>
+                    <button
+                                type="button"
+                                aria-label="Move down"
+                                disabled={memberStatusBusy || index === sortedMemberStatusOptions.length - 1}
+                                onClick={() => void swapMemberStatusSort(index, 1)}
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                    </button>
+                            </>
+                  )}
                 </div>
+                        <div className="flex-1 min-w-0">
+                          {canConfigureMemberStatuses ? (
+                    <input
+                      type="text"
+                              defaultValue={row.label}
+                              key={row.id + row.label}
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                if (v && v !== row.label) void patchMemberStatusOption(row.id, { label: v });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                            />
+                          ) : (
+                            <p className="font-medium text-gray-900">{row.label}</p>
+                          )}
+                  </div>
+                        <div className="w-full sm:w-44">
+                          {canConfigureMemberStatuses ? (
+                            <select
+                              value={
+                                MEMBER_STATUS_COLOR_PRESETS.some(
+                                  (p) => p.value === (row.color ?? '').trim().toLowerCase(),
+                                )
+                                  ? (row.color ?? '').trim().toLowerCase()
+                                  : ''
+                              }
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                void patchMemberStatusOption(row.id, { color: v || null });
+                              }}
+                              disabled={memberStatusBusy}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                            >
+                              {MEMBER_STATUS_COLOR_PRESETS.map((p) => (
+                                <option key={p.value || 'default'} value={p.value}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-sm text-gray-600">{(row.color || 'Default').toString()}</p>
+                          )}
+                    </div>
+                        {canConfigureMemberStatuses && (
+                  <button
+                            type="button"
+                            onClick={() => void deleteMemberStatusOption(row.id)}
+                            disabled={memberStatusBusy}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                            aria-label="Delete status"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                  </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                </div>
+            </>
+          )}
+
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6">
+            <div className="flex items-start space-x-3">
+              <UserCircle2 className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">About member statuses</h4>
+                <p className="text-sm text-gray-600 mt-2">
+                  Each member&apos;s <strong>status</strong> field stores one of these labels. Removing a label does not
+                  change existing members; they will still show their saved value. Badge colors are hints for lists and
+                  profiles (preset names: green, red, indigo, …).
+                </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group types Tab */}
+      {activeTab === 'groupTypes' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Group types</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Labels for ministry and group rows (<code className="text-xs bg-gray-100 px-1 rounded">groups.group_type</code>
+                ). Used in add/edit group and list filters.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {canConfigureGroupTypes && groupTypeOptions.length === 0 && !groupTypeTableMissing && (
+                <button
+                  type="button"
+                  onClick={() => void seedGroupTypeDefaults()}
+                  disabled={groupTypeBusy || !token}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Load default labels
+                </button>
+              )}
+            </div>
+          </div>
+
+          {groupTypeTableMissing && !groupTypeOptionsLoading && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+              <p className="font-semibold">Database table missing</p>
+              <p className="mt-2 text-red-900">
+                The <code className="rounded bg-red-100 px-1 py-0.5 text-xs">group_type_options</code> table is not in
+                your Supabase project yet.
+              </p>
+              <ol className="mt-3 list-decimal list-inside space-y-1 text-red-900">
+                <li>
+                  Open <strong>Supabase → SQL Editor</strong>, paste the contents of{' '}
+                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">migrations/group_type_options.sql</code>, and
+                  run it.
+                </li>
+                <li>
+                  Or from the project folder run{' '}
+                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">npm run migrate:group-type-options</code>{' '}
+                  with <code className="rounded bg-red-100 px-1 py-0.5 text-xs">DATABASE_URL</code> (or{' '}
+                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">SUPABASE_DB_URL</code>) in{' '}
+                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">.env</code>.
+                </li>
+              </ol>
+              <p className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => void refreshGroupTypeOptions()}
+                  className="text-sm font-medium text-red-900 underline underline-offset-2 hover:text-red-700"
+                >
+                  Retry after installing
+                </button>
+              </p>
             </div>
           )}
 
-          {/* Info Box */}
+          {!canConfigureGroupTypes && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+              You can view group types below. Adding or editing requires <strong>Manage groups</strong>,{' '}
+              <strong>System settings</strong>, <strong>Manage staff</strong>, or{' '}
+              <strong>Manage roles &amp; permissions</strong>.
+            </div>
+          )}
+
+          {groupTypeOptionsLoading ? (
+            <p className="text-sm text-gray-500">Loading…</p>
+          ) : (
+            <>
+              {canConfigureGroupTypes && !groupTypeTableMissing && (
+                <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Add type</h3>
+                  <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 mb-1">Label</label>
+                      <input
+                        type="text"
+                        value={groupTypeNewLabel}
+                        onChange={(e) => setGroupTypeNewLabel(e.target.value)}
+                        placeholder="e.g. Ministry, Cell group"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void addGroupTypeOption()}
+                      disabled={groupTypeBusy}
+                      className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                {groupTypeTableMissing ? (
+                  <p className="p-6 text-sm text-gray-500">
+                    Install the database table using the steps above, then click &quot;Retry after installing&quot;.
+                  </p>
+                ) : sortedGroupTypeOptions.length === 0 ? (
+                  <p className="p-6 text-sm text-gray-500">
+                    No group types yet.
+                    {canConfigureGroupTypes
+                      ? ' Use “Load default labels” or add your own above.'
+                      : ' Ask an administrator to configure types.'}
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {sortedGroupTypeOptions.map((row, index) => (
+                      <li key={row.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex items-center gap-2 sm:w-10 shrink-0">
+                          {canConfigureGroupTypes && (
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Move up"
+                                disabled={groupTypeBusy || index === 0}
+                                onClick={() => void swapGroupTypeSort(index, -1)}
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <ArrowUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Move down"
+                                disabled={groupTypeBusy || index === sortedGroupTypeOptions.length - 1}
+                                onClick={() => void swapGroupTypeSort(index, 1)}
+                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <ArrowDown className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {canConfigureGroupTypes ? (
+                            <input
+                              type="text"
+                              defaultValue={row.label}
+                              key={row.id + row.label}
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                if (v && v !== row.label) void patchGroupTypeOption(row.id, { label: v });
+                              }}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                            />
+                          ) : (
+                            <p className="font-medium text-gray-900">{row.label}</p>
+                          )}
+                        </div>
+                        {canConfigureGroupTypes && (
+                          <button
+                            type="button"
+                            onClick={() => void deleteGroupTypeOption(row.id)}
+                            disabled={groupTypeBusy}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                            aria-label="Delete group type"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6">
             <div className="flex items-start space-x-3">
-              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Tag className="w-5 h-5 text-white" />
-              </div>
+              <Layers className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
               <div>
-                <h4 className="text-sm font-semibold text-gray-900">About Event Types</h4>
+                <h4 className="text-sm font-semibold text-gray-900">About group types</h4>
                 <p className="text-sm text-gray-600 mt-2">
-                  Event types help categorize and organize your church events. Default types cannot be deleted, but you can customize their appearance. Create custom event types for special occasions like baptisms, retreats, or workshops.
+                  Each group stores one of these labels in <strong>group type</strong>. Existing groups keep their
+                  current value if you rename a label here; update them from the ministry or group edit screen.
                 </p>
               </div>
             </div>
@@ -1501,7 +3844,7 @@ export default function Settings() {
               onClick={() => setIntegrationTab('whatsapp')}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
                 integrationTab === 'whatsapp'
-                  ? 'border-green-600 text-green-600'
+                  ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1523,7 +3866,7 @@ export default function Settings() {
               onClick={() => setIntegrationTab('email')}
               className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
                 integrationTab === 'email'
-                  ? 'border-purple-600 text-purple-600'
+                  ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -1540,7 +3883,7 @@ export default function Settings() {
               className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
             >
               {/* Header */}
-              <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4">
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
@@ -1568,10 +3911,10 @@ export default function Settings() {
                 {whatsappEnabled ? (
                   <div className="space-y-5">
                     {/* Status Indicator */}
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                       <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-green-800">Integration Enabled</span>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm font-medium text-blue-800">Integration Enabled</span>
                       </div>
                     </div>
 
@@ -1584,7 +3927,7 @@ export default function Settings() {
                         <input
                           type="text"
                           placeholder="+1 234 567 8900"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                         />
                         <p className="mt-1 text-sm text-gray-500">Your verified WhatsApp Business number</p>
                       </div>
@@ -1595,7 +3938,7 @@ export default function Settings() {
                         <input
                           type="text"
                           placeholder="Your Church Name"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                         />
                         <p className="mt-1 text-sm text-gray-500">Display name for messages</p>
                       </div>
@@ -1615,7 +3958,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="Enter your Phone Number ID"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono text-sm"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
                           />
                           <p className="mt-1 text-xs text-gray-500">Found in your WhatsApp Business API dashboard</p>
                         </div>
@@ -1626,7 +3969,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="Enter your Business Account ID"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono text-sm"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
                           />
                         </div>
                         <div>
@@ -1636,7 +3979,7 @@ export default function Settings() {
                           <input
                             type="password"
                             placeholder="Enter your Access Token"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono text-sm"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
                           />
                           <p className="mt-1 text-xs text-gray-500">Your permanent access token from Meta Business</p>
                         </div>
@@ -1647,7 +3990,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="Enter your Webhook Verify Token"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono text-sm"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
                           />
                           <p className="mt-1 text-xs text-gray-500">For receiving delivery status and replies</p>
                         </div>
@@ -1658,13 +4001,13 @@ export default function Settings() {
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                       <button
                         onClick={() => toast.info('Testing connection...')}
-                        className="px-4 py-2 text-sm font-medium text-green-600 border border-green-600 rounded-xl hover:bg-green-50 transition-all"
+                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-xl hover:bg-blue-50 transition-all"
                       >
                         Test Connection
                       </button>
                       <button
                         onClick={() => toast.success('WhatsApp configuration saved!')}
-                        className="px-6 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-sm"
+                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
                       >
                         Save Configuration
                       </button>
@@ -1850,7 +4193,7 @@ export default function Settings() {
               className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
             >
               {/* Header */}
-              <div className="bg-gradient-to-r from-purple-500 to-purple-600 px-6 py-4">
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
@@ -1878,10 +4221,10 @@ export default function Settings() {
                 {emailEnabled ? (
                   <div className="space-y-5">
                     {/* Status Indicator */}
-                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                       <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-purple-800">Integration Enabled</span>
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm font-medium text-blue-800">Integration Enabled</span>
                       </div>
                     </div>
 
@@ -1890,7 +4233,7 @@ export default function Settings() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Email Provider
                       </label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
                         <option value="">Select a provider</option>
                         <option value="smtp">SMTP (Custom Server)</option>
                         <option value="sendgrid">SendGrid</option>
@@ -1916,7 +4259,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="smtp.example.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                         <div>
@@ -1926,7 +4269,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="587"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                           <p className="mt-1 text-xs text-gray-500">Usually 587 (TLS) or 465 (SSL)</p>
                         </div>
@@ -1934,7 +4277,7 @@ export default function Settings() {
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Encryption
                           </label>
-                          <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all">
+                          <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
                             <option value="tls">TLS</option>
                             <option value="ssl">SSL</option>
                             <option value="none">None</option>
@@ -1947,7 +4290,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="your@email.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                         <div>
@@ -1957,7 +4300,7 @@ export default function Settings() {
                           <input
                             type="password"
                             placeholder="••••••••"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                       </div>
@@ -1974,7 +4317,7 @@ export default function Settings() {
                           <input
                             type="text"
                             placeholder="Your Church Name"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                         <div>
@@ -1984,7 +4327,7 @@ export default function Settings() {
                           <input
                             type="email"
                             placeholder="noreply@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                         <div>
@@ -1994,7 +4337,7 @@ export default function Settings() {
                           <input
                             type="email"
                             placeholder="info@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                         <div>
@@ -2004,7 +4347,7 @@ export default function Settings() {
                           <input
                             type="email"
                             placeholder="admin@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                           />
                         </div>
                       </div>
@@ -2015,15 +4358,15 @@ export default function Settings() {
                       <h4 className="text-sm font-semibold text-gray-900 mb-4">Advanced Settings</h4>
                       <div className="space-y-3">
                         <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-purple-600 rounded" />
+                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
                           <span className="text-sm text-gray-700">Track email opens</span>
                         </label>
                         <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-purple-600 rounded" />
+                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
                           <span className="text-sm text-gray-700">Track link clicks</span>
                         </label>
                         <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-purple-600 rounded" />
+                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
                           <span className="text-sm text-gray-700">Enable unsubscribe link</span>
                         </label>
                       </div>
@@ -2033,13 +4376,13 @@ export default function Settings() {
                     <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                       <button
                         onClick={() => toast.info('Sending test email...')}
-                        className="px-4 py-2 text-sm font-medium text-purple-600 border border-purple-600 rounded-xl hover:bg-purple-50 transition-all"
+                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-xl hover:bg-blue-50 transition-all"
                       >
                         Send Test Email
                       </button>
                       <button
                         onClick={() => toast.success('Email configuration saved!')}
-                        className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all shadow-sm"
+                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
                       >
                         Save Configuration
                       </button>
@@ -2073,6 +4416,89 @@ export default function Settings() {
       {/* Branches Tab */}
       {activeTab === 'branches' && (
         <div className="space-y-6 max-w-4xl">
+          {/* Active branch (scope for the whole app) */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-base font-semibold text-gray-900">Active branch</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Members, events, groups, and tasks are scoped to this branch. Switch here if you manage multiple
+              locations.
+            </p>
+            {branchLoading ? (
+              <div className="mt-4 flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-gray-50/80 animate-pulse">
+                <div className="w-10 h-10 rounded-md bg-gray-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-gray-200 rounded w-40" />
+                  <div className="h-2 bg-gray-200 rounded w-56" />
+                </div>
+              </div>
+            ) : canSwitchBranch ? (
+              <div className="mt-4 space-y-2">
+                {branches.length > 0 ? (
+                  branches.map((branch, index) => (
+                    <motion.button
+                      key={branch.id}
+                      type="button"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                      onClick={() => {
+                        setSelectedBranch(branch);
+                        toast.success(`Switched to ${branch.name}`);
+                      }}
+                      className={`w-full px-4 py-3 flex items-center space-x-3 rounded-lg border transition-colors text-left ${
+                        selectedBranch?.id === branch.id
+                          ? 'border-blue-200 bg-blue-50/60'
+                          : 'border-gray-100 bg-gray-50/50 hover:bg-blue-50/40 hover:border-blue-100'
+                      }`}
+                    >
+                      <div
+                        className={`w-10 h-10 rounded-md flex items-center justify-center flex-shrink-0 ${
+                          selectedBranch?.id === branch.id
+                            ? 'bg-blue-700 text-white'
+                            : 'bg-gray-100 text-gray-400'
+                        }`}
+                      >
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={`text-sm font-semibold truncate ${
+                            selectedBranch?.id === branch.id ? 'text-blue-900' : 'text-gray-700'
+                          }`}
+                        >
+                          {branch.name}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">{branch.location || 'No location set'}</p>
+                      </div>
+                      {selectedBranch?.id === branch.id && (
+                        <div className="w-5 h-5 bg-blue-700 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </motion.button>
+                  ))
+                ) : (
+                  <div className="text-center py-8 rounded-lg border border-dashed border-gray-200 bg-gray-50/60">
+                    <MapPin className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">No branches found</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 flex items-center gap-3 p-4 rounded-lg border border-gray-100 bg-gray-50/80">
+                <div className="w-10 h-10 rounded-md bg-blue-700 flex items-center justify-center text-white flex-shrink-0">
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{selectedBranch?.name || '—'}</p>
+                  <p className="text-xs text-gray-500">
+                    Only the organization owner can switch branches. Contact them if you need a different branch.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Header with Create Button */}
           <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center justify-between">
             <div>
@@ -2144,8 +4570,8 @@ export default function Settings() {
                           <div className="flex items-center space-x-2 mb-1">
                             <h4 className="text-sm font-semibold text-gray-900">{branch.name}</h4>
                             {branch.is_active ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-600 mr-1"></div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                <div className="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1"></div>
                                 Active
                               </span>
                             ) : (
@@ -2154,29 +4580,6 @@ export default function Settings() {
                               </span>
                             )}
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                            <div className="flex items-center space-x-1.5 text-xs text-gray-600">
-                              <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                              <span className="truncate">{branch.location}</span>
-                            </div>
-                            <div className="flex items-center space-x-1.5 text-xs text-gray-600">
-                              <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                              <span>{branch.phone_number}</span>
-                            </div>
-                            <div className="flex items-center space-x-1.5 text-xs text-gray-600">
-                              <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-                              <span className="truncate">{branch.email}</span>
-                            </div>
-                            {branch.pastor_name && (
-                              <div className="flex items-center space-x-1.5 text-xs text-gray-600">
-                                <User className="w-3.5 h-3.5 flex-shrink-0" />
-                                <span className="truncate">{branch.pastor_name}</span>
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-500 mt-2">
-                            {branch.address}, {branch.city}, {branch.state} {branch.zip_code}
-                          </p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2 ml-4">
@@ -2191,7 +4594,7 @@ export default function Settings() {
                           <Edit2 className="w-4 h-4 text-gray-600" />
                         </button>
                         <button
-                          onClick={() => handleDeleteBranch(branch.id)}
+                          onClick={() => handleDeleteBranch(branch.id, String(branch.name || ''))}
                           className="p-2 hover:bg-red-50 rounded-lg transition-colors"
                           title="Delete branch"
                         >
@@ -2212,10 +4615,9 @@ export default function Settings() {
               About Branches
             </h5>
             <ul className="text-xs text-blue-800 space-y-1">
-              <li>• Each branch can have its own members, events, and groups</li>
-              <li>• You can assign pastors and set capacity for each branch</li>
-              <li>• All data is filtered by the branch you select in the header</li>
-              <li>• Inactive branches won't appear in branch selection dropdowns</li>
+              <li>• Each branch has its own members, events, and groups</li>
+              <li>• All data is filtered by the active branch you choose above (organization owners only)</li>
+              <li>• Inactive branches won&apos;t appear in the active branch list</li>
             </ul>
           </div>
         </div>
@@ -2257,7 +4659,7 @@ export default function Settings() {
             className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden"
           >
             {/* Modal Header */}
-            <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">Assign Leader</h2>
@@ -2267,7 +4669,7 @@ export default function Settings() {
                   onClick={() => {
                     setShowAssignLeaderModal(false);
                     setSelectedMember('');
-                    setSelectedRole('group_leader');
+                    setAssignLeaderRoleType('group_leader');
                     setSelectedMinistries([]);
                   }}
                   className="p-2 hover:bg-white/50 rounded-lg transition-all"
@@ -2289,7 +4691,7 @@ export default function Settings() {
                 <select
                   value={selectedMember}
                   onChange={(e) => setSelectedMember(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="">Choose a member...</option>
                   {mockMembers.map(member => (
@@ -2335,9 +4737,9 @@ export default function Settings() {
                   ].map(role => (
                     <button
                       key={role.id}
-                      onClick={() => setSelectedRole(role.id)}
+                      onClick={() => setAssignLeaderRoleType(role.id)}
                       className={`px-4 py-3 rounded-xl border-2 transition-all text-sm font-medium ${
-                        selectedRole === role.id
+                        assignLeaderRoleType === role.id
                           ? `border-${role.color}-500 bg-${role.color}-50 text-${role.color}-700`
                           : 'border-gray-200 hover:border-gray-300 text-gray-700'
                       }`}
@@ -2371,7 +4773,7 @@ export default function Settings() {
                 onClick={() => {
                   setShowAssignLeaderModal(false);
                   setSelectedMember('');
-                  setSelectedRole('group_leader');
+                  setAssignLeaderRoleType('group_leader');
                   setSelectedMinistries([]);
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white border border-gray-200 rounded-lg transition-all"
@@ -2380,7 +4782,7 @@ export default function Settings() {
               </button>
               <button
                 onClick={handleAssignLeader}
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all flex items-center"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all flex items-center"
               >
                 <Save className="w-4 h-4 mr-2" />
                 Assign Leader

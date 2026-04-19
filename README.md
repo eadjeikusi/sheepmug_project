@@ -1,5 +1,7 @@
 # ChurchHub Member Registration Project
 
+> Consolidated project docs: `docs/PROJECT_DOCUMENTATION.md`
+
 ## Overview
 This project implements an online member registration system for ChurchHub, allowing new members to register via a public-facing form. The system integrates with the existing database schema to manage member requests and member records.
 

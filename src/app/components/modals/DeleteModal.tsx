@@ -1,16 +1,23 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Loader2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface DeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  /** May return a Promise for async work; see `closeOnConfirm` and `isConfirming`. */
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   /** Primary action label (default: "Delete") */
   confirmLabel?: string;
   /** danger = destructive delete styling; caution = warning / remove-without-delete */
   variant?: 'danger' | 'caution';
+  /** e.g. z-[200] when stacking above another modal */
+  stackZClass?: string;
+  /** Shows spinner on the confirm button and blocks dismiss actions. */
+  isConfirming?: boolean;
+  /** If false, modal stays open until `onClose` — use when `onConfirm` is async and parent closes after work. */
+  closeOnConfirm?: boolean;
 }
 
 export default function DeleteModal({
@@ -21,8 +28,13 @@ export default function DeleteModal({
   message,
   confirmLabel = 'Delete',
   variant = 'danger',
+  stackZClass = 'z-50',
+  isConfirming = false,
+  closeOnConfirm = true,
 }: DeleteModalProps) {
   if (!isOpen) return null;
+
+  const busy = Boolean(isConfirming);
 
   const iconWrap =
     variant === 'caution'
@@ -38,14 +50,16 @@ export default function DeleteModal({
       : 'bg-red-600 hover:bg-red-700';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className={`fixed inset-0 ${stackZClass} flex items-center justify-center p-4`}>
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={() => {
+          if (!busy) onClose();
+        }}
       />
 
       {/* Modal */}
@@ -69,8 +83,10 @@ export default function DeleteModal({
             </div>
           </div>
           <button
+            type="button"
+            disabled={busy}
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-all ml-2 shrink-0"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-all ml-2 shrink-0 disabled:opacity-50 disabled:pointer-events-none"
           >
             <X className="w-5 h-5" />
           </button>
@@ -79,19 +95,30 @@ export default function DeleteModal({
         {/* Actions */}
         <div className="flex justify-end space-x-3 px-8 pb-8">
           <button
+            type="button"
+            disabled={busy}
             onClick={onClose}
-            className="px-6 py-3 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all font-medium"
+            className="px-6 py-3 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all font-medium disabled:opacity-50 disabled:pointer-events-none"
           >
             Cancel
           </button>
           <button
+            type="button"
+            disabled={busy}
             onClick={() => {
-              onConfirm();
-              onClose();
+              void (async () => {
+                try {
+                  await Promise.resolve(onConfirm());
+                  if (closeOnConfirm) onClose();
+                } catch {
+                  /* parent may toast; keep modal open when closeOnConfirm is false */
+                }
+              })();
             }}
-            className={`px-6 py-3 text-white rounded-xl transition-all shadow-sm font-medium ${confirmBtn}`}
+            className={`inline-flex items-center justify-center gap-2 min-w-[7.5rem] px-6 py-3 text-white rounded-xl transition-all shadow-sm font-medium disabled:opacity-70 disabled:pointer-events-none ${confirmBtn}`}
           >
-            {confirmLabel}
+            {busy ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : null}
+            {busy ? 'Deleting…' : confirmLabel}
           </button>
         </div>
       </motion.div>

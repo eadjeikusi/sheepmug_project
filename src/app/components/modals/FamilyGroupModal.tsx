@@ -69,7 +69,7 @@ export default function FamilyGroupModal({ isOpen, onClose, familyGroup, onSave 
                 value={formData.familyName}
                 onChange={(e) => setFormData({ ...formData, familyName: e.target.value })}
                 placeholder="e.g., Johnson Family"
-                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                className="w-full px-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 required
               />
             </div>
@@ -93,7 +93,7 @@ export default function FamilyGroupModal({ isOpen, onClose, familyGroup, onSave 
           </button>
           <button
             onClick={handleSubmit}
-            className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium"
+            className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
           >
             {familyGroup ? 'Save Changes' : 'Create Family Group'}
           </button>

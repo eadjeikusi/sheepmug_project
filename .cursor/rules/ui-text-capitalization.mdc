@@ -1,0 +1,16 @@
+---
+description: Title-case and display rules for list/grid card copy on mobile
+alwaysApply: false
+---
+
+# UI text capitalization (mobile lists & grids)
+
+1. **Card titles and body copy from the API** — Use `displayMemberWords()` from `apps/mobile/lib/memberDisplayFormat.ts` so names and descriptions follow **title case per word** (emails and phone-like strings stay unchanged).
+
+2. **Do not** rely on CSS `textTransform: 'capitalize'` alone for ministry/group cards; it mishandles acronyms and mixed casing from the server.
+
+3. **Fixed English phrases** (e.g. “No description provided.”, “N members”) may stay as written; localize later if needed.
+
+4. **Initials / avatar fallbacks** — Keep server-provided initials; optional single-line uppercase is acceptable for tiny avatar badges.
+
+When adding new grid or list cards, apply the same pattern unless the product asks for all-caps or raw server strings.

@@ -6,6 +6,7 @@ import { mockMembers, mockPastors, mockEvents, mockGroups } from '../../utils/mo
 import CreateEventModal from './CreateEventModal';
 import EventAttendanceModal from './EventAttendanceModal';
 import { toast } from 'sonner';
+import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
 
 interface GroupDetailModalProps {
   isOpen: boolean;
@@ -33,7 +34,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'youth': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'youth': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'music': return 'bg-pink-50 text-pink-700 border-pink-200';
       case 'ministry': return 'bg-blue-50 text-blue-700 border-blue-200';
       default: return 'bg-gray-50 text-gray-700 border-gray-200';
@@ -61,8 +62,8 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
         {/* Header */}
         <div className="flex items-start justify-between p-8 border-b border-gray-100">
           <div className="flex items-start space-x-4 flex-1">
-            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center">
-              <Users className="w-8 h-8 text-indigo-600" />
+            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
+              <Users className="w-8 h-8 text-blue-600" />
             </div>
             <div className="flex-1">
               <div className="flex items-center space-x-3 mb-2">
@@ -110,7 +111,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
             onClick={() => setActiveTab('overview')}
             className={`px-6 py-3 font-medium rounded-t-xl transition-all ${
               activeTab === 'overview'
-                ? 'text-indigo-600 bg-indigo-50 border-b-2 border-indigo-600'
+                ? 'text-blue-600 bg-blue-50 border-b-2 border-blue-600'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
@@ -120,7 +121,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
             onClick={() => setActiveTab('members')}
             className={`px-6 py-3 font-medium rounded-t-xl transition-all ${
               activeTab === 'members'
-                ? 'text-indigo-600 bg-indigo-50 border-b-2 border-indigo-600'
+                ? 'text-blue-600 bg-blue-50 border-b-2 border-blue-600'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
@@ -130,7 +131,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
             onClick={() => setActiveTab('events')}
             className={`px-6 py-3 font-medium rounded-t-xl transition-all ${
               activeTab === 'events'
-                ? 'text-indigo-600 bg-indigo-50 border-b-2 border-indigo-600'
+                ? 'text-blue-600 bg-blue-50 border-b-2 border-blue-600'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
             }`}
           >
@@ -145,11 +146,11 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
             <div className="space-y-6">
               {/* Leader Section */}
               <div>
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+                <h3 className="text-sm font-medium text-gray-500 mb-3">
                   Group Leader
                 </h3>
                 {leader && (
-                  <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-6">
+                  <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100 rounded-2xl p-6">
                     <div className="flex items-center space-x-4">
                       <img
                         src={leader.profileImage}
@@ -162,7 +163,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                         <p className="text-sm text-gray-600">{leader.phoneNumber}</p>
                       </div>
                       <div className="text-center">
-                        <User className="w-8 h-8 text-indigo-600 mx-auto mb-1" />
+                        <User className="w-8 h-8 text-blue-600 mx-auto mb-1" />
                         <p className="text-sm text-gray-500">Leader</p>
                       </div>
                     </div>
@@ -173,7 +174,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
               {/* Subgroups Section */}
               {subgroups.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+                  <h3 className="text-sm font-medium text-gray-500 mb-3">
                     Subgroups ({subgroups.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -181,7 +182,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                       const subLeader = mockMembers.find(m => m.id === subgroup.leaderId) || 
                                        mockPastors.find(p => p.id === subgroup.leaderId);
                       return (
-                        <div key={subgroup.id} className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all">
+                        <div key={subgroup.id} className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-blue-200 hover:shadow-sm transition-all">
                           <div className="flex items-start justify-between mb-2">
                             <h4 className="font-semibold text-gray-900">{subgroup.name}</h4>
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium ${getTypeColor(subgroup.type)}`}>
@@ -214,7 +215,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
 
               {/* Quick Stats */}
               <div>
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+                <h3 className="text-sm font-medium text-gray-500 mb-3">
                   Quick Stats
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -239,7 +240,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
 
               {/* Join Link */}
               <div>
-                <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-3">
+                <h3 className="text-sm font-medium text-gray-500 mb-3">
                   Join Link
                 </h3>
                 <div className="bg-gray-50 rounded-2xl p-4 flex items-center justify-between">
@@ -249,7 +250,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                       navigator.clipboard.writeText(group.joinLink);
                       toast.success('Link copied to clipboard!');
                     }}
-                    className="px-4 py-2 text-sm text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-all"
+                    className="px-4 py-2 text-sm text-blue-600 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition-all"
                   >
                     Copy Link
                   </button>
@@ -266,7 +267,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                   key={member.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all"
+                  className="bg-white border border-gray-200 rounded-2xl p-4 hover:border-blue-200 hover:shadow-sm transition-all"
                 >
                   <div className="flex items-start space-x-3">
                     <img
@@ -310,7 +311,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
               <div className="flex justify-end">
                 <button
                   onClick={() => setIsCreateEventOpen(true)}
-                  className="flex items-center px-4 py-2.5 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm"
+                  className="flex items-center px-4 py-2.5 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Create Event
@@ -325,7 +326,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                       key={event.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-indigo-200 hover:shadow-sm transition-all"
+                      className="bg-white border border-gray-200 rounded-2xl p-6 hover:border-blue-200 hover:shadow-sm transition-all"
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
@@ -336,7 +337,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                             </span>
                           </div>
                           <div className="flex items-center space-x-4 text-sm text-gray-600 mb-3">
-                            <span>📅 {new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            <span>📅 {formatLongWeekdayDate(String(event.date)) || '—'}</span>
                             <span>🕒 {event.time}</span>
                             <span>📍 {event.location}</span>
                           </div>
@@ -349,13 +350,13 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                           </div>
                         </div>
                         <div className="flex flex-col items-end space-y-2 ml-4">
-                          <div className="text-center px-4 py-2 bg-green-50 rounded-xl">
-                            <p className="text-2xl font-semibold text-green-700">{event.attendanceCount}</p>
-                            <p className="text-sm text-green-600">Attended</p>
+                          <div className="text-center px-4 py-2 bg-blue-50 rounded-xl">
+                            <p className="text-2xl font-semibold text-blue-700">{event.attendanceCount}</p>
+                            <p className="text-sm text-blue-600">Attended</p>
                           </div>
                           <button
                             onClick={() => setSelectedEvent(event)}
-                            className="flex items-center px-3 py-1.5 text-sm text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-all"
+                            className="flex items-center px-3 py-1.5 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all"
                           >
                             <QrCode className="w-3 h-3 mr-1.5" />
                             Take Attendance
@@ -371,7 +372,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
                   <p className="text-gray-500 mb-4">No events scheduled for this group yet.</p>
                   <button
                     onClick={() => setIsCreateEventOpen(true)}
-                    className="inline-flex items-center px-4 py-2 text-sm text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-all"
+                    className="inline-flex items-center px-4 py-2 text-sm text-blue-600 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition-all"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Event
@@ -386,7 +387,7 @@ export default function GroupDetailModal({ isOpen, onClose, group }: GroupDetail
         <div className="flex justify-end space-x-3 px-8 pb-8 pt-6 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="px-6 py-3 text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-sm font-medium"
+            className="px-6 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
           >
             Close
           </button>
