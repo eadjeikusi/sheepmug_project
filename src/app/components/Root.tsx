@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
 import { AppProvider } from '@/contexts/AppContext';
@@ -44,6 +44,10 @@ export default function Root() {
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
   
   // Determine active tab from URL

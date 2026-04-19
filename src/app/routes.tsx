@@ -17,6 +17,7 @@ import SuperAdmin from "./components/pages/SuperAdmin";
 import NotFound from "./components/pages/NotFound";
 import PublicGroupPage from "./components/pages/PublicGroupPage";
 import JoinGroupPage from "./components/pages/JoinGroupPage";
+import { LoginPage, SignupPage } from "../auth/AuthPages";
 
 const CMS_BASENAME = (() => {
   const configuredRaw = String(import.meta.env.VITE_CMS_BASENAME || "/cms").trim() || "/cms";
@@ -25,6 +26,14 @@ const CMS_BASENAME = (() => {
 })();
 
 export const router = createBrowserRouter([
+  {
+    path: "/login",
+    Component: LoginPage,
+  },
+  {
+    path: "/signup",
+    Component: SignupPage,
+  },
   {
     path: "/public/groups/:slug",
     Component: PublicGroupPage,

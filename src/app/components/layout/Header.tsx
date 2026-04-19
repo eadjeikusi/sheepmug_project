@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { AuthModal } from '../modals/AuthModal';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import GlobalSearchBar from './GlobalSearchBar';
@@ -19,7 +18,6 @@ interface HeaderProps {
 export default function Header({ setActiveTab }: HeaderProps) {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const { user, isAuthenticated, logout } = useAuth();
@@ -271,24 +269,13 @@ export default function Header({ setActiveTab }: HeaderProps) {
           </div>
         ) : (
           <button 
-            onClick={() => setIsAuthModalOpen(true)}
+            onClick={() => navigate('/login')}
             className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-medium text-sm rounded-md transition-all shadow-sm hover:shadow-md"
           >
             Sign In
           </button>
         )}
       </div>
-
-      {/* Auth Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        defaultMode="login"
-        onSuccess={() => {
-          setIsAuthModalOpen(false);
-          toast.success('Welcome to SheepMug!');
-        }}
-      />
     </header>
   );
 }

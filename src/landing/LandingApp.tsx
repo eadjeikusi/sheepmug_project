@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 
 const CMS = "/cms";
+const LOGIN = "/login";
+const SIGNUP = "/signup";
 
 /** Concave-style masks: green = bite at bottom-left of image; orange = bite at top-left (mirrored). */
 const IMAGE_CLIP = {
@@ -424,13 +426,13 @@ export function LandingApp() {
 
           <div className="hidden items-center gap-3 md:flex">
             <a
-              href={CMS}
+              href={LOGIN}
               className="rounded-full px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-100"
             >
               Log in
             </a>
             <a
-              href={CMS}
+              href={SIGNUP}
               className="rounded-full bg-[#1A1A1A] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
             >
               Join now
@@ -466,11 +468,11 @@ export function LandingApp() {
                 Contact
               </NavLink>
               <hr className="border-neutral-200" />
-              <a href={CMS} className="font-semibold text-neutral-800" onClick={closeMenu}>
+              <a href={LOGIN} className="font-semibold text-neutral-800" onClick={closeMenu}>
                 Log in
               </a>
               <a
-                href={CMS}
+                href={SIGNUP}
                 className="rounded-full bg-[#1A1A1A] py-3 text-center font-semibold text-white"
                 onClick={closeMenu}
               >
@@ -495,7 +497,7 @@ export function LandingApp() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a
-                  href={CMS}
+                  href={SIGNUP}
                   className="inline-flex justify-center rounded-full bg-[#FC4F1E] px-8 py-3.5 text-center text-base font-semibold text-white shadow-sm transition hover:bg-[#e54618]"
                 >
                   Join now
@@ -661,7 +663,7 @@ export function LandingApp() {
                   "No church leaders",
                 ]}
                 cta="Start Now"
-                href={CMS}
+                href={`${SIGNUP}?plan=starter`}
                 tone="violet"
               />
               <SimplePricingCard
@@ -679,7 +681,7 @@ export function LandingApp() {
                   "Monthly group reports",
                 ]}
                 cta="Order Now"
-                href={CMS}
+                href={`${SIGNUP}?plan=core`}
                 tone="orange"
               />
             </div>
@@ -708,7 +710,7 @@ export function LandingApp() {
               <div className="flex flex-col justify-center rounded-3xl border border-neutral-200 bg-white p-8">
                 <p className="text-center text-[#666666]">Prefer to self-serve?</p>
                 <a
-                  href={CMS}
+                  href={SIGNUP}
                   className="mt-4 inline-flex justify-center rounded-full bg-[#1A1A1A] py-3.5 font-semibold text-white transition hover:bg-neutral-800"
                 >
                   Join now
@@ -743,7 +745,7 @@ export function LandingApp() {
             <a href="#contact" className="text-neutral-700 hover:text-neutral-900">
               Contact
             </a>
-            <a href={CMS} className="font-semibold text-[#FC4F1E] hover:underline">
+            <a href={SIGNUP} className="font-semibold text-[#FC4F1E] hover:underline">
               Join now
             </a>
           </div>

@@ -184,6 +184,11 @@ function shouldAutoConfirmAuthEmail(): boolean {
   return process.env.AUTH_EMAIL_AUTO_CONFIRM !== "false";
 }
 
+/** Temporary path while Hubtel billing approval is pending. Set false in production when payment is live. */
+function isDemoPaymentBypassEnabled(): boolean {
+  return process.env.ENABLE_DEMO_PAYMENT_BYPASS !== "false";
+}
+
 type OrgProfile = { organization_id: string; branch_id?: string | null };
 
 function httpError(statusCode: number, message: string): Error {
@@ -2694,6 +2699,20 @@ app.get("/api/debug/storage", async (req, res) => {
 // Auth Routes
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password, organizationName, fullName } = req.body;
+  const tierRaw = typeof req.body?.subscriptionTier === "string" ? req.body.subscriptionTier : "free";
+  const subscriptionTier = normalizeSubscriptionTier(tierRaw);
+  const demoBypass = req.body?.demoBypass === true;
+  const isPaidTier = subscriptionTier !== "free";
+
+  if (demoBypass && !isDemoPaymentBypassEnabled()) {
+    return res.status(403).json({ error: "Demo payment bypass is disabled." });
+  }
+  if (isPaidTier && !demoBypass) {
+    return res.status(402).json({
+      error:
+        "Paid plan setup requires Hubtel payment. Hubtel integration is pending approval, so use demo bypass for now.",
+    });
+  }
 
   try {
     // 1. Create User in Supabase Auth
@@ -2720,7 +2739,7 @@ app.post("/api/auth/signup", async (req, res) => {
         { 
           name: organizationName || "My Organization",
           slug: orgSlug,
-          subscription_tier: 'free'
+          subscription_tier: subscriptionTier,
         }
       ])
       .select()

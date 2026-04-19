@@ -19,6 +19,8 @@ interface SignupData {
   lastName: string;
   organizationName?: string;
   phone?: string;
+  subscriptionTier?: string;
+  demoBypass?: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -204,7 +206,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: signupData.email,
           password: signupData.password,
           organizationName: signupData.organizationName || `${signupData.firstName}'s Organization`,
-          fullName: `${signupData.firstName} ${signupData.lastName}`
+          fullName: `${signupData.firstName} ${signupData.lastName}`,
+          subscriptionTier: signupData.subscriptionTier,
+          demoBypass: signupData.demoBypass === true,
         }),
         signal: controller.signal
       });
