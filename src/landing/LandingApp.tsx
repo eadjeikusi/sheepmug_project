@@ -651,7 +651,7 @@ export function LandingApp() {
             <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
               <SimplePricingCard
                 plan="Starter Plan"
-                price="GHC 0 / mo"
+                price="GHC 0 per month"
                 features={[
                   "10 members limit",
                   "Tasks",
@@ -666,7 +666,7 @@ export function LandingApp() {
               />
               <SimplePricingCard
                 plan="Core Plan"
-                price="GHC 500 / mo"
+                price="GHC 400 per month"
                 features={[
                   "All Starter Plan features",
                   "Full offline version",
