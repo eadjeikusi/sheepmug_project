@@ -700,8 +700,8 @@ export function LandingApp() {
                   Reach out with questions—or jump straight in and create your workspace.
                 </p>
                 <p className="mt-6">
-                  <a href="mailto:hello@sheepmug.com" className="text-lg font-semibold text-[#111111] underline">
-                    hello@sheepmug.com
+                  <a href="mailto:support@sheepmug.com" className="text-lg font-semibold text-[#111111] underline">
+                    support@sheepmug.com
                   </a>
                 </p>
               </div>
