@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { CheckCircle2, Circle, CreditCard, Eye, EyeOff, Minus, Plus, Scale } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
+import { supabase } from "../app/utils/supabase";
 
 type PlanChoice = {
   id: "monthly" | "yearly";
@@ -67,6 +68,10 @@ async function parseApiResponse(response: Response): Promise<Record<string, any>
       ? "Server returned HTML instead of JSON. Please check API deployment settings."
       : raw || "Unexpected API response.",
   };
+}
+
+function looksNotFoundError(msg: string): boolean {
+  return /not[_\s-]?found|could not be found|404/i.test(msg);
 }
 
 function AuthShell({
@@ -604,7 +609,18 @@ export function ForgotPasswordPage() {
         body: JSON.stringify({ email: email.trim() }),
       });
       const data = await parseApiResponse(response);
-      if (!response.ok) throw new Error(data.error || "Unable to process request.");
+      if (!response.ok) {
+        const errMsg = String(data.error || "Unable to process request.");
+        if (!looksNotFoundError(errMsg)) {
+          throw new Error(errMsg);
+        }
+        // Fallback for static-only hosts without backend /api routes.
+        const redirectTo = `${window.location.origin}/reset-password`;
+        const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo,
+        });
+        if (supaErr) throw new Error(supaErr.message || "Unable to process request.");
+      }
       setMessage(data.message || "If your account exists, a reset link has been sent.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to process request.");
@@ -687,13 +703,26 @@ export function ResetPasswordPage() {
 
     setSubmitting(true);
     try {
-      const response = await fetch(apiUrl("/api/auth/reset-password"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, new_password: password }),
-      });
-      const data = await parseApiResponse(response);
-      if (!response.ok) throw new Error(data.error || "Unable to reset password.");
+      if (token) {
+        const response = await fetch(apiUrl("/api/auth/reset-password"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, new_password: password }),
+        });
+        const data = await parseApiResponse(response);
+        if (!response.ok) {
+          const errMsg = String(data.error || "Unable to reset password.");
+          if (!looksNotFoundError(errMsg)) {
+            throw new Error(errMsg);
+          }
+          // If backend route is unavailable, try Supabase session-based password update.
+          const { error: supaErr } = await supabase.auth.updateUser({ password });
+          if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
+        }
+      } else {
+        const { error: supaErr } = await supabase.auth.updateUser({ password });
+        if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
+      }
       setMessage("Password updated. Redirecting to login...");
       setTimeout(() => {
         navigate("/login");
