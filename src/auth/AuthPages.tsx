@@ -708,6 +708,18 @@ export function ResetPasswordPage() {
     const hasCodeParam = searchParams.has("code");
     const hasTokenHash = searchParams.has("token_hash") || hashParams.has("token_hash");
     const tokenHashType = (searchParams.get("type") || hashParams.get("type") || "").toLowerCase();
+    const errorCode = (hashParams.get("error_code") || searchParams.get("error_code") || "").toLowerCase();
+    const errorDescription = hashParams.get("error_description") || searchParams.get("error_description") || "";
+
+    if (errorCode) {
+      setSessionReady("missing");
+      const friendly =
+        errorCode === "otp_expired"
+          ? "Your reset link was already used or has expired. This often happens when an email security scanner opens the link before you do. Please request a new link and click it within a couple of minutes."
+          : (errorDescription.replace(/\+/g, " ") || "Reset link is invalid or expired.");
+      setError(friendly);
+      return;
+    }
     const debugShape = JSON.stringify({
       origin: typeof window !== "undefined" ? window.location.origin : "",
       pathname: typeof window !== "undefined" ? window.location.pathname : "",

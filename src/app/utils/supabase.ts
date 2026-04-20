@@ -4,7 +4,14 @@ const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL as string | unde
 const supabaseAnonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+      },
+    })
   : ({
       auth: {
         getSession: async () => ({ data: { session: null }, error: null }),
