@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { CheckCircle2, Circle, CreditCard, Minus, Plus, Scale } from "lucide-react";
+import { CheckCircle2, Circle, CreditCard, Eye, EyeOff, Minus, Plus, Scale } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
 
@@ -49,6 +49,19 @@ const FAQ_ITEMS = [
 
 const DEMO_BYPASS_ENABLED =
   String(import.meta.env.VITE_ENABLE_DEMO_PAYMENT_BYPASS ?? "true").toLowerCase() === "true";
+
+async function parseApiResponse(response: Response): Promise<Record<string, any>> {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.toLowerCase().includes("application/json")) {
+    return (await response.json().catch(() => ({}))) as Record<string, any>;
+  }
+  const raw = await response.text().catch(() => "");
+  return {
+    error: raw.startsWith("<")
+      ? "Server returned HTML instead of JSON. Please check API deployment settings."
+      : raw || "Unexpected API response.",
+  };
+}
 
 function AuthShell({
   title,
@@ -177,6 +190,7 @@ export function LoginPage() {
   const { login, isAuthenticated, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -221,14 +235,24 @@ export function LoginPage() {
           </label>
           <label className="block">
             <span className="mb-1 block text-[14px] font-medium text-[#111827]">Password</span>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
-              placeholder="Enter your password"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                placeholder="Enter your password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </label>
 
           {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
@@ -246,6 +270,11 @@ export function LoginPage() {
           Need a workspace?{" "}
           <Link to="/signup" className="font-semibold text-[#1e3a8a] hover:underline">
             Create account
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-[14px] text-[#4b5563]">
+          <Link to="/forgot-password" className="font-semibold text-[#1e3a8a] hover:underline">
+            Forgot password?
           </Link>
         </p>
       </div>
@@ -267,6 +296,8 @@ export function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agree, setAgree] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -409,23 +440,43 @@ export function SignupPage() {
               </label>
               <label className="block">
                 <span className="mb-1 block text-[14px] font-medium text-[#111827]">Password</span>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </label>
               <label className="block">
                 <span className="mb-1 block text-[14px] font-medium text-[#111827]">Confirm password</span>
-                <input
-                  type="password"
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
-                />
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </label>
             </div>
 
@@ -524,6 +575,190 @@ export function SignupPage() {
             </div>
           </div>
         ) : null}
+      </div>
+    </AuthShell>
+  );
+}
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(data.error || "Unable to process request.");
+      setMessage(data.message || "If your account exists, a reset link has been sent.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to process request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AuthShell
+      title="Forgot your password?"
+      subtitle="Enter your email and we will send a secure password reset link."
+    >
+      <div className="mx-auto w-full max-w-md">
+        <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Password reset</h2>
+        <p className="mt-2 text-[14px] text-[#667085]">The verification link expires in 15 minutes.</p>
+
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Email</span>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+              placeholder="you@church.org"
+            />
+          </label>
+
+          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+          {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "Sending..." : "Send reset link"}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-[14px] text-[#4b5563]">
+          <Link to="/login" className="font-semibold text-[#1e3a8a] hover:underline">
+            Back to login
+          </Link>
+        </p>
+      </div>
+    </AuthShell>
+  );
+}
+
+export function ResetPasswordPage() {
+  const navigate = useNavigate();
+  const token = new URLSearchParams(window.location.search).get("token") || "";
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    if (!token) {
+      setError("Reset token is missing.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, new_password: password }),
+      });
+      const data = await parseApiResponse(response);
+      if (!response.ok) throw new Error(data.error || "Unable to reset password.");
+      setMessage("Password updated. Redirecting to login...");
+      setTimeout(() => {
+        navigate("/login");
+      }, 1200);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to reset password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AuthShell title="Set a new password" subtitle="Create a strong password for your account access.">
+      <div className="mx-auto w-full max-w-md">
+        <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Reset password</h2>
+        <p className="mt-2 text-[14px] text-[#667085]">This link is valid for 15 minutes.</p>
+
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">New password</span>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Confirm new password</span>
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+
+          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+          {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "Updating..." : "Update password"}
+          </button>
+        </form>
       </div>
     </AuthShell>
   );

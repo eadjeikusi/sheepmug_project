@@ -17,7 +17,7 @@ import SuperAdmin from "./components/pages/SuperAdmin";
 import NotFound from "./components/pages/NotFound";
 import PublicGroupPage from "./components/pages/PublicGroupPage";
 import JoinGroupPage from "./components/pages/JoinGroupPage";
-import { LoginPage, SignupPage } from "../auth/AuthPages";
+import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from "../auth/AuthPages";
 
 const CMS_BASENAME = (() => {
   const configuredRaw = String(import.meta.env.VITE_CMS_BASENAME || "/cms").trim() || "/cms";
@@ -33,6 +33,14 @@ export const router = createBrowserRouter([
   {
     path: "/signup",
     Component: SignupPage,
+  },
+  {
+    path: "/forgot-password",
+    Component: ForgotPasswordPage,
+  },
+  {
+    path: "/reset-password",
+    Component: ResetPasswordPage,
   },
   {
     path: "/public/groups/:slug",

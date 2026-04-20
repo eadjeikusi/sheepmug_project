@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "../styles/index.css";
 import { LandingApp } from "./LandingApp";
 import { AuthProvider } from "../app/contexts/AuthContext";
-import { LoginPage, SignupPage } from "../auth/AuthPages";
+import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from "../auth/AuthPages";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -14,6 +14,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/" element={<LandingApp />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

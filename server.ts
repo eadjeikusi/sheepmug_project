@@ -6,6 +6,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import cors from "cors";
 import dotenv from "dotenv";
+import * as jwt from "jsonwebtoken";
 import { runCustomFieldsMigrationFromEnv } from "./migrations/runCustomFieldsMigration.js";
 import { createClient } from "@supabase/supabase-js";
 import multer from "multer";
@@ -187,6 +188,61 @@ function shouldAutoConfirmAuthEmail(): boolean {
 /** Temporary path while Hubtel billing approval is pending. Set false in production when payment is live. */
 function isDemoPaymentBypassEnabled(): boolean {
   return process.env.ENABLE_DEMO_PAYMENT_BYPASS !== "false";
+}
+
+const PASSWORD_RESET_EXPIRES_MINUTES = 15;
+
+type PasswordResetTokenPayload = {
+  sub: string;
+  email: string;
+  purpose: "password_reset";
+};
+
+function passwordResetSecret(): string {
+  return String(process.env.PASSWORD_RESET_SECRET || "").trim();
+}
+
+function appBaseUrl(): string {
+  const explicit = String(process.env.PUBLIC_APP_URL || process.env.APP_BASE_URL || "").trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const vercelUrl = String(process.env.VERCEL_URL || "").trim();
+  if (vercelUrl) return `https://${vercelUrl.replace(/\/+$/, "")}`;
+  return `http://localhost:${PORT}`;
+}
+
+async function sendBrevoEmail(params: {
+  toEmail: string;
+  toName?: string;
+  subject: string;
+  htmlContent: string;
+  textContent?: string;
+}): Promise<void> {
+  const apiKey = String(process.env.BREVO_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("BREVO_API_KEY is not configured.");
+  }
+  const fromEmail = String(process.env.BREVO_FROM_EMAIL || "noreply@sheepmug.com").trim();
+  const fromName = String(process.env.BREVO_FROM_NAME || "SheepMug").trim();
+
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify({
+      sender: { email: fromEmail, name: fromName },
+      to: [{ email: params.toEmail, name: params.toName || params.toEmail }],
+      subject: params.subject,
+      htmlContent: params.htmlContent,
+      textContent: params.textContent || undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Brevo send failed (${response.status}): ${body || response.statusText}`);
+  }
 }
 
 type OrgProfile = { organization_id: string; branch_id?: string | null };
@@ -2834,6 +2890,121 @@ app.post("/api/auth/signup", async (req, res) => {
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const emailRaw = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+  if (!emailRaw) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+
+  const genericMessage =
+    "If your account exists, we sent a password reset link. The link expires in 15 minutes.";
+
+  try {
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email, full_name")
+      .ilike("email", emailRaw)
+      .limit(1)
+      .maybeSingle();
+
+    if (!profile) {
+      return res.json({ message: genericMessage });
+    }
+
+    const resetSecret = passwordResetSecret();
+    if (!resetSecret) {
+      console.warn("[auth] PASSWORD_RESET_SECRET missing; skipping forgot-password email send.");
+      return res.json({ message: genericMessage });
+    }
+
+    const userId = String((profile as { id?: string }).id || "").trim();
+    const userEmail = String((profile as { email?: string }).email || "").trim();
+    if (!userId || !userEmail) {
+      return res.json({ message: genericMessage });
+    }
+
+    const token = jwt.sign(
+      { sub: userId, email: userEmail, purpose: "password_reset" } satisfies PasswordResetTokenPayload,
+      resetSecret,
+      { expiresIn: `${PASSWORD_RESET_EXPIRES_MINUTES}m` },
+    );
+    const resetUrl = `${appBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+    const name = String((profile as { full_name?: string }).full_name || "there").trim() || "there";
+
+    try {
+      await sendBrevoEmail({
+        toEmail: userEmail,
+        toName: name,
+        subject: "Reset your SheepMug password",
+        htmlContent: `<p>Hello ${name},</p>
+<p>Use the link below to reset your SheepMug password.</p>
+<p><a href="${resetUrl}">Reset password</a></p>
+<p>This link expires in ${PASSWORD_RESET_EXPIRES_MINUTES} minutes.</p>
+<p>If you did not request this, you can ignore this email.</p>`,
+        textContent: `Hello ${name},\n\nReset your SheepMug password using this link:\n${resetUrl}\n\nThis link expires in ${PASSWORD_RESET_EXPIRES_MINUTES} minutes.\nIf you did not request this, ignore this email.`,
+      });
+    } catch (e: unknown) {
+      console.error("[auth] forgot-password email send failed:", e);
+    }
+
+    return res.json({ message: genericMessage });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  const newPassword = typeof req.body?.new_password === "string" ? req.body.new_password : "";
+  if (!token || !newPassword) {
+    return res.status(400).json({ error: "Token and new_password are required." });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "New password must be at least 8 characters." });
+  }
+
+  const resetSecret = passwordResetSecret();
+  if (!resetSecret) {
+    return res.status(500).json({ error: "Password reset is not configured." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, resetSecret) as PasswordResetTokenPayload & { exp?: number };
+    if (!decoded || decoded.purpose !== "password_reset" || !decoded.sub || !decoded.email) {
+      return res.status(400).json({ error: "Invalid reset token." });
+    }
+
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email")
+      .eq("id", decoded.sub)
+      .maybeSingle();
+    if (!profile) {
+      return res.status(400).json({ error: "Invalid reset token." });
+    }
+
+    const profileEmail = String((profile as { email?: string }).email || "").trim().toLowerCase();
+    if (!profileEmail || profileEmail !== decoded.email.toLowerCase()) {
+      return res.status(400).json({ error: "Invalid reset token." });
+    }
+
+    const { error: pwdErr } = await supabaseAdmin.auth.admin.updateUserById(decoded.sub, {
+      password: newPassword,
+    });
+    if (pwdErr) {
+      return res.status(400).json({ error: pwdErr.message || "Failed to update password." });
+    }
+
+    return res.json({ ok: true });
+  } catch (error: any) {
+    const msg = String(error?.message || "");
+    if (/jwt/i.test(msg) || /token/i.test(msg)) {
+      return res.status(400).json({ error: "Reset link is invalid or expired." });
+    }
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 

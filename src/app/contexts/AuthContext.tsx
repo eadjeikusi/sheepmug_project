@@ -29,6 +29,23 @@ const TOKEN_KEY = 'token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_KEY = 'user';
 
+type ApiBody = Record<string, any>;
+
+async function parseApiBody(response: Response): Promise<ApiBody> {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.toLowerCase().includes('application/json')) {
+    return (await response.json().catch(() => ({}))) as ApiBody;
+  }
+
+  const raw = await response.text().catch(() => '');
+  const looksHtml = /^\s*</.test(raw);
+  return {
+    error: looksHtml
+      ? 'Server returned HTML instead of API JSON. Check that /api routes are available for this environment.'
+      : raw || 'Unexpected non-JSON API response.',
+  };
+}
+
 /** If an API payload omits `permissions`, keep the previous value so RBAC state is not wiped. */
 function mergeIncomingUser(prev: User | null, incoming: User): User {
   const merged: User = { ...incoming };
@@ -81,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
-      const refreshData = await refreshResponse.json().catch(() => ({}));
+      const refreshData = await parseApiBody(refreshResponse);
       if (refreshResponse.status === 403) {
         clearSession();
         throw new Error((refreshData as { error?: string }).error || 'Access denied for this account.');
@@ -177,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      const data = await parseApiBody(response);
 
       if (!response.ok) throw new Error(data.error || 'Login failed');
 
@@ -217,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      const data = await parseApiBody(response);
 
       if (!response.ok) {
         const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Signup failed');
