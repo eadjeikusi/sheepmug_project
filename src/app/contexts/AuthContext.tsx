@@ -113,6 +113,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshSession = async (): Promise<string | null> => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
     if (!refreshToken) return null;
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L1',location:'src/app/contexts/AuthContext.tsx:refreshSession.entry',message:'refresh session start',data:{hasRefreshToken:!!refreshToken,apiBase:API_BASE||'(empty)'},timestamp:Date.now()})}).catch(()=>{});
+    } catch {}
+    // #endregion
     try {
       const refreshResponse = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
@@ -120,6 +125,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
       const refreshData = await parseApiBody(refreshResponse);
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L2',location:'src/app/contexts/AuthContext.tsx:refreshSession.result',message:'refresh response',data:{status:refreshResponse.status,ok:refreshResponse.ok,hasToken:typeof (refreshData as any)?.token==='string',hasUser:!!(refreshData as any)?.user,error:(refreshData as any)?.error||null},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion
       if (refreshResponse.status === 403) {
         clearSession();
         throw new Error((refreshData as { error?: string }).error || 'Access denied for this account.');
@@ -161,9 +171,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         let activeToken = storedToken;
         let response = await getMe(activeToken);
+        // #region agent log
+        try {
+          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L3',location:'src/app/contexts/AuthContext.tsx:load.firstMe',message:'first /api/auth/me response',data:{status:response.status,ok:response.ok},timestamp:Date.now()})}).catch(()=>{});
+        } catch {}
+        // #endregion
         if (response.status === 401) {
           const refreshedToken = await refreshSession();
           if (!refreshedToken) {
+            // #region agent log
+            try {
+              fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L4',location:'src/app/contexts/AuthContext.tsx:load.refreshMissing',message:'refresh failed; clearing session',data:{},timestamp:Date.now()})}).catch(()=>{});
+            } catch {}
+            // #endregion
             clearSession();
             return;
           }
@@ -176,6 +196,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (!response.ok) throw new Error('me failed');
         const data = await response.json();
+        // #region agent log
+        try {
+          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L5',location:'src/app/contexts/AuthContext.tsx:load.meSuccess',message:'me success payload',data:{hasUser:!!(data as any)?.user,isSuperAdmin:(data as any)?.user?.is_super_admin===true,isOrgOwner:(data as any)?.user?.is_org_owner===true},timestamp:Date.now()})}).catch(()=>{});
+        } catch {}
+        // #endregion
         if (data.user) {
           setUser((prev) => {
             const next = mergeIncomingUser(prev, data.user);
