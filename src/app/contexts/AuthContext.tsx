@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '@/types';
+import { supabase } from '../utils/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -186,24 +187,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
+    // #region agent log
     try {
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.entry',message:'login called',data:{apiBase:API_BASE||'(empty)',hasSupabase:typeof (supabase as any)?.auth?.signInWithPassword === 'function',emailDomain:(email.split('@')[1]||'').trim()},hypothesisId:'H1H2H5',timestamp:Date.now()})}).catch(()=>{});
+      // eslint-disable-next-line no-console
+      console.warn('[debug46abe0] login.entry', { apiBase: API_BASE || '(empty)' });
+    } catch {}
+    // #endregion
 
-      const response = await fetch(apiUrl('/api/auth/login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
+    const tryBackend = async (): Promise<{ ok: true; data: any } | { ok: false; reason: string; detail?: string }> => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(apiUrl('/api/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const data = await parseApiBody(response);
+        if (!response.ok) return { ok: false, reason: 'http_error', detail: data.error || `HTTP ${response.status}` };
+        return { ok: true, data };
+      } catch (err: any) {
+        return { ok: false, reason: 'network_error', detail: err?.message || String(err) };
+      }
+    };
 
-      const data = await parseApiBody(response);
+    const backendResult = await tryBackend();
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.backendResult',message:'backend login attempt result',data:{ok:backendResult.ok,reason:backendResult.ok?'success':backendResult.reason,detail:backendResult.ok?undefined:backendResult.detail},hypothesisId:'H1H2H5',timestamp:Date.now()})}).catch(()=>{});
+      // eslint-disable-next-line no-console
+      console.warn('[debug46abe0] login.backendResult', backendResult);
+    } catch {}
+    // #endregion
 
-      if (!response.ok) throw new Error(data.error || 'Login failed');
-
+    if (backendResult.ok) {
+      const data = backendResult.data;
       localStorage.setItem(TOKEN_KEY, data.token);
       if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
         localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
@@ -212,8 +233,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
       setUser(nextUser);
       setToken(data.token);
-    } catch (error: any) {
-      throw error;
+      return;
+    }
+
+    // Backend unreachable or errored → fall back to Supabase direct auth.
+    try {
+      const { data: sbData, error: sbErr } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.supabase',message:'supabase signInWithPassword result',data:{hasError:!!sbErr,errorName:(sbErr as any)?.name,errorStatus:(sbErr as any)?.status,errorMessage:sbErr?.message,hasSession:!!(sbData as any)?.session,hasUser:!!(sbData as any)?.user},hypothesisId:'H5',timestamp:Date.now()})}).catch(()=>{});
+        // eslint-disable-next-line no-console
+        console.warn('[debug46abe0] login.supabase', { hasError: !!sbErr, errorMessage: sbErr?.message, hasSession: !!(sbData as any)?.session });
+      } catch {}
+      // #endregion
+      if (sbErr) {
+        // If backend returned a specific HTTP error (e.g., 401 invalid credentials), surface that if Supabase also fails for a "not configured" reason.
+        if (backendResult.reason === 'http_error' && backendResult.detail) {
+          throw new Error(backendResult.detail);
+        }
+        throw new Error(sbErr.message || 'Login failed');
+      }
+      const session = (sbData as any)?.session;
+      const sbUser = (sbData as any)?.user;
+      if (!session || !sbUser) throw new Error('Login failed: no session');
+
+      const meta = (sbUser.user_metadata || {}) as Record<string, any>;
+      const uiUser: User = {
+        id: sbUser.id,
+        email: sbUser.email || email.trim(),
+        first_name: meta.first_name || meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : ''),
+        last_name: meta.last_name || meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : ''),
+        organization_id: meta.organization_id || '',
+        is_super_admin: !!meta.is_super_admin,
+        is_org_owner: !!meta.is_org_owner,
+        permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
+        profile_image: meta.profile_image || null,
+        organization: meta.organization || { id: meta.organization_id || '', name: meta.organization_name || '', slug: meta.organization_slug || '' },
+      } as User;
+
+      localStorage.setItem(TOKEN_KEY, session.access_token);
+      if (session.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, session.refresh_token);
+      localStorage.setItem(USER_KEY, JSON.stringify(uiUser));
+      setUser(uiUser);
+      setToken(session.access_token);
+    } catch (err: any) {
+      throw err;
     }
   };
 
