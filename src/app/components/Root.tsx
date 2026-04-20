@@ -49,6 +49,14 @@ export default function Root() {
   if (!user) {
     // #region agent log
     try {
+      // eslint-disable-next-line no-console
+      console.log('[sheepmug-debug] Root.unauthRedirect', {
+        pathname: location.pathname,
+        target: '/login',
+        loading,
+        hasStoredToken: !!localStorage.getItem('token'),
+        hasStoredUser: !!localStorage.getItem('user'),
+      });
       fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'cms-double-prefix-fix',hypothesisId:'R1',location:'src/app/components/Root.tsx:unauthRedirect',message:'root unauth redirect',data:{pathname:location.pathname,target:'/login'},timestamp:Date.now()})}).catch(()=>{});
     } catch {}
     // #endregion
