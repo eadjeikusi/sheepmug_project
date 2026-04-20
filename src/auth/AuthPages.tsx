@@ -603,17 +603,30 @@ export function ForgotPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [codeSentAt, setCodeSentAt] = useState<number | null>(null);
+  const [lastFailure, setLastFailure] = useState<string>("");
 
   const requestCode = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setMessage("");
+    setLastFailure("");
     setSubmitting(true);
     try {
+      try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
+      const sentAt = Date.now();
       const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim());
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.requestCode',message:'resetPasswordForEmail result',data:{emailDomain:email.trim().split('@')[1]||'',hasError:!!supaErr,errorName:(supaErr as any)?.name,errorStatus:(supaErr as any)?.status,errorMessage:supaErr?.message},hypothesisId:'OTP1',timestamp:Date.now()})}).catch(()=>{});
+        // eslint-disable-next-line no-console
+        console.warn('[debug46abe0] resetPasswordForEmail result', { hasError: !!supaErr, errorName: (supaErr as any)?.name, errorStatus: (supaErr as any)?.status, errorMessage: supaErr?.message });
+      } catch {}
+      // #endregion
       if (supaErr) throw new Error(supaErr.message || "Unable to send code.");
+      setCodeSentAt(sentAt);
       setStage("verify");
-      setMessage("We sent a 6-digit code to your email. It expires in a few minutes.");
+      setMessage("Code sent. Enter it below within 60 minutes. A new request will invalidate this code.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to send code.");
     } finally {
@@ -625,6 +638,7 @@ export function ForgotPasswordPage() {
     e.preventDefault();
     setError("");
     setMessage("");
+    setLastFailure("");
     const normalizedCode = code.replace(/\D/g, "");
     if (normalizedCode.length < 6) {
       setError("Enter the 6-digit code from your email.");
@@ -640,11 +654,22 @@ export function ForgotPasswordPage() {
     }
     setSubmitting(true);
     try {
+      const attemptStart = Date.now();
+      const ageMs = codeSentAt ? attemptStart - codeSentAt : -1;
       const { error: verifyErr } = await (supabase as any).auth.verifyOtp({
         email: email.trim(),
         token: normalizedCode,
         type: "recovery",
       });
+      // #region agent log
+      try {
+        const detail = { codeAgeSeconds: ageMs >= 0 ? Math.round(ageMs/1000) : null, hasError: !!verifyErr, errorName: (verifyErr as any)?.name, errorStatus: (verifyErr as any)?.status, errorCode: (verifyErr as any)?.code, errorMessage: verifyErr?.message };
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.verifyAndReset',message:'verifyOtp result',data:detail,hypothesisId:'OTP1',timestamp:Date.now()})}).catch(()=>{});
+        // eslint-disable-next-line no-console
+        console.warn('[debug46abe0] verifyOtp result', detail);
+        if (verifyErr) setLastFailure(JSON.stringify(detail));
+      } catch {}
+      // #endregion
       if (verifyErr) throw new Error(verifyErr.message || "Invalid or expired code.");
       const { error: updateErr } = await supabase.auth.updateUser({ password });
       if (updateErr) throw new Error(updateErr.message || "Unable to reset password.");
@@ -785,6 +810,12 @@ export function ForgotPasswordPage() {
             >
               Use a different email or resend code
             </button>
+
+            {lastFailure ? (
+              <pre className="mt-2 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-[10px] leading-tight text-slate-600">
+                [debug46abe0] {lastFailure}
+              </pre>
+            ) : null}
           </form>
         )}
 
