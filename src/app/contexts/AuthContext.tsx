@@ -348,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession();
-    window.location.href = '/';
+    window.location.href = '/login';
   };
 
   const refreshUser = async () => {

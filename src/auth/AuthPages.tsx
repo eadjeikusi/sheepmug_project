@@ -74,6 +74,12 @@ function looksNotFoundError(msg: string): boolean {
   return /not[_\s-]?found|could not be found|404/i.test(msg);
 }
 
+function formatCountdown(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
 function AuthShell({
   title,
   subtitle,
@@ -201,7 +207,9 @@ export function LoginPage() {
   const { login, isAuthenticated, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -214,6 +222,10 @@ export function LoginPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
     setSubmitting(true);
     try {
       await login(email.trim(), password);
@@ -262,6 +274,27 @@ export function LoginPage() {
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Confirm password</span>
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? "text" : "password"}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                placeholder="Re-enter your password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </label>
@@ -593,7 +626,7 @@ export function SignupPage() {
 
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const [stage, setStage] = useState<"request" | "verify">("request");
+  const [stage, setStage] = useState<"request" | "verify" | "reset">("request");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -605,6 +638,23 @@ export function ForgotPasswordPage() {
   const [message, setMessage] = useState("");
   const [codeSentAt, setCodeSentAt] = useState<number | null>(null);
   const [lastFailure, setLastFailure] = useState<string>("");
+  const [canResendAt, setCanResendAt] = useState<number | null>(null);
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
+  const [verifyingCode, setVerifyingCode] = useState(false);
+
+  useEffect(() => {
+    if (!canResendAt) {
+      setResendSecondsLeft(0);
+      return;
+    }
+    const tick = () => {
+      const diff = Math.max(0, Math.ceil((canResendAt - Date.now()) / 1000));
+      setResendSecondsLeft(diff);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [canResendAt]);
 
   const requestCode = async (e: FormEvent) => {
     e.preventDefault();
@@ -625,8 +675,9 @@ export function ForgotPasswordPage() {
       // #endregion
       if (supaErr) throw new Error(supaErr.message || "Unable to send code.");
       setCodeSentAt(sentAt);
+      setCanResendAt(sentAt + 120000);
       setStage("verify");
-      setMessage("Code sent. Enter it below within 60 minutes. A new request will invalidate this code.");
+      setMessage("Code sent. It may take about 1 minute to arrive. Enter it below within 60 minutes.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to send code.");
     } finally {
@@ -634,7 +685,7 @@ export function ForgotPasswordPage() {
     }
   };
 
-  const verifyAndReset = async (e: FormEvent) => {
+  const verifyCode = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setMessage("");
@@ -644,15 +695,7 @@ export function ForgotPasswordPage() {
       setError("Enter the full code from your email (typically 6–8 digits).");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    setSubmitting(true);
+    setVerifyingCode(true);
     try {
       const attemptStart = Date.now();
       const ageMs = codeSentAt ? attemptStart - codeSentAt : -1;
@@ -671,6 +714,29 @@ export function ForgotPasswordPage() {
       } catch {}
       // #endregion
       if (verifyErr) throw new Error(verifyErr.message || "Invalid or expired code.");
+      setStage("reset");
+      setMessage("Code verified. Set your new password.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to verify code.");
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
+  const resetAfterVerifiedCode = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSubmitting(true);
+    try {
       const { error: updateErr } = await supabase.auth.updateUser({ password });
       if (updateErr) throw new Error(updateErr.message || "Unable to reset password.");
       try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
@@ -678,6 +744,31 @@ export function ForgotPasswordPage() {
       setTimeout(() => navigate("/login"), 1200);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to reset password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!email.trim()) {
+      setError("Enter your email first.");
+      return;
+    }
+    if (resendSecondsLeft > 0) return;
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      const sentAt = Date.now();
+      const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim());
+      if (supaErr) throw new Error(supaErr.message || "Unable to resend code.");
+      setCodeSentAt(sentAt);
+      setCanResendAt(sentAt + 120000);
+      setStage("verify");
+      setCode("");
+      setMessage("A new code has been sent. It may take about 1 minute to arrive.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to resend code.");
     } finally {
       setSubmitting(false);
     }
@@ -693,7 +784,9 @@ export function ForgotPasswordPage() {
         <p className="mt-2 text-[14px] text-[#667085]">
           {stage === "request"
             ? "Enter your email and we'll send you a verification code."
-            : "Enter the code we emailed you and your new password."}
+            : stage === "verify"
+              ? "Do you have code already? Enter it below to verify first."
+              : "Now enter your new password."}
         </p>
 
         {stage === "request" ? (
@@ -710,6 +803,7 @@ export function ForgotPasswordPage() {
                 placeholder="you@church.org"
               />
             </label>
+            <p className="text-[12px] text-[#667085]">It may take about 1 minute to receive your code.</p>
 
             {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
             {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
@@ -722,8 +816,8 @@ export function ForgotPasswordPage() {
               {submitting ? "Sending..." : "Send code"}
             </button>
           </form>
-        ) : (
-          <form onSubmit={verifyAndReset} className="mt-6 space-y-4">
+        ) : stage === "verify" ? (
+          <form onSubmit={verifyCode} className="mt-6 space-y-4">
             <label className="block">
               <span className="mb-1 block text-[14px] font-medium text-[#111827]">Verification code</span>
               <input
@@ -739,6 +833,50 @@ export function ForgotPasswordPage() {
               />
             </label>
 
+            {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+            {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
+
+            <button
+              type="submit"
+              disabled={verifyingCode}
+              className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {verifyingCode ? "Verifying code..." : "Verify code"}
+            </button>
+
+            <div className="flex items-center justify-between text-[13px]">
+              <button
+                type="button"
+                disabled={submitting || resendSecondsLeft > 0}
+                onClick={() => void resendCode()}
+                className={`font-semibold ${resendSecondsLeft > 0 ? "text-[#94a3b8]" : "text-[#1e3a8a] hover:underline"} disabled:cursor-not-allowed`}
+              >
+                {resendSecondsLeft > 0 ? `Send again in ${formatCountdown(resendSecondsLeft)}` : "Send code again"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStage("request");
+                  setCode("");
+                  setPassword("");
+                  setConfirmPassword("");
+                  setError("");
+                  setMessage("");
+                }}
+                className="font-semibold text-[#1e3a8a] hover:underline"
+              >
+                Use different email
+              </button>
+            </div>
+
+            {lastFailure ? (
+              <pre className="mt-2 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-[10px] leading-tight text-slate-600">
+                [debug46abe0] {lastFailure}
+              </pre>
+            ) : null}
+          </form>
+        ) : (
+          <form onSubmit={resetAfterVerifiedCode} className="mt-6 space-y-4">
             <label className="block">
               <span className="mb-1 block text-[14px] font-medium text-[#111827]">New password</span>
               <div className="relative">
@@ -795,27 +933,6 @@ export function ForgotPasswordPage() {
             >
               {submitting ? "Resetting..." : "Reset password"}
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStage("request");
-                setCode("");
-                setPassword("");
-                setConfirmPassword("");
-                setError("");
-                setMessage("");
-              }}
-              className="mt-1 w-full text-center text-[13px] text-[#1e3a8a] hover:underline"
-            >
-              Use a different email or resend code
-            </button>
-
-            {lastFailure ? (
-              <pre className="mt-2 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-[10px] leading-tight text-slate-600">
-                [debug46abe0] {lastFailure}
-              </pre>
-            ) : null}
           </form>
         )}
 
