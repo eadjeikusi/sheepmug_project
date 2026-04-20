@@ -28,6 +28,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const TOKEN_KEY = 'token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_KEY = 'user';
+const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+
+function apiUrl(path: string): string {
+  if (!API_BASE) return path;
+  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 type ApiBody = Record<string, any>;
 
@@ -93,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
     if (!refreshToken) return null;
     try {
-      const refreshResponse = await fetch('/api/auth/refresh', {
+      const refreshResponse = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -135,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const load = async () => {
       try {
         const getMe = (authToken: string) =>
-          fetch('/api/auth/me', {
+          fetch(apiUrl('/api/auth/me'), {
             headers: { Authorization: `Bearer ${authToken}` },
           });
         let activeToken = storedToken;
@@ -185,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -217,7 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout for signup
 
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(apiUrl('/api/auth/signup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!t) return;
     try {
       const getMe = (authToken: string) =>
-        fetch('/api/auth/me', {
+        fetch(apiUrl('/api/auth/me'), {
           headers: { Authorization: `Bearer ${authToken}` },
         });
       let response = await getMe(t);

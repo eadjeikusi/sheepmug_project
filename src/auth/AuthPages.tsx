@@ -49,6 +49,12 @@ const FAQ_ITEMS = [
 
 const DEMO_BYPASS_ENABLED =
   String(import.meta.env.VITE_ENABLE_DEMO_PAYMENT_BYPASS ?? "true").toLowerCase() === "true";
+const API_BASE = String(import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
+
+function apiUrl(path: string): string {
+  if (!API_BASE) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 async function parseApiResponse(response: Response): Promise<Record<string, any>> {
   const contentType = response.headers.get("content-type") || "";
@@ -592,7 +598,7 @@ export function ForgotPasswordPage() {
     setMessage("");
     setSubmitting(true);
     try {
-      const response = await fetch("/api/auth/forgot-password", {
+      const response = await fetch(apiUrl("/api/auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
@@ -681,7 +687,7 @@ export function ResetPasswordPage() {
 
     setSubmitting(true);
     try {
-      const response = await fetch("/api/auth/reset-password", {
+      const response = await fetch(apiUrl("/api/auth/reset-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, new_password: password }),
