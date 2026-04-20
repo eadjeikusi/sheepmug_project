@@ -592,50 +592,67 @@ export function SignupPage() {
 }
 
 export function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const [stage, setStage] = useState<"request" | "verify">("request");
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const onSubmit = async (e: FormEvent) => {
+  const requestCode = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setMessage("");
     setSubmitting(true);
     try {
-      let backendCompleted = false;
-      if (API_BASE) {
-        try {
-          const response = await fetch(apiUrl("/api/auth/forgot-password"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email.trim() }),
-          });
-          const data = await parseApiResponse(response);
-          if (response.ok) {
-            setMessage(data.message || "If your account exists, a reset link has been sent.");
-            backendCompleted = true;
-          } else {
-            const errMsg = String(data.error || "Unable to process request.");
-            if (!looksNotFoundError(errMsg)) {
-              throw new Error(errMsg);
-            }
-          }
-        } catch {
-          // Fall through to Supabase fallback below.
-        }
-      }
-
-      if (!backendCompleted) {
-        const redirectTo = `${window.location.origin}/reset-password`;
-        const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo,
-        });
-        if (supaErr) throw new Error(supaErr.message || "Unable to process request.");
-        setMessage("If your account exists, a reset link has been sent.");
-      }
+      const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim());
+      if (supaErr) throw new Error(supaErr.message || "Unable to send code.");
+      setStage("verify");
+      setMessage("We sent a 6-digit code to your email. It expires in a few minutes.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to process request.");
+      setError(err instanceof Error ? err.message : "Unable to send code.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const verifyAndReset = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    const normalizedCode = code.replace(/\D/g, "");
+    if (normalizedCode.length < 6) {
+      setError("Enter the 6-digit code from your email.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { error: verifyErr } = await (supabase as any).auth.verifyOtp({
+        email: email.trim(),
+        token: normalizedCode,
+        type: "recovery",
+      });
+      if (verifyErr) throw new Error(verifyErr.message || "Invalid or expired code.");
+      const { error: updateErr } = await supabase.auth.updateUser({ password });
+      if (updateErr) throw new Error(updateErr.message || "Unable to reset password.");
+      try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
+      setMessage("Password updated. Redirecting to login...");
+      setTimeout(() => navigate("/login"), 1200);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Unable to reset password.");
     } finally {
       setSubmitting(false);
     }
@@ -644,36 +661,132 @@ export function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Forgot your password?"
-      subtitle="Enter your email and we will send a secure password reset link."
+      subtitle="We will send a 6-digit code to your email so you can set a new password."
     >
       <div className="mx-auto w-full max-w-md">
         <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Password reset</h2>
-        <p className="mt-2 text-[14px] text-[#667085]">The verification link expires in 15 minutes.</p>
+        <p className="mt-2 text-[14px] text-[#667085]">
+          {stage === "request"
+            ? "Enter your email and we'll send you a 6-digit code."
+            : "Enter the code we emailed you and your new password."}
+        </p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
-          <label className="block">
-            <span className="mb-1 block text-[14px] font-medium text-[#111827]">Email</span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
-              placeholder="you@church.org"
-            />
-          </label>
+        {stage === "request" ? (
+          <form onSubmit={requestCode} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-[14px] font-medium text-[#111827]">Email</span>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                placeholder="you@church.org"
+              />
+            </label>
 
-          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
-          {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
+            {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+            {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? "Sending..." : "Send reset link"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? "Sending..." : "Send code"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={verifyAndReset} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-[14px] font-medium text-[#111827]">6-digit code</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-center text-[18px] tracking-[0.4em] outline-none ring-[#1e3a8a] focus:ring-2"
+                placeholder="••••••"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[14px] font-medium text-[#111827]">New password</span>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[14px] font-medium text-[#111827]">Confirm new password</span>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 pr-11 text-[14px] outline-none ring-[#1e3a8a] focus:ring-2"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 inline-flex items-center px-3 text-[#64748b] hover:text-[#0f172a]"
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </label>
+
+            {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+            {message ? <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{message}</p> : null}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? "Resetting..." : "Reset password"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStage("request");
+                setCode("");
+                setPassword("");
+                setConfirmPassword("");
+                setError("");
+                setMessage("");
+              }}
+              className="mt-1 w-full text-center text-[13px] text-[#1e3a8a] hover:underline"
+            >
+              Use a different email or resend code
+            </button>
+          </form>
+        )}
 
         <p className="mt-6 text-center text-[14px] text-[#4b5563]">
           <Link to="/login" className="font-semibold text-[#1e3a8a] hover:underline">
