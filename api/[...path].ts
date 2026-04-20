@@ -39,7 +39,7 @@ async function loadApp(): Promise<((req: IncomingMessage, res: ServerResponse) =
   if (cachedApp) return cachedApp;
   if (cachedImportError) return null;
   try {
-    const mod = (await import("../server")) as { app: unknown };
+    const mod = (await import("./_lib/server.mjs")) as { app: unknown };
     cachedApp = mod.app as (req: IncomingMessage, res: ServerResponse) => void;
     return cachedApp;
   } catch (err) {

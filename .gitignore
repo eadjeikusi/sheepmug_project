@@ -4,6 +4,7 @@ node_modules/
 # Build
 dist/
 build/
+api/_lib/
 
 # Env and secrets — never commit
 .env
