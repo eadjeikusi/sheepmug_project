@@ -269,7 +269,7 @@ export default function Header({ setActiveTab }: HeaderProps) {
           </div>
         ) : (
           <button 
-            onClick={() => navigate('/cms/login')}
+            onClick={() => navigate('/login')}
             className="px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white font-medium text-sm rounded-md transition-all shadow-sm hover:shadow-md"
           >
             Sign In

@@ -225,6 +225,11 @@ export function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'cms-double-prefix-fix',hypothesisId:'R2',location:'src/auth/AuthPages.tsx:LoginPage.mount',message:'login page mounted',data:{pathname:typeof window!=='undefined'?window.location.pathname:'',isAuthenticated,loading},timestamp:Date.now()})}).catch(()=>{});
+    } catch {}
+    // #endregion
     if (!loading && isAuthenticated) {
       window.location.href = "/cms";
     }
@@ -298,12 +303,12 @@ export function LoginPage() {
 
         <p className="mt-6 text-center text-[14px] text-[#4b5563]">
           Need a workspace?{" "}
-          <Link to="/cms/signup" className="font-semibold text-[#1e3a8a] hover:underline">
+          <Link to="/signup" className="font-semibold text-[#1e3a8a] hover:underline">
             Create account
           </Link>
         </p>
         <p className="mt-2 text-center text-[14px] text-[#4b5563]">
-          <Link to="/cms/forgot-password" className="font-semibold text-[#1e3a8a] hover:underline">
+          <Link to="/forgot-password" className="font-semibold text-[#1e3a8a] hover:underline">
             Forgot password?
           </Link>
         </p>
@@ -597,7 +602,7 @@ export function SignupPage() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate("/cms/login")}
+                onClick={() => navigate("/login")}
                 className="inline-flex flex-1 items-center justify-center rounded-lg border border-[#d1d5db] px-4 py-3 text-[14px] font-semibold text-[#111827]"
               >
                 Already have an account
@@ -727,7 +732,7 @@ export function ForgotPasswordPage() {
       if (updateErr) throw new Error(updateErr.message || "Unable to reset password.");
       try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
       setMessage("Password updated. Redirecting to login...");
-      setTimeout(() => navigate("/cms/login"), 1200);
+      setTimeout(() => navigate("/login"), 1200);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to reset password.");
     } finally {
@@ -923,7 +928,7 @@ export function ForgotPasswordPage() {
         )}
 
         <p className="mt-6 text-center text-[14px] text-[#4b5563]">
-          <Link to="/cms/login" className="font-semibold text-[#1e3a8a] hover:underline">
+          <Link to="/login" className="font-semibold text-[#1e3a8a] hover:underline">
             Back to login
           </Link>
         </p>
@@ -1066,7 +1071,7 @@ export function ResetPasswordPage() {
       setMessage("Password updated. Redirecting to login...");
       try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
       setTimeout(() => {
-        navigate("/cms/login");
+        navigate("/login");
       }, 1200);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to reset password.");

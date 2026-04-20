@@ -362,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     clearSession();
-    window.location.href = '/cms/login';
+    window.location.href = '/login';
   };
 
   const refreshUser = async () => {
