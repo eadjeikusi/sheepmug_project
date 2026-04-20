@@ -49,35 +49,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from("profiles")
       .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, profile_image, avatar_url")
       .eq("id", user.id)
-      .single();
-    if (!full.error) {
+      .maybeSingle();
+    if (!full.error && full.data) {
       profile = full.data;
-    } else if (String(full.error.message || "").toLowerCase().includes("is_super_admin")) {
+    } else if (full.error && String(full.error.message || "").toLowerCase().includes("is_super_admin")) {
       const fallback = await admin
         .from("profiles")
         .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, profile_image, avatar_url")
         .eq("id", user.id)
-        .single();
-      if (!fallback.error) {
+        .maybeSingle();
+      if (!fallback.error && fallback.data) {
         profile = { ...fallback.data, is_super_admin: false };
       }
     }
+    // #region agent log
+    const idLookupDiag = {
+      hasData: !!full.data,
+      errorMessage: full.error?.message || null,
+      errorCode: (full.error as any)?.code || null,
+      errorDetails: (full.error as any)?.details || null,
+      errorHint: (full.error as any)?.hint || null,
+    };
+    // #endregion
+    let emailLookupDiag: Record<string, unknown> | null = null;
     if (!profile && user.email) {
       const byEmail = await admin
         .from("profiles")
         .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, profile_image, avatar_url")
-        .eq("email", user.email)
+        .ilike("email", user.email)
         .maybeSingle();
+      // #region agent log
+      emailLookupDiag = {
+        hasData: !!byEmail.data,
+        errorMessage: byEmail.error?.message || null,
+        errorCode: (byEmail.error as any)?.code || null,
+        errorDetails: (byEmail.error as any)?.details || null,
+        errorHint: (byEmail.error as any)?.hint || null,
+        queriedEmail: user.email,
+      };
+      // #endregion
       if (!byEmail.error && byEmail.data) {
         profile = byEmail.data;
-        // #region agent log
-        try {
-          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-profile-fallback',hypothesisId:'L7',location:'api/auth/me.ts:profileByEmail',message:'resolved profile by email fallback',data:{hasEmail:true,profileId:byEmail.data.id||null},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion
       }
     }
-    if (!profile) return res.status(401).json({ error: "User profile not found" });
+    if (!profile) {
+      return res.status(401).json({
+        error: "User profile not found",
+        diag: {
+          authUserId: user.id,
+          authUserEmail: user.email || null,
+          idLookup: idLookupDiag,
+          emailLookup: emailLookupDiag,
+        },
+      });
+    }
 
     return res.status(200).json({
       user: {

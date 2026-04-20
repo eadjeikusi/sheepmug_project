@@ -155,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasToken: typeof (refreshData as any)?.token === 'string',
         hasUser: !!(refreshData as any)?.user,
         error: (refreshData as any)?.error || null,
+        diag: (refreshData as any)?.diag || null,
       });
       try {
         fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L2',location:'src/app/contexts/AuthContext.tsx:refreshSession.result',message:'refresh response',data:{status:refreshResponse.status,ok:refreshResponse.ok,hasToken:typeof (refreshData as any)?.token==='string',hasUser:!!(refreshData as any)?.user,error:(refreshData as any)?.error||null},timestamp:Date.now()})}).catch(()=>{});
@@ -217,7 +218,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let activeToken = storedToken;
         let response = await getMe(activeToken);
         // #region agent log
-        dlog('bootstrap.meResponse', { status: response.status, ok: response.ok });
+        let meBodyForLog: any = null;
+        if (!response.ok) {
+          try {
+            const clone = response.clone();
+            meBodyForLog = await clone.json().catch(() => null);
+          } catch { /* ignore */ }
+        }
+        dlog('bootstrap.meResponse', { status: response.status, ok: response.ok, body: meBodyForLog });
         try {
           fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L3',location:'src/app/contexts/AuthContext.tsx:load.firstMe',message:'first /api/auth/me response',data:{status:response.status,ok:response.ok},timestamp:Date.now()})}).catch(()=>{});
         } catch {}
