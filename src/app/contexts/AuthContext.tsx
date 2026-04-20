@@ -225,6 +225,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (backendResult.ok) {
       const data = backendResult.data;
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA1',location:'src/app/contexts/AuthContext.tsx:login.backendUser',message:'backend login user payload flags',data:{hasUser:!!data?.user,isSuperAdmin:data?.user?.is_super_admin===true,isOrgOwner:data?.user?.is_org_owner===true,permissionsCount:Array.isArray(data?.user?.permissions)?data.user.permissions.length:null},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion
       localStorage.setItem(TOKEN_KEY, data.token);
       if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
         localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
@@ -261,6 +266,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session || !sbUser) throw new Error('Login failed: no session');
 
       const meta = (sbUser.user_metadata || {}) as Record<string, any>;
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA2',location:'src/app/contexts/AuthContext.tsx:login.supabaseUserMeta',message:'supabase fallback user_metadata flags',data:{hasOrganizationId:!!meta.organization_id,isSuperAdminMeta:meta.is_super_admin===true,isOrgOwnerMeta:meta.is_org_owner===true,permissionsMetaType:Array.isArray(meta.permissions)?'array':typeof meta.permissions,metaKeys:Object.keys(meta||{}).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion
       const uiUser: User = {
         id: sbUser.id,
         email: sbUser.email || email.trim(),
@@ -273,6 +283,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile_image: meta.profile_image || null,
         organization: meta.organization || { id: meta.organization_id || '', name: meta.organization_name || '', slug: meta.organization_slug || '' },
       } as User;
+      // #region agent log
+      try {
+        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA3',location:'src/app/contexts/AuthContext.tsx:login.uiUserBuilt',message:'ui user built from fallback',data:{isSuperAdmin:uiUser.is_super_admin===true,isOrgOwner:uiUser.is_org_owner===true,permissionsCount:Array.isArray(uiUser.permissions)?uiUser.permissions.length:null,organizationIdPresent:!!uiUser.organization_id},timestamp:Date.now()})}).catch(()=>{});
+      } catch {}
+      // #endregion
 
       localStorage.setItem(TOKEN_KEY, session.access_token);
       if (session.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, session.refresh_token);
