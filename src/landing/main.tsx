@@ -12,10 +12,14 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingApp />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/login" element={<Navigate to="/cms/login" replace />} />
+          <Route path="/signup" element={<Navigate to="/cms/signup" replace />} />
+          <Route path="/forgot-password" element={<Navigate to="/cms/forgot-password" replace />} />
+          <Route path="/reset-password" element={<Navigate to="/cms/reset-password" replace />} />
+          <Route path="/cms/login" element={<LoginPage />} />
+          <Route path="/cms/signup" element={<SignupPage />} />
+          <Route path="/cms/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/cms/reset-password" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

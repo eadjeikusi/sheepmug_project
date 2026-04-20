@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 
 const CMS = "/cms";
-const LOGIN = "/login";
-const SIGNUP = "/signup";
+const LOGIN = "/cms/login";
+const SIGNUP = "/cms/signup";
 
 /** Concave-style masks: green = bite at bottom-left of image; orange = bite at top-left (mirrored). */
 const IMAGE_CLIP = {

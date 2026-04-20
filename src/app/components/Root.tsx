@@ -47,7 +47,7 @@ export default function Root() {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/cms/login" replace />;
   }
   
   // Determine active tab from URL
