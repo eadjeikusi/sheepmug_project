@@ -4,6 +4,9 @@ import { CheckCircle2, Circle, CreditCard, Eye, EyeOff, Minus, Plus, Scale } fro
 import { useAuth } from "@/contexts/AuthContext";
 import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
 import { supabase } from "../app/utils/supabase";
+import { dlog, dumpPriorDebugLogs } from "../app/utils/debugLog";
+
+dumpPriorDebugLogs("auth-pages");
 
 type PlanChoice = {
   id: "monthly" | "yearly";
@@ -226,20 +229,18 @@ export function LoginPage() {
 
   useEffect(() => {
     // #region agent log
+    dlog('LoginPage.mount', {
+      pathname: typeof window !== 'undefined' ? window.location.pathname : '',
+      isAuthenticated,
+      loading,
+    });
     try {
-      // eslint-disable-next-line no-console
-      console.log('[sheepmug-debug] LoginPage.mount', {
-        pathname: typeof window !== 'undefined' ? window.location.pathname : '',
-        isAuthenticated,
-        loading,
-      });
       fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'cms-double-prefix-fix',hypothesisId:'R2',location:'src/auth/AuthPages.tsx:LoginPage.mount',message:'login page mounted',data:{pathname:typeof window!=='undefined'?window.location.pathname:'',isAuthenticated,loading},timestamp:Date.now()})}).catch(()=>{});
     } catch {}
     // #endregion
     if (!loading && isAuthenticated) {
       // #region agent log
-      // eslint-disable-next-line no-console
-      console.log('[sheepmug-debug] LoginPage.alreadyAuth.redirect', { target: '/cms' });
+      dlog('LoginPage.alreadyAuth.redirect', { target: '/cms' });
       // #endregion
       window.location.href = "/cms";
     }
@@ -250,33 +251,24 @@ export function LoginPage() {
     setError("");
     setSubmitting(true);
     // #region agent log
-    try {
-      // eslint-disable-next-line no-console
-      console.log('[sheepmug-debug] LoginPage.onSubmit.start', {
-        emailDomain: (email.split('@')[1] || '').trim(),
-      });
-    } catch { /* noop */ }
+    dlog('LoginPage.onSubmit.start', {
+      emailDomain: (email.split('@')[1] || '').trim(),
+    });
     // #endregion
     try {
       await login(email.trim(), password);
       // #region agent log
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[sheepmug-debug] LoginPage.onSubmit.success', {
-          willRedirectTo: '/cms',
-          hasToken: !!localStorage.getItem('token'),
-          hasStoredUser: !!localStorage.getItem('user'),
-        });
-      } catch { /* noop */ }
+      dlog('LoginPage.onSubmit.success', {
+        willRedirectTo: '/cms',
+        hasToken: !!localStorage.getItem('token'),
+        hasStoredUser: !!localStorage.getItem('user'),
+      });
       // #endregion
       window.location.href = "/cms";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
       // #region agent log
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[sheepmug-debug] LoginPage.onSubmit.error', { message: msg });
-      } catch { /* noop */ }
+      dlog('LoginPage.onSubmit.error', { message: msg });
       // #endregion
       setError(msg);
     } finally {

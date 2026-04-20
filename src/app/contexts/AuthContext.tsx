@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '@/types';
 import { supabase } from '../utils/supabase';
+import { dlog as sharedDlog, dumpPriorDebugLogs } from '../utils/debugLog';
+
+dumpPriorDebugLogs('boot');
 
 interface AuthContextType {
   user: User | null;
@@ -51,12 +54,7 @@ function apiUrl(path: string): string {
 }
 
 // #region agent log
-function dlog(event: string, data: Record<string, unknown> = {}): void {
-  try {
-    // eslint-disable-next-line no-console
-    console.log(`[sheepmug-debug] ${event}`, data);
-  } catch { /* noop */ }
-}
+const dlog = sharedDlog;
 // #endregion
 
 type ApiBody = Record<string, any>;
