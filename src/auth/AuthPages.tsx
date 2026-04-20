@@ -808,7 +808,6 @@ export function ResetPasswordPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [sessionReady, setSessionReady] = useState<"checking" | "ready" | "missing">("checking");
-  const [debugInfo, setDebugInfo] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -843,7 +842,6 @@ export function ResetPasswordPage() {
       hasTokenHash,
       tokenHashType,
     });
-    setDebugInfo(debugShape);
     // #region agent log
     try {
       fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ResetPasswordPage.mount',message:'reset page url shape',data:JSON.parse(debugShape),hypothesisId:'RP2',timestamp:Date.now()})}).catch(()=>{});
@@ -948,13 +946,6 @@ export function ResetPasswordPage() {
       <div className="mx-auto w-full max-w-md">
         <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Reset password</h2>
         <p className="mt-2 text-[14px] text-[#667085]">This link is valid for 15 minutes.</p>
-
-        {/* Temporary debug-only diagnostic; remove after fix verification */}
-        {sessionReady === "missing" && debugInfo ? (
-          <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-50 p-2 text-[10px] leading-tight text-slate-700">
-            [debug46abe0] {debugInfo}
-          </pre>
-        ) : null}
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
