@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: sheepmug-api
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # ---- Required secrets (set these in the Render dashboard, do not commit) ----
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PASSWORD_RESET_SECRET
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        value: noreply@sheepmug.com
+      - key: BREVO_FROM_NAME
+        value: SheepMug
+      - key: PUBLIC_APP_URL
+        value: https://sheepmug.com
+      - key: SUPERADMIN_EMAILS
+        sync: false

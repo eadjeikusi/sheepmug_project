@@ -1886,6 +1886,11 @@ app.get("/api/test", (req, res) => {
   res.status(200).json({ message: "Test route working!" });
 });
 
+// Lightweight health check for platform probes (Render, Railway, Fly, etc.)
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ ok: true, ts: Date.now() });
+});
+
 // Helper to generate slug
 // Helper to generate slug
 const generateSlug = (text: string) => {
