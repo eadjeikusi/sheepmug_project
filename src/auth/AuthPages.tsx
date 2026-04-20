@@ -687,7 +687,6 @@ export function ForgotPasswordPage() {
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
-  const token = new URLSearchParams(window.location.search).get("token") || "";
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -695,13 +694,73 @@ export function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [sessionReady, setSessionReady] = useState<"checking" | "ready" | "missing">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
+    const search = typeof window !== "undefined" ? window.location.search || "" : "";
+    const hasRecoveryHash = hash.includes("access_token=") || hash.includes("type=recovery");
+    const hasCodeParam = new URLSearchParams(search).has("code");
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ResetPasswordPage.mount',message:'reset page url shape',data:{hasHash:!!hash,hasRecoveryHash,hasCodeParam,searchKeys:Array.from(new URLSearchParams(search).keys())},hypothesisId:'RP1',timestamp:Date.now()})}).catch(()=>{});
+      // eslint-disable-next-line no-console
+      console.warn('[debug46abe0] reset page url shape', { hasHash: !!hash, hasRecoveryHash, hasCodeParam, searchKeys: Array.from(new URLSearchParams(search).keys()) });
+    } catch {}
+    // #endregion
+
+    const pkceFlow = async () => {
+      if (!hasCodeParam) return false;
+      const code = new URLSearchParams(search).get("code") || "";
+      const exchanger = (supabase as any)?.auth?.exchangeCodeForSession;
+      if (typeof exchanger !== "function") return false;
+      const { error: exchangeError } = await exchanger.call((supabase as any).auth, code);
+      if (exchangeError) throw exchangeError;
+      return true;
+    };
+
+    const { data: sub } = (supabase as any).auth.onAuthStateChange?.((event: string) => {
+      if (cancelled) return;
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        setSessionReady("ready");
+      }
+    }) || { data: { subscription: { unsubscribe: () => {} } } };
+
+    (async () => {
+      try {
+        const pkceHandled = await pkceFlow();
+        const { data } = await (supabase as any).auth.getSession();
+        if (cancelled) return;
+        if (pkceHandled || hasRecoveryHash || data?.session) {
+          setSessionReady("ready");
+        } else {
+          setSessionReady("missing");
+        }
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setSessionReady("missing");
+        setError(e instanceof Error ? e.message : "Reset link is invalid or expired.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      try { sub?.subscription?.unsubscribe?.(); } catch { /* noop */ }
+    };
+  }, []);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setMessage("");
-    if (!token) {
-      setError("Reset token is missing.");
+    if (sessionReady !== "ready") {
+      setError(
+        sessionReady === "checking"
+          ? "Still verifying your reset link. Please try again in a moment."
+          : "Your reset link is invalid or has expired. Please request a new one."
+      );
       return;
     }
     if (password.length < 8) {
@@ -715,37 +774,10 @@ export function ResetPasswordPage() {
 
     setSubmitting(true);
     try {
-      if (token) {
-        let backendCompleted = false;
-        if (API_BASE) {
-          try {
-            const response = await fetch(apiUrl("/api/auth/reset-password"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token, new_password: password }),
-            });
-            const data = await parseApiResponse(response);
-            if (response.ok) {
-              backendCompleted = true;
-            } else {
-              const errMsg = String(data.error || "Unable to reset password.");
-              if (!looksNotFoundError(errMsg)) {
-                throw new Error(errMsg);
-              }
-            }
-          } catch {
-            // Fall through to Supabase fallback below.
-          }
-        }
-        if (!backendCompleted) {
-          const { error: supaErr } = await supabase.auth.updateUser({ password });
-          if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
-        }
-      } else {
-        const { error: supaErr } = await supabase.auth.updateUser({ password });
-        if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
-      }
+      const { error: supaErr } = await supabase.auth.updateUser({ password });
+      if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
       setMessage("Password updated. Redirecting to login...");
+      try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
       setTimeout(() => {
         navigate("/login");
       }, 1200);
