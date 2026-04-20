@@ -79,15 +79,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!byEmail.error && byEmail.data) profile = byEmail.data;
     }
     if (!profile) {
-      return res.status(401).json({
-        error: "User profile not found",
-        diag: {
-          authUserId: sessionData.user.id,
-          authUserEmail: sessionData.user.email || null,
-          idLookup: idLookupDiag,
-          emailLookup: emailLookupDiag,
+      const diag: Record<string, unknown> = {
+        authUserId: sessionData.user.id,
+        authUserEmail: sessionData.user.email || null,
+        authUserAud: (sessionData.user as any).aud || null,
+        authUserProvider: (sessionData.user as any).app_metadata?.provider || null,
+        authUserCreatedAt: (sessionData.user as any).created_at || null,
+        idLookup: idLookupDiag,
+        emailLookup: emailLookupDiag,
+        env: {
+          hasSupabaseUrl: !!supabaseUrl,
+          supabaseUrlSuffix: supabaseUrl ? supabaseUrl.slice(-30) : null,
+          hasAnonKey: !!anonKey,
+          hasServiceRoleKey: !!serviceRoleKey,
+          serviceRoleKeyLen: serviceRoleKey ? serviceRoleKey.length : 0,
+          vercelEnv: process.env.VERCEL_ENV || null,
         },
-      });
+      };
+      try {
+        const probeAny = await admin.from("profiles").select("id, email").limit(1);
+        diag.probeReadAny = {
+          hasRows: Array.isArray(probeAny.data) && probeAny.data.length > 0,
+          rowCount: Array.isArray(probeAny.data) ? probeAny.data.length : 0,
+          firstKeys: probeAny.data?.[0] ? Object.keys(probeAny.data[0]) : [],
+          errorMessage: probeAny.error?.message || null,
+          errorCode: (probeAny.error as any)?.code || null,
+        };
+      } catch (e: any) { diag.probeReadAny = { thrown: String(e?.message || e) }; }
+      try {
+        const probeCount = await admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true });
+        diag.probeCount = {
+          count: probeCount.count ?? null,
+          errorMessage: probeCount.error?.message || null,
+        };
+      } catch (e: any) { diag.probeCount = { thrown: String(e?.message || e) }; }
+      if (sessionData.user.email) {
+        try {
+          const probeLower = await admin
+            .from("profiles")
+            .select("id, email")
+            .eq("email", sessionData.user.email.toLowerCase());
+          diag.probeEmailLowerExact = {
+            rowCount: Array.isArray(probeLower.data) ? probeLower.data.length : 0,
+            errorMessage: probeLower.error?.message || null,
+          };
+        } catch (e: any) { diag.probeEmailLowerExact = { thrown: String(e?.message || e) }; }
+        try {
+          const localPart = sessionData.user.email.split("@")[0] || "";
+          if (localPart) {
+            const probeLike = await admin
+              .from("profiles")
+              .select("id, email")
+              .ilike("email", `%${localPart}%`)
+              .limit(5);
+            diag.probeEmailLocalLike = {
+              rowCount: Array.isArray(probeLike.data) ? probeLike.data.length : 0,
+              sampleEmails: (probeLike.data || []).map((r: any) => r.email),
+              errorMessage: probeLike.error?.message || null,
+            };
+          }
+        } catch (e: any) { diag.probeEmailLocalLike = { thrown: String(e?.message || e) }; }
+      }
+      try {
+        const probeShape = await admin.from("profiles").select("*").limit(1);
+        diag.probeTableShape = {
+          rowCount: Array.isArray(probeShape.data) ? probeShape.data.length : 0,
+          columns: probeShape.data?.[0] ? Object.keys(probeShape.data[0]) : [],
+          errorMessage: probeShape.error?.message || null,
+        };
+      } catch (e: any) { diag.probeTableShape = { thrown: String(e?.message || e) }; }
+      return res.status(401).json({ error: "User profile not found", diag });
     }
 
     return res.status(200).json({
