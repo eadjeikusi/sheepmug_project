@@ -1,52 +1,65 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { app } from "../server";
 
 export const config = {
   maxDuration: 60,
 };
 
 // #region agent log
-function logDebug(payload: Record<string, unknown>): void {
+function sendDiag(res: ServerResponse, phase: string, err: unknown): void {
+  const e = err as { message?: string; name?: string; code?: string; stack?: string } | undefined;
   try {
-    fetch("http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "46abe0",
-      },
-      body: JSON.stringify({
-        sessionId: "46abe0",
-        location: "api/[...path].ts",
-        timestamp: Date.now(),
-        ...payload,
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(
+      JSON.stringify({
+        error: "catchall_crash",
+        phase,
+        name: e?.name || null,
+        code: e?.code || null,
+        message: e?.message || String(err),
+        stack: (e?.stack || "").split("\n").slice(0, 20),
+        node: process.version,
+        vercelEnv: process.env.VERCEL_ENV || null,
+        hasSupabaseUrl: Boolean(process.env.VITE_SUPABASE_URL),
+        hasSupabaseAnon: Boolean(process.env.VITE_SUPABASE_ANON_KEY),
+        hasSupabaseService: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        hasJwtSecret: Boolean(process.env.JWT_SECRET),
       }),
-    }).catch(() => {});
+    );
   } catch {
     /* ignore */
   }
 }
 // #endregion
 
-export default function handler(
+let cachedApp: ((req: IncomingMessage, res: ServerResponse) => void) | null = null;
+let cachedImportError: unknown = null;
+
+async function loadApp(): Promise<((req: IncomingMessage, res: ServerResponse) => void) | null> {
+  if (cachedApp) return cachedApp;
+  if (cachedImportError) return null;
+  try {
+    const mod = (await import("../server")) as { app: unknown };
+    cachedApp = mod.app as (req: IncomingMessage, res: ServerResponse) => void;
+    return cachedApp;
+  } catch (err) {
+    cachedImportError = err;
+    return null;
+  }
+}
+
+export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
-): void {
-  // #region agent log
-  try {
-    const url = (req as IncomingMessage & { url?: string }).url || "";
-    const method = (req as IncomingMessage & { method?: string }).method || "";
-    logDebug({
-      message: "catchall.invoke",
-      data: {
-        url,
-        method,
-        hasApp: typeof app === "function",
-      },
-      hypothesisId: "A",
-    });
-  } catch {
-    /* ignore */
+): Promise<void> {
+  const app = await loadApp();
+  if (!app) {
+    sendDiag(res, "import", cachedImportError);
+    return;
   }
-  // #endregion
-  (app as unknown as (req: IncomingMessage, res: ServerResponse) => void)(req, res);
+  try {
+    app(req, res);
+  } catch (err) {
+    sendDiag(res, "invoke", err);
+  }
 }
