@@ -81,21 +81,11 @@ async function apiRequest<T = any>(
   const signal = typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
     ? AbortSignal.timeout(15000)
     : undefined;
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-diff',hypothesisId:'D1',location:'src/app/utils/api.ts:apiRequest.beforeFetch',message:'api request start',data:{endpoint:`/api${endpoint}`,method:options.method || 'GET',hasToken:!!token,hasBranchId:!!branchId,hasRetried},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion
   const response = await fetch(`/api${endpoint}`, {
     ...options,
     headers,
     signal: options.signal ?? signal,
   });
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-diff',hypothesisId:'D2',location:'src/app/utils/api.ts:apiRequest.afterFetch',message:'api response received',data:{endpoint:`/api${endpoint}`,status:response.status,ok:response.ok,contentType:response.headers.get('content-type') || ''},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion
 
   if (response.status === 401 && !hasRetried) {
     const refreshedToken = await attemptTokenRefresh();
@@ -108,21 +98,10 @@ async function apiRequest<T = any>(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     const fallback = response.status === 403 ? 'Access denied for this account.' : 'API request failed';
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-diff',hypothesisId:'D3',location:'src/app/utils/api.ts:apiRequest.nonOk',message:'api response non-ok',data:{endpoint:`/api${endpoint}`,status:response.status,errorMessage:(error as { error?: string }).error || null},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
     throw new Error((error as { error?: string }).error || fallback);
   }
 
-  const data = await response.json();
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-diff',hypothesisId:'D4',location:'src/app/utils/api.ts:apiRequest.success',message:'api response success',data:{endpoint:`/api${endpoint}`,status:response.status,keys:Array.isArray(data)?['__array__']:(data && typeof data === 'object'?Object.keys(data).slice(0,8):[])},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion
-  return data;
+  return await response.json();
 }
 
 // ============================================

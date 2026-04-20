@@ -31,11 +31,6 @@ async function resolveUserProfileId(req: VercelRequest): Promise<{ ok: true; use
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Content-Type", "application/json");
-  // #region agent log
-  try {
-    fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-fix',hypothesisId:'D6',location:'api/notifications.ts:handler.entry',message:'notifications endpoint invoked',data:{method:req.method,hasAuth:!!(req.headers.authorization||req.headers.Authorization),hasBranchHeader:typeof req.headers['x-branch-id']==='string'},timestamp:Date.now()})}).catch(()=>{});
-  } catch {}
-  // #endregion
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return res.status(405).json({ error: "Method not allowed" });
@@ -61,11 +56,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .range(offset, offset + limit - 1);
     if (branchId) q = q.or(`branch_id.is.null,branch_id.eq.${branchId}`);
     const { data, error } = await q;
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'vercel-prod-api-fix',hypothesisId:'D7',location:'api/notifications.ts:handler.query',message:'notifications query result',data:{hasError:!!error,errorMessage:error?.message||null,count:Array.isArray(data)?data.length:0},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
     if (error) return res.status(500).json({ error: error.message || "Failed to load notifications" });
     return res.status(200).json({ notifications: data || [] });
   } catch (err: unknown) {

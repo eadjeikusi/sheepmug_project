@@ -1,9 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '@/types';
 import { supabase } from '../utils/supabase';
-import { dlog as sharedDlog, dumpPriorDebugLogs } from '../utils/debugLog';
-
-dumpPriorDebugLogs('boot');
 
 interface AuthContextType {
   user: User | null;
@@ -53,10 +50,6 @@ function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-// #region agent log
-const dlog = sharedDlog;
-// #endregion
-
 type ApiBody = Record<string, any>;
 
 async function parseApiBody(response: Response): Promise<ApiBody> {
@@ -86,39 +79,12 @@ function mergeIncomingUser(prev: User | null, incoming: User): User {
   return merged;
 }
 
-// Mock user for bypass
-const MOCK_USER: User = {
-  id: 'mock-user-123',
-  email: 'admin@churchhub.com',
-  first_name: 'Admin',
-  last_name: 'User',
-  organization_id: 'mock-org-123',
-  is_super_admin: true,
-  is_org_owner: true,
-  permissions: [],
-  profile_image: null,
-  organization: {
-    id: 'mock-org-123',
-    name: 'Demo Church',
-    slug: 'demo-church',
-  },
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
   const clearSession = () => {
-    // #region agent log
-    dlog('clearSession.called', {
-      pathname: typeof window !== 'undefined' ? window.location.pathname : '',
-      hadToken: !!localStorage.getItem(TOKEN_KEY),
-      hadRefreshToken: !!localStorage.getItem(REFRESH_TOKEN_KEY),
-      hadUser: !!localStorage.getItem(USER_KEY),
-      stack: new Error().stack?.split('\n').slice(1, 4).join(' | ') || '',
-    });
-    // #endregion
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -128,19 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = async (): Promise<string | null> => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    // #region agent log
-    dlog('refreshSession.start', {
-      hasRefreshToken: !!refreshToken,
-      apiBase: API_BASE || '(empty)',
-      url: apiUrl('/api/auth/refresh'),
-    });
-    // #endregion
     if (!refreshToken) return null;
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L1',location:'src/app/contexts/AuthContext.tsx:refreshSession.entry',message:'refresh session start',data:{hasRefreshToken:!!refreshToken,apiBase:API_BASE||'(empty)'},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
     try {
       const refreshResponse = await fetch(apiUrl('/api/auth/refresh'), {
         method: 'POST',
@@ -148,23 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
       const refreshData = await parseApiBody(refreshResponse);
-      // #region agent log
-      dlog('refreshSession.response', {
-        status: refreshResponse.status,
-        ok: refreshResponse.ok,
-        hasToken: typeof (refreshData as any)?.token === 'string',
-        hasUser: !!(refreshData as any)?.user,
-        error: (refreshData as any)?.error || null,
-        diag: (refreshData as any)?.diag || null,
-      });
-      try {
-        // eslint-disable-next-line no-console
-        console.log('[sheepmug-debug json] refreshSession.response ' + JSON.stringify(refreshData));
-      } catch { /* noop */ }
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L2',location:'src/app/contexts/AuthContext.tsx:refreshSession.result',message:'refresh response',data:{status:refreshResponse.status,ok:refreshResponse.ok,hasToken:typeof (refreshData as any)?.token==='string',hasUser:!!(refreshData as any)?.user,error:(refreshData as any)?.error||null},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion
       if (refreshResponse.status === 403) {
         clearSession();
         throw new Error((refreshData as { error?: string }).error || 'Access denied for this account.');
@@ -184,29 +121,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setToken(refreshData.token);
       return refreshData.token;
-    } catch (err) {
-      // #region agent log
-      dlog('refreshSession.threw', { message: err instanceof Error ? err.message : String(err) });
-      // #endregion
+    } catch {
       return null;
     }
   };
 
   useEffect(() => {
     const storedToken = localStorage.getItem(TOKEN_KEY);
-    // #region agent log
-    dlog('bootstrap.start', {
-      hasStoredToken: !!storedToken,
-      hasStoredUser: !!localStorage.getItem(USER_KEY),
-      pathname: typeof window !== 'undefined' ? window.location.pathname : '',
-      apiBase: API_BASE || '(empty)',
-      meUrl: apiUrl('/api/auth/me'),
-    });
-    // #endregion
     if (!storedToken) {
-      // #region agent log
-      dlog('bootstrap.noStoredToken');
-      // #endregion
       setLoading(false);
       return;
     }
@@ -221,63 +143,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         let activeToken = storedToken;
         let response = await getMe(activeToken);
-        // #region agent log
-        let meBodyForLog: any = null;
-        if (!response.ok) {
-          try {
-            const clone = response.clone();
-            meBodyForLog = await clone.json().catch(() => null);
-          } catch { /* ignore */ }
-        }
-        dlog('bootstrap.meResponse', { status: response.status, ok: response.ok, body: meBodyForLog });
-        try {
-          // eslint-disable-next-line no-console
-          console.log('[sheepmug-debug json] bootstrap.meResponse ' + JSON.stringify({ status: response.status, ok: response.ok, body: meBodyForLog }));
-        } catch { /* noop */ }
-        try {
-          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L3',location:'src/app/contexts/AuthContext.tsx:load.firstMe',message:'first /api/auth/me response',data:{status:response.status,ok:response.ok},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion
         if (response.status === 401) {
-          // #region agent log
-          dlog('bootstrap.meUnauthorized.refreshing');
-          // #endregion
           const refreshedToken = await refreshSession();
           if (!refreshedToken) {
-            // #region agent log
-            try {
-              fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L4',location:'src/app/contexts/AuthContext.tsx:load.refreshMissing',message:'refresh failed; clearing session',data:{},timestamp:Date.now()})}).catch(()=>{});
-            } catch {}
-            // #endregion
             clearSession();
             return;
           }
           activeToken = refreshedToken;
           response = await getMe(activeToken);
-          // #region agent log
-          dlog('bootstrap.meAfterRefresh', { status: response.status, ok: response.ok });
-          // #endregion
         }
         if (response.status === 403) {
-          // #region agent log
-          dlog('bootstrap.meForbidden.clearingSession');
-          // #endregion
           clearSession();
           return;
         }
         if (!response.ok) throw new Error('me failed');
         const data = await response.json();
-        // #region agent log
-        dlog('bootstrap.meSuccess', {
-          hasUser: !!(data as any)?.user,
-          email: (data as any)?.user?.email || null,
-          isSuperAdmin: (data as any)?.user?.is_super_admin === true,
-          isOrgOwner: (data as any)?.user?.is_org_owner === true,
-        });
-        try {
-          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-bootstrap',hypothesisId:'L5',location:'src/app/contexts/AuthContext.tsx:load.meSuccess',message:'me success payload',data:{hasUser:!!(data as any)?.user,isSuperAdmin:(data as any)?.user?.is_super_admin===true,isOrgOwner:(data as any)?.user?.is_org_owner===true},timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion
         if (data.user) {
           setUser((prev) => {
             const next = mergeIncomingUser(prev, data.user);
@@ -285,10 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return next;
           });
         }
-      } catch (err) {
-        // #region agent log
-        dlog('bootstrap.meThrew', { message: err instanceof Error ? err.message : String(err) });
-        // #endregion
+      } catch {
         const storedUser = localStorage.getItem(USER_KEY);
         if (storedUser) {
           try {
@@ -298,9 +175,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } finally {
-        // #region agent log
-        dlog('bootstrap.done', { hasStoredUser: !!localStorage.getItem(USER_KEY) });
-        // #endregion
         setLoading(false);
       }
     };
@@ -309,20 +183,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    // #region agent log
-    dlog('login.submit', {
-      apiBase: API_BASE || '(empty)',
-      url: apiUrl('/api/auth/login'),
-      hasSupabase: typeof (supabase as any)?.auth?.signInWithPassword === 'function',
-      emailDomain: (email.split('@')[1] || '').trim(),
-      origin: typeof window !== 'undefined' ? window.location.origin : '',
-      pathname: typeof window !== 'undefined' ? window.location.pathname : '',
-    });
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.entry',message:'login called',data:{apiBase:API_BASE||'(empty)',hasSupabase:typeof (supabase as any)?.auth?.signInWithPassword === 'function',emailDomain:(email.split('@')[1]||'').trim()},hypothesisId:'H1H2H5',timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
-
     const tryBackend = async (): Promise<{ ok: true; data: any } | { ok: false; reason: string; detail?: string }> => {
       try {
         const controller = new AbortController();
@@ -343,24 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const backendResult = await tryBackend();
-    // #region agent log
-    dlog('login.backendResult', {
-      ok: backendResult.ok,
-      reason: backendResult.ok ? 'success' : backendResult.reason,
-      detail: backendResult.ok ? undefined : backendResult.detail,
-    });
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.backendResult',message:'backend login attempt result',data:{ok:backendResult.ok,reason:backendResult.ok?'success':backendResult.reason,detail:backendResult.ok?undefined:backendResult.detail},hypothesisId:'H1H2H5',timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
 
     if (backendResult.ok) {
       const data = backendResult.data;
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA1',location:'src/app/contexts/AuthContext.tsx:login.backendUser',message:'backend login user payload flags',data:{hasUser:!!data?.user,isSuperAdmin:data?.user?.is_super_admin===true,isOrgOwner:data?.user?.is_org_owner===true,permissionsCount:Array.isArray(data?.user?.permissions)?data.user.permissions.length:null},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion
       localStorage.setItem(TOKEN_KEY, data.token);
       if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
         localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
@@ -369,42 +214,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
       setUser(nextUser);
       setToken(data.token);
-      // #region agent log
-      dlog('login.backendSessionApplied', {
-        hasToken: typeof data?.token === 'string',
-        hasRefreshToken: typeof data?.refresh_token === 'string',
-        email: nextUser?.email || null,
-        isSuperAdmin: nextUser?.is_super_admin === true,
-        isOrgOwner: nextUser?.is_org_owner === true,
-      });
-      // #endregion
       return;
     }
 
     // Backend unreachable or errored → fall back to Supabase direct auth.
-    // #region agent log
-    dlog('login.supabaseFallback.start', { reason: backendResult.ok ? 'n/a' : backendResult.reason });
-    // #endregion
     try {
       const { data: sbData, error: sbErr } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
-      // #region agent log
-      dlog('login.supabaseFallback.result', {
-        hasError: !!sbErr,
-        errorName: (sbErr as any)?.name,
-        errorStatus: (sbErr as any)?.status,
-        errorMessage: sbErr?.message,
-        hasSession: !!(sbData as any)?.session,
-        hasUser: !!(sbData as any)?.user,
-      });
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/contexts/AuthContext.tsx:login.supabase',message:'supabase signInWithPassword result',data:{hasError:!!sbErr,errorName:(sbErr as any)?.name,errorStatus:(sbErr as any)?.status,errorMessage:sbErr?.message,hasSession:!!(sbData as any)?.session,hasUser:!!(sbData as any)?.user},hypothesisId:'H5',timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion
       if (sbErr) {
-        // If backend returned a specific HTTP error (e.g., 401 invalid credentials), surface that if Supabase also fails for a "not configured" reason.
         if (backendResult.reason === 'http_error' && backendResult.detail) {
           throw new Error(backendResult.detail);
         }
@@ -415,11 +234,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session || !sbUser) throw new Error('Login failed: no session');
 
       const meta = (sbUser.user_metadata || {}) as Record<string, any>;
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA2',location:'src/app/contexts/AuthContext.tsx:login.supabaseUserMeta',message:'supabase fallback user_metadata flags',data:{hasOrganizationId:!!meta.organization_id,isSuperAdminMeta:meta.is_super_admin===true,isOrgOwnerMeta:meta.is_org_owner===true,permissionsMetaType:Array.isArray(meta.permissions)?'array':typeof meta.permissions,metaKeys:Object.keys(meta||{}).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion
       const uiUser: User = {
         id: sbUser.id,
         email: sbUser.email || email.trim(),
@@ -432,36 +246,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile_image: meta.profile_image || null,
         organization: meta.organization || { id: meta.organization_id || '', name: meta.organization_name || '', slug: meta.organization_slug || '' },
       } as User;
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'superadmin-visibility-pre-fix',hypothesisId:'SA3',location:'src/app/contexts/AuthContext.tsx:login.uiUserBuilt',message:'ui user built from fallback',data:{isSuperAdmin:uiUser.is_super_admin===true,isOrgOwner:uiUser.is_org_owner===true,permissionsCount:Array.isArray(uiUser.permissions)?uiUser.permissions.length:null,organizationIdPresent:!!uiUser.organization_id},timestamp:Date.now()})}).catch(()=>{});
-      } catch {}
-      // #endregion
 
       localStorage.setItem(TOKEN_KEY, session.access_token);
       if (session.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, session.refresh_token);
       localStorage.setItem(USER_KEY, JSON.stringify(uiUser));
       setUser(uiUser);
       setToken(session.access_token);
-      // #region agent log
-      dlog('login.supabaseSessionApplied', {
-        email: uiUser.email,
-        isSuperAdmin: uiUser.is_super_admin === true,
-        isOrgOwner: uiUser.is_org_owner === true,
-        permissionsCount: Array.isArray(uiUser.permissions) ? uiUser.permissions.length : null,
-      });
-      // #endregion
     } catch (err: any) {
-      // #region agent log
-      dlog('login.threw', { message: err instanceof Error ? err.message : String(err) });
-      // #endregion
       throw err;
     }
   };
 
   const signup = async (signupData: SignupData) => {
     try {
-      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout for signup
 
@@ -479,7 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }),
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
 
       const data = await parseApiBody(response);
@@ -507,11 +304,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    // #region agent log
-    dlog('logout.called', { pathname: typeof window !== 'undefined' ? window.location.pathname : '' });
-    // #endregion
     clearSession();
-    window.location.href = '/login';
+    window.location.href = '/cms/login';
   };
 
   const refreshUser = async () => {

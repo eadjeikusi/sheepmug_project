@@ -4,9 +4,6 @@ import { CheckCircle2, Circle, CreditCard, Eye, EyeOff, Minus, Plus, Scale } fro
 import { useAuth } from "@/contexts/AuthContext";
 import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
 import { supabase } from "../app/utils/supabase";
-import { dlog, dumpPriorDebugLogs } from "../app/utils/debugLog";
-
-dumpPriorDebugLogs("auth-pages");
 
 type PlanChoice = {
   id: "monthly" | "yearly";
@@ -228,20 +225,7 @@ export function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // #region agent log
-    dlog('LoginPage.mount', {
-      pathname: typeof window !== 'undefined' ? window.location.pathname : '',
-      isAuthenticated,
-      loading,
-    });
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'cms-double-prefix-fix',hypothesisId:'R2',location:'src/auth/AuthPages.tsx:LoginPage.mount',message:'login page mounted',data:{pathname:typeof window!=='undefined'?window.location.pathname:'',isAuthenticated,loading},timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
     if (!loading && isAuthenticated) {
-      // #region agent log
-      dlog('LoginPage.alreadyAuth.redirect', { target: '/cms' });
-      // #endregion
       window.location.href = "/cms";
     }
   }, [isAuthenticated, loading]);
@@ -250,26 +234,11 @@ export function LoginPage() {
     e.preventDefault();
     setError("");
     setSubmitting(true);
-    // #region agent log
-    dlog('LoginPage.onSubmit.start', {
-      emailDomain: (email.split('@')[1] || '').trim(),
-    });
-    // #endregion
     try {
       await login(email.trim(), password);
-      // #region agent log
-      dlog('LoginPage.onSubmit.success', {
-        willRedirectTo: '/cms',
-        hasToken: !!localStorage.getItem('token'),
-        hasStoredUser: !!localStorage.getItem('user'),
-      });
-      // #endregion
       window.location.href = "/cms";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
-      // #region agent log
-      dlog('LoginPage.onSubmit.error', { message: msg });
-      // #endregion
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -683,13 +652,6 @@ export function ForgotPasswordPage() {
       try { await (supabase as any).auth.signOut(); } catch { /* noop */ }
       const sentAt = Date.now();
       const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim());
-      // #region agent log
-      try {
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.requestCode',message:'resetPasswordForEmail result',data:{emailDomain:email.trim().split('@')[1]||'',hasError:!!supaErr,errorName:(supaErr as any)?.name,errorStatus:(supaErr as any)?.status,errorMessage:supaErr?.message},hypothesisId:'OTP1',timestamp:Date.now()})}).catch(()=>{});
-        // eslint-disable-next-line no-console
-        console.warn('[debug46abe0] resetPasswordForEmail result', { hasError: !!supaErr, errorName: (supaErr as any)?.name, errorStatus: (supaErr as any)?.status, errorMessage: supaErr?.message });
-      } catch {}
-      // #endregion
       if (supaErr) throw new Error(supaErr.message || "Unable to send code.");
       setCodeSentAt(sentAt);
       setCanResendAt(sentAt + 120000);
@@ -714,23 +676,15 @@ export function ForgotPasswordPage() {
     }
     setVerifyingCode(true);
     try {
-      const attemptStart = Date.now();
-      const ageMs = codeSentAt ? attemptStart - codeSentAt : -1;
       const { error: verifyErr } = await (supabase as any).auth.verifyOtp({
         email: email.trim(),
         token: normalizedCode,
         type: "recovery",
       });
-      // #region agent log
-      try {
-        const detail = { codeAgeSeconds: ageMs >= 0 ? Math.round(ageMs/1000) : null, hasError: !!verifyErr, errorName: (verifyErr as any)?.name, errorStatus: (verifyErr as any)?.status, errorCode: (verifyErr as any)?.code, errorMessage: verifyErr?.message };
-        fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.verifyAndReset',message:'verifyOtp result',data:detail,hypothesisId:'OTP1',timestamp:Date.now()})}).catch(()=>{});
-        // eslint-disable-next-line no-console
-        console.warn('[debug46abe0] verifyOtp result', detail);
-        if (verifyErr) setLastFailure(JSON.stringify(detail));
-      } catch {}
-      // #endregion
-      if (verifyErr) throw new Error(verifyErr.message || "Invalid or expired code.");
+      if (verifyErr) {
+        setLastFailure(JSON.stringify({ errorName: (verifyErr as any)?.name, errorStatus: (verifyErr as any)?.status, errorCode: (verifyErr as any)?.code, errorMessage: verifyErr?.message }));
+        throw new Error(verifyErr.message || "Invalid or expired code.");
+      }
       setStage("reset");
       setMessage("Code verified. Set your new password.");
     } catch (err: unknown) {
@@ -888,7 +842,7 @@ export function ForgotPasswordPage() {
 
             {lastFailure ? (
               <pre className="mt-2 max-h-24 overflow-auto rounded bg-slate-50 p-2 text-[10px] leading-tight text-slate-600">
-                [debug46abe0] {lastFailure}
+                {lastFailure}
               </pre>
             ) : null}
           </form>
@@ -997,23 +951,6 @@ export function ResetPasswordPage() {
       setError(friendly);
       return;
     }
-    const debugShape = JSON.stringify({
-      origin: typeof window !== "undefined" ? window.location.origin : "",
-      pathname: typeof window !== "undefined" ? window.location.pathname : "",
-      searchKeys: Array.from(searchParams.keys()),
-      hashKeys: Array.from(hashParams.keys()),
-      hasRecoveryHash,
-      hasCodeParam,
-      hasTokenHash,
-      tokenHashType,
-    });
-    // #region agent log
-    try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ResetPasswordPage.mount',message:'reset page url shape',data:JSON.parse(debugShape),hypothesisId:'RP2',timestamp:Date.now()})}).catch(()=>{});
-      // eslint-disable-next-line no-console
-      console.warn('[debug46abe0] reset page url shape', JSON.parse(debugShape));
-    } catch {}
-    // #endregion
 
     const pkceFlow = async () => {
       if (!hasCodeParam) return false;
