@@ -603,25 +603,37 @@ export function ForgotPasswordPage() {
     setMessage("");
     setSubmitting(true);
     try {
-      const response = await fetch(apiUrl("/api/auth/forgot-password"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      const data = await parseApiResponse(response);
-      if (!response.ok) {
-        const errMsg = String(data.error || "Unable to process request.");
-        if (!looksNotFoundError(errMsg)) {
-          throw new Error(errMsg);
+      let backendCompleted = false;
+      if (API_BASE) {
+        try {
+          const response = await fetch(apiUrl("/api/auth/forgot-password"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email.trim() }),
+          });
+          const data = await parseApiResponse(response);
+          if (response.ok) {
+            setMessage(data.message || "If your account exists, a reset link has been sent.");
+            backendCompleted = true;
+          } else {
+            const errMsg = String(data.error || "Unable to process request.");
+            if (!looksNotFoundError(errMsg)) {
+              throw new Error(errMsg);
+            }
+          }
+        } catch {
+          // Fall through to Supabase fallback below.
         }
-        // Fallback for static-only hosts without backend /api routes.
+      }
+
+      if (!backendCompleted) {
         const redirectTo = `${window.location.origin}/reset-password`;
         const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo,
         });
         if (supaErr) throw new Error(supaErr.message || "Unable to process request.");
+        setMessage("If your account exists, a reset link has been sent.");
       }
-      setMessage(data.message || "If your account exists, a reset link has been sent.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unable to process request.");
     } finally {
@@ -704,18 +716,28 @@ export function ResetPasswordPage() {
     setSubmitting(true);
     try {
       if (token) {
-        const response = await fetch(apiUrl("/api/auth/reset-password"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, new_password: password }),
-        });
-        const data = await parseApiResponse(response);
-        if (!response.ok) {
-          const errMsg = String(data.error || "Unable to reset password.");
-          if (!looksNotFoundError(errMsg)) {
-            throw new Error(errMsg);
+        let backendCompleted = false;
+        if (API_BASE) {
+          try {
+            const response = await fetch(apiUrl("/api/auth/reset-password"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token, new_password: password }),
+            });
+            const data = await parseApiResponse(response);
+            if (response.ok) {
+              backendCompleted = true;
+            } else {
+              const errMsg = String(data.error || "Unable to reset password.");
+              if (!looksNotFoundError(errMsg)) {
+                throw new Error(errMsg);
+              }
+            }
+          } catch {
+            // Fall through to Supabase fallback below.
           }
-          // If backend route is unavailable, try Supabase session-based password update.
+        }
+        if (!backendCompleted) {
           const { error: supaErr } = await supabase.auth.updateUser({ password });
           if (supaErr) throw new Error(supaErr.message || "Unable to reset password.");
         }
