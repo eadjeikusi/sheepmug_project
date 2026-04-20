@@ -695,29 +695,58 @@ export function ResetPasswordPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [sessionReady, setSessionReady] = useState<"checking" | "ready" | "missing">("checking");
+  const [debugInfo, setDebugInfo] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
 
     const hash = typeof window !== "undefined" ? window.location.hash || "" : "";
     const search = typeof window !== "undefined" ? window.location.search || "" : "";
-    const hasRecoveryHash = hash.includes("access_token=") || hash.includes("type=recovery");
-    const hasCodeParam = new URLSearchParams(search).has("code");
+    const hashParams = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+    const searchParams = new URLSearchParams(search);
+    const hasRecoveryHash = hashParams.has("access_token") || hashParams.get("type") === "recovery";
+    const hasCodeParam = searchParams.has("code");
+    const hasTokenHash = searchParams.has("token_hash") || hashParams.has("token_hash");
+    const tokenHashType = (searchParams.get("type") || hashParams.get("type") || "").toLowerCase();
+    const debugShape = JSON.stringify({
+      origin: typeof window !== "undefined" ? window.location.origin : "",
+      pathname: typeof window !== "undefined" ? window.location.pathname : "",
+      searchKeys: Array.from(searchParams.keys()),
+      hashKeys: Array.from(hashParams.keys()),
+      hasRecoveryHash,
+      hasCodeParam,
+      hasTokenHash,
+      tokenHashType,
+    });
+    setDebugInfo(debugShape);
     // #region agent log
     try {
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ResetPasswordPage.mount',message:'reset page url shape',data:{hasHash:!!hash,hasRecoveryHash,hasCodeParam,searchKeys:Array.from(new URLSearchParams(search).keys())},hypothesisId:'RP1',timestamp:Date.now()})}).catch(()=>{});
+      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ResetPasswordPage.mount',message:'reset page url shape',data:JSON.parse(debugShape),hypothesisId:'RP2',timestamp:Date.now()})}).catch(()=>{});
       // eslint-disable-next-line no-console
-      console.warn('[debug46abe0] reset page url shape', { hasHash: !!hash, hasRecoveryHash, hasCodeParam, searchKeys: Array.from(new URLSearchParams(search).keys()) });
+      console.warn('[debug46abe0] reset page url shape', JSON.parse(debugShape));
     } catch {}
     // #endregion
 
     const pkceFlow = async () => {
       if (!hasCodeParam) return false;
-      const code = new URLSearchParams(search).get("code") || "";
+      const code = searchParams.get("code") || "";
       const exchanger = (supabase as any)?.auth?.exchangeCodeForSession;
       if (typeof exchanger !== "function") return false;
       const { error: exchangeError } = await exchanger.call((supabase as any).auth, code);
       if (exchangeError) throw exchangeError;
+      return true;
+    };
+
+    const tokenHashFlow = async () => {
+      if (!hasTokenHash) return false;
+      const tokenHash = searchParams.get("token_hash") || hashParams.get("token_hash") || "";
+      const verifier = (supabase as any)?.auth?.verifyOtp;
+      if (typeof verifier !== "function") return false;
+      const { error: verifyErr } = await verifier.call((supabase as any).auth, {
+        type: "recovery",
+        token_hash: tokenHash,
+      });
+      if (verifyErr) throw verifyErr;
       return true;
     };
 
@@ -731,9 +760,10 @@ export function ResetPasswordPage() {
     (async () => {
       try {
         const pkceHandled = await pkceFlow();
+        const tokenHashHandled = !pkceHandled ? await tokenHashFlow() : false;
         const { data } = await (supabase as any).auth.getSession();
         if (cancelled) return;
-        if (pkceHandled || hasRecoveryHash || data?.session) {
+        if (pkceHandled || tokenHashHandled || hasRecoveryHash || data?.session) {
           setSessionReady("ready");
         } else {
           setSessionReady("missing");
@@ -793,6 +823,13 @@ export function ResetPasswordPage() {
       <div className="mx-auto w-full max-w-md">
         <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Reset password</h2>
         <p className="mt-2 text-[14px] text-[#667085]">This link is valid for 15 minutes.</p>
+
+        {/* Temporary debug-only diagnostic; remove after fix verification */}
+        {sessionReady === "missing" && debugInfo ? (
+          <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-50 p-2 text-[10px] leading-tight text-slate-700">
+            [debug46abe0] {debugInfo}
+          </pre>
+        ) : null}
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <label className="block">
