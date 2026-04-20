@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import http from "node:http";
@@ -20265,6 +20264,7 @@ async function startServer() {
       req.url = `/index.html${q}`;
       return next();
     });
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: { server: httpServer } },
       appType: "spa",
@@ -20328,4 +20328,12 @@ async function startServer() {
   }, 60 * 1000);
 }
 
-startServer();
+export { app };
+
+const isServerlessRuntime = Boolean(
+  process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME
+);
+
+if (!isServerlessRuntime) {
+  startServer();
+}
