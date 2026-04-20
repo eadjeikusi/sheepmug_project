@@ -47,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let profile: any = null;
     const full = await admin
       .from("profiles")
-      .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, profile_image, avatar_url")
+      .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, avatar_url")
       .eq("id", user.id)
       .maybeSingle();
     if (!full.error && full.data) {
@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (full.error && String(full.error.message || "").toLowerCase().includes("is_super_admin")) {
       const fallback = await admin
         .from("profiles")
-        .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, profile_image, avatar_url")
+        .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, avatar_url")
         .eq("id", user.id)
         .maybeSingle();
       if (!fallback.error && fallback.data) {
@@ -75,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!profile && user.email) {
       const byEmail = await admin
         .from("profiles")
-        .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, profile_image, avatar_url")
+        .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, avatar_url")
         .ilike("email", user.email)
         .maybeSingle();
       // #region agent log
@@ -181,7 +181,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         is_org_owner: profile.is_org_owner === true,
         is_super_admin: profile.is_super_admin === true,
         permissions: [],
-        profile_image: profile.profile_image || profile.avatar_url || null,
+        profile_image: profile.avatar_url || null,
       },
     });
   } catch (err: unknown) {
