@@ -33,6 +33,20 @@ const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(
 
 function apiUrl(path: string): string {
   if (!API_BASE) return path;
+  if (typeof window !== 'undefined') {
+    try {
+      const configured = new URL(API_BASE, window.location.origin);
+      const current = new URL(window.location.origin);
+      const configuredHost = configured.hostname.replace(/^www\./i, '').toLowerCase();
+      const currentHost = current.hostname.replace(/^www\./i, '').toLowerCase();
+      if (configuredHost === currentHost) {
+        // Avoid cross-origin + redirect preflight issues between apex and www domains.
+        return path;
+      }
+    } catch {
+      // fall through to configured API base
+    }
+  }
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 }
 

@@ -54,6 +54,19 @@ const API_BASE = String(import.meta.env.VITE_API_BASE_URL || "").trim().replace(
 
 function apiUrl(path: string): string {
   if (!API_BASE) return path;
+  if (typeof window !== "undefined") {
+    try {
+      const configured = new URL(API_BASE, window.location.origin);
+      const current = new URL(window.location.origin);
+      const configuredHost = configured.hostname.replace(/^www\./i, "").toLowerCase();
+      const currentHost = current.hostname.replace(/^www\./i, "").toLowerCase();
+      if (configuredHost === currentHost) {
+        return path;
+      }
+    } catch {
+      // keep configured API base if URL parse fails
+    }
+  }
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
