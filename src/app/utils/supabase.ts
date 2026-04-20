@@ -12,6 +12,15 @@ export const supabase = supabaseUrl && supabaseAnonKey
         signInWithPassword: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
         signUp: async () => ({ data: { user: null, session: null }, error: new Error('Auth disabled') }),
         signOut: async () => ({ error: null }),
+        resetPasswordForEmail: async () => ({
+          data: null,
+          error: new Error('Authentication is not configured. Please contact support.'),
+        }),
+        updateUser: async () => ({
+          data: { user: null },
+          error: new Error('Authentication is not configured. Please contact support.'),
+        }),
+        getUser: async () => ({ data: { user: null }, error: null }),
       },
       channel: () => ({
         on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
@@ -32,6 +41,16 @@ export const supabase = supabaseUrl && supabaseAnonKey
         delete: async () => ({ data: null, error: null }),
       }),
     } as any);
+
+// #region agent log
+try {
+  const variant = supabaseUrl && supabaseAnonKey ? 'real' : 'mock';
+  const hasReset = typeof (supabase as any)?.auth?.resetPasswordForEmail === 'function';
+  // eslint-disable-next-line no-console
+  console.warn('[debug46abe0] supabase variant', { variant, hasResetPasswordForEmail: hasReset, hasUrl: !!supabaseUrl, hasAnon: !!supabaseAnonKey });
+  fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/app/utils/supabase.ts:init',message:'supabase variant at module init',data:{variant,hasResetPasswordForEmail:hasReset,hasUrl:!!supabaseUrl,hasAnon:!!supabaseAnonKey},hypothesisId:'H1',timestamp:Date.now()})}).catch(()=>{});
+} catch {}
+// #endregion
 
 // Database types based on our schema
 export interface Organization {
