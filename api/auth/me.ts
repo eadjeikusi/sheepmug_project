@@ -62,6 +62,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         profile = { ...fallback.data, is_super_admin: false };
       }
     }
+    if (!profile && user.email) {
+      const byEmail = await admin
+        .from("profiles")
+        .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_super_admin, profile_image, avatar_url")
+        .eq("email", user.email)
+        .maybeSingle();
+      if (!byEmail.error && byEmail.data) {
+        profile = byEmail.data;
+        // #region agent log
+        try {
+          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',runId:'login-loop-profile-fallback',hypothesisId:'L7',location:'api/auth/me.ts:profileByEmail',message:'resolved profile by email fallback',data:{hasEmail:true,profileId:byEmail.data.id||null},timestamp:Date.now()})}).catch(()=>{});
+        } catch {}
+        // #endregion
+      }
+    }
     if (!profile) return res.status(401).json({ error: "User profile not found" });
 
     return res.status(200).json({
