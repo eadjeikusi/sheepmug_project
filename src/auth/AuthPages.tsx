@@ -602,15 +602,6 @@ export function ForgotPasswordPage() {
     setError("");
     setMessage("");
     setSubmitting(true);
-    // #region agent log
-    try {
-      const hasReset = typeof (supabase as any)?.auth?.resetPasswordForEmail === 'function';
-      const authKeys = Object.keys(((supabase as any)?.auth) || {});
-      // eslint-disable-next-line no-console
-      console.warn('[debug46abe0] forgot-password submit', { API_BASE_present: !!API_BASE, API_BASE, hasResetPasswordForEmail: hasReset, authKeys });
-      fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.onSubmit',message:'forgot-password submit entry',data:{API_BASE_present:!!API_BASE,API_BASE:API_BASE||null,hasResetPasswordForEmail:hasReset,authKeys},hypothesisId:'H1,H2,H4',timestamp:Date.now()})}).catch(()=>{});
-    } catch {}
-    // #endregion
     try {
       let backendCompleted = false;
       if (API_BASE) {
@@ -636,14 +627,6 @@ export function ForgotPasswordPage() {
       }
 
       if (!backendCompleted) {
-        // #region agent log
-        try {
-          const hasReset = typeof (supabase as any)?.auth?.resetPasswordForEmail === 'function';
-          // eslint-disable-next-line no-console
-          console.warn('[debug46abe0] forgot-password fallback path', { hasResetPasswordForEmail: hasReset });
-          fetch('http://127.0.0.1:7406/ingest/7632e6e8-af16-4700-a4cf-377fe497ddcb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'46abe0'},body:JSON.stringify({sessionId:'46abe0',location:'src/auth/AuthPages.tsx:ForgotPasswordPage.fallback',message:'about to call supabase.auth.resetPasswordForEmail',data:{hasResetPasswordForEmail:hasReset},hypothesisId:'H1',timestamp:Date.now()})}).catch(()=>{});
-        } catch {}
-        // #endregion
         const redirectTo = `${window.location.origin}/reset-password`;
         const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo,
