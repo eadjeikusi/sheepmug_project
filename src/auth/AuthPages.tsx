@@ -640,8 +640,8 @@ export function ForgotPasswordPage() {
     setMessage("");
     setLastFailure("");
     const normalizedCode = code.replace(/\D/g, "");
-    if (normalizedCode.length < 6) {
-      setError("Enter the 6-digit code from your email.");
+    if (normalizedCode.length < 6 || normalizedCode.length > 10) {
+      setError("Enter the full code from your email (typically 6–8 digits).");
       return;
     }
     if (password.length < 8) {
@@ -686,13 +686,13 @@ export function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Forgot your password?"
-      subtitle="We will send a 6-digit code to your email so you can set a new password."
+      subtitle="We will send a verification code to your email so you can set a new password."
     >
       <div className="mx-auto w-full max-w-md">
         <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Password reset</h2>
         <p className="mt-2 text-[14px] text-[#667085]">
           {stage === "request"
-            ? "Enter your email and we'll send you a 6-digit code."
+            ? "Enter your email and we'll send you a verification code."
             : "Enter the code we emailed you and your new password."}
         </p>
 
@@ -725,15 +725,15 @@ export function ForgotPasswordPage() {
         ) : (
           <form onSubmit={verifyAndReset} className="mt-6 space-y-4">
             <label className="block">
-              <span className="mb-1 block text-[14px] font-medium text-[#111827]">6-digit code</span>
+              <span className="mb-1 block text-[14px] font-medium text-[#111827]">Verification code</span>
               <input
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={6}
+                maxLength={10}
                 required
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
                 className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-center text-[18px] tracking-[0.4em] outline-none ring-[#1e3a8a] focus:ring-2"
                 placeholder="••••••"
               />
