@@ -30,6 +30,7 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
 
 /** Avoid hanging forever on splash when `/api/auth/me` never resolves (offline API, bad URL). */
 const AUTH_ME_TIMEOUT_MS = 12_000;
+const AUTH_LOGIN_TIMEOUT_MS = 15_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -125,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const trimmedEmail = email.trim();
     devLog("login: POST /api/auth/login …", { email: trimmedEmail });
     try {
-      const result = await api.auth.login(trimmedEmail, password);
+      const result = await withTimeout(api.auth.login(trimmedEmail, password), AUTH_LOGIN_TIMEOUT_MS, "auth_login_timeout");
       devLog("login: ok", { userId: result.user?.id?.slice?.(0, 8) });
       await setToken(result.token);
       await setRefreshToken(result.refresh_token ?? null);
@@ -137,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const msg = e instanceof Error ? e.message : String(e);
       devWarn("login: failed", msg);
       const looksUnreachable =
-        /network request timed out|timed out|fetch|network failed|failed to connect|ECONNREFUSED|ENOTFOUND|aborted/i.test(
+        /network request timed out|timed out|fetch|network failed|failed to connect|ECONNREFUSED|ENOTFOUND|aborted|auth_login_timeout/i.test(
           msg
         ) || e instanceof TypeError;
       if (looksUnreachable) {

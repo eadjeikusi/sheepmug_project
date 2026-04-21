@@ -19,6 +19,13 @@
           "photosPermission": "SheepMug CMS is requesting access to your photo library so you can choose or update profile images, member photos, and event attachments.",
           "cameraPermission": "SheepMug CMS would like to use your camera to capture photos for profiles and events."
         }
+      ],
+      "expo-sqlite",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow SheepMug to use Face ID so only you can unlock this app quickly."
+        }
       ]
     ],
     "ios": {
@@ -28,7 +35,8 @@
           "NSAllowsLocalNetworking": true
         },
         "NSPhotoLibraryUsageDescription": "SheepMug CMS is requesting access to your photo library so you can choose or update profile images, member photos, and event attachments.",
-        "NSPhotoLibraryAddUsageDescription": "SheepMug CMS may save images when you export or share from the app."
+        "NSPhotoLibraryAddUsageDescription": "SheepMug CMS may save images when you export or share from the app.",
+        "NSFaceIDUsageDescription": "Allow SheepMug to use Face ID so only you can unlock this app quickly."
       }
     },
     "android": {
@@ -38,7 +46,9 @@
         "backgroundColor": "#ffffff"
       }
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "experiments": {
       "typedRoutes": true
     },

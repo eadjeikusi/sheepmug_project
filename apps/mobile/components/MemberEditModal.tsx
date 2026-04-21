@@ -20,7 +20,7 @@ type Props = {
   onSaved: (m: Member) => void;
 };
 
-const GENDER_OPTIONS = ["Male", "Female", "Other"];
+const GENDER_OPTIONS = ["Male", "Female"];
 const MARITAL_OPTIONS = ["Single", "Married", "Divorced", "Widowed"];
 
 function pickStr(m: Member, ...keys: string[]): string {

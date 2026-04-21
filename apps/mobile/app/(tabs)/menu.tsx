@@ -23,8 +23,10 @@ import Constants from "expo-constants";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
-import { clearOfflineResourceCaches, setOfflineBootstrapDone } from "../../lib/storage";
-import { clearOfflineImageFiles } from "../../lib/offline/imageCache";
+import { authenticateWithBiometrics, getBiometricAvailability, type BiometricAvailability } from "../../lib/biometric";
+import { getBiometricUnlockEnabled, setBiometricUnlockEnabled } from "../../lib/storage";
+
+const SETTINGS_ACCENT_BLUE = "#2563eb";
 
 function initials(first?: string, last?: string) {
   const a = (first || "").trim()[0] || "";
@@ -90,22 +92,90 @@ export default function MenuScreen() {
   useNotifications();
   const { colors } = useTheme();
   const { lastSyncAt } = useOfflineSync();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const settingsColors = useMemo(() => ({ ...colors, accent: SETTINGS_ACCENT_BLUE }), [colors]);
+  const styles = useMemo(() => makeStyles(settingsColors), [settingsColors]);
   const [refreshing, setRefreshing] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerAnchor, setBranchPickerAnchor] = useState<AnchorRect | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricAvailability, setBiometricAvailability] = useState<BiometricAvailability | null>(null);
+  const [biometricBusy, setBiometricBusy] = useState(false);
   const branchRowRef = useRef<View>(null);
+
+  const refreshBiometricState = useCallback(async () => {
+    const [enabled, availability] = await Promise.all([getBiometricUnlockEnabled(), getBiometricAvailability()]);
+    setBiometricEnabled(enabled);
+    setBiometricAvailability(availability);
+    if (enabled && !availability.available) {
+      await setBiometricUnlockEnabled(false);
+      setBiometricEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshBiometricState();
+  }, [refreshBiometricState]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await refreshBranches();
+      await refreshBiometricState();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshBranches]);
+  }, [refreshBranches, refreshBiometricState]);
+
+  const handleBiometricPress = useCallback(() => {
+    if (biometricBusy) return;
+    if (biometricEnabled) {
+      Alert.alert("Disable biometric unlock?", "You will use email and password only.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disable",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              await setBiometricUnlockEnabled(false);
+              setBiometricEnabled(false);
+            })();
+          },
+        },
+      ]);
+      return;
+    }
+
+    if (!biometricAvailability?.available) {
+      Alert.alert("Biometric unlock unavailable", biometricAvailability?.reason || "Biometric unlock is not available.");
+      return;
+    }
+
+    setBiometricBusy(true);
+    void (async () => {
+      try {
+        const result = await authenticateWithBiometrics("Enable biometric unlock");
+        if (!result.success) {
+          Alert.alert("Verification failed", result.errorMessage || "Biometric verification was cancelled.");
+          return;
+        }
+        await setBiometricUnlockEnabled(true);
+        setBiometricEnabled(true);
+        Alert.alert("Biometric unlock enabled", "You can now unlock the app with your device biometrics.");
+      } finally {
+        setBiometricBusy(false);
+      }
+    })();
+  }, [biometricAvailability, biometricBusy, biometricEnabled]);
+
+  const biometricStatus = biometricBusy
+    ? "Checking..."
+    : biometricAvailability?.available
+      ? biometricEnabled
+        ? "On"
+        : "Off"
+      : "Not available";
 
   const goProfile = () => {
     router.push("/profile-details");
@@ -150,55 +220,23 @@ export default function MenuScreen() {
         <View style={styles.block}>
           <MenuRow
             icon="scan-outline"
-            label="Facial recognition"
-            colors={colors}
-            onPress={() => {
-              Alert.alert(
-                "Facial recognition",
-                "Facial recognition enrollment is not available yet. When this feature is enabled for your organization, setup will be available here."
-              );
-            }}
+            label="Biometric unlock"
+            colors={settingsColors}
+            onPress={handleBiometricPress}
+            rightNode={<Text style={styles.menuRowMeta}>{biometricStatus}</Text>}
           />
           <MenuRow
             icon="cloud-upload-outline"
             label="Offline Sync"
             onPress={() => router.push("/offline-sync")}
-            colors={colors}
+            colors={settingsColors}
             rightNode={<Text style={styles.menuRowMeta}>Last sync {formatTimeAgo(lastSyncAt)}</Text>}
-          />
-          <MenuRow
-            icon="trash-outline"
-            label="Clear cached data"
-            colors={colors}
-            danger
-            onPress={() => {
-              Alert.alert(
-                "Clear cached data",
-                "This removes all offline cached data and images. You can download it again later.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Clear cache",
-                    style: "destructive",
-                    onPress: () => {
-                      void (async () => {
-                        await clearOfflineResourceCaches();
-                        await clearOfflineImageFiles();
-                        await setOfflineBootstrapDone(false);
-                        Alert.alert("Cache cleared", "Offline cache has been cleared.");
-                        router.replace("/offline-setup");
-                      })();
-                    },
-                  },
-                ]
-              );
-            }}
           />
           <View ref={branchRowRef} collapsable={false}>
             <MenuRow
               icon="git-branch-outline"
               label="Branch"
-              colors={colors}
+              colors={settingsColors}
               rightNode={
                 <View style={styles.branchDropRight}>
                   <Text style={styles.branchDropValue} numberOfLines={1}>
@@ -219,19 +257,19 @@ export default function MenuScreen() {
             icon="notifications-outline"
             label="Notification settings"
             onPress={() => router.push("/notification-settings")}
-            colors={colors}
+            colors={settingsColors}
           />
           <MenuRow
             icon="notifications"
             label="Notification inbox"
             onPress={() => router.push("/notifications")}
-            colors={colors}
+            colors={settingsColors}
           />
         </View>
 
         <View style={styles.block}>
-          <MenuRow icon="information-circle-outline" label="About application" onPress={() => setAboutOpen(true)} colors={colors} />
-          <MenuRow icon="chatbubble-ellipses-outline" label="Help / FAQ" onPress={() => setFaqOpen(true)} colors={colors} />
+          <MenuRow icon="information-circle-outline" label="About application" onPress={() => setAboutOpen(true)} colors={settingsColors} />
+          <MenuRow icon="chatbubble-ellipses-outline" label="Help / FAQ" onPress={() => setFaqOpen(true)} colors={settingsColors} />
         </View>
 
         <Pressable
@@ -406,7 +444,7 @@ function makeStyles(colors: {
     marginTop: 8,
     height: 44,
     borderRadius: radius.md,
-    backgroundColor: colors.textPrimary,
+    backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },

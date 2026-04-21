@@ -102,6 +102,10 @@ export async function runOfflineBootstrap(
     api.groups.list({ tree: true, limit: 500 }).catch(() => [] as Group[]),
     fetchAllFamilies(),
   ]);
+  await setOfflineResourceCache(
+    "ministries:list",
+    await hydratePayloadWithOfflineImages({ groups, total_count: groups.length })
+  );
   await setOfflineResourceCache("families:list", await hydratePayloadWithOfflineImages({ families }));
   await setOfflineResourceCache(
     "families:list:all",
@@ -122,21 +126,70 @@ export async function runOfflineBootstrap(
       event_types: [...eventTypeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
     })
   );
+  const eventIds = eventsPayload.events.map((e) => String(e.id || "")).filter(Boolean);
+  for (let i = 0; i < eventIds.length; i += 6) {
+    const batch = eventIds.slice(i, i + 6);
+    await Promise.all(
+      batch.map(async (eventId) => {
+        const [detail, attendancePayload] = await Promise.all([
+          api.events.detail(eventId).catch(() => null),
+          api.events.attendance.get(eventId).catch(() => ({})),
+        ]);
+        await setOfflineResourceCache(
+          `event:detail:${eventId}`,
+          await hydratePayloadWithOfflineImages({
+            event: detail,
+            attendance: Array.isArray((attendancePayload as { attendance?: unknown[] }).attendance)
+              ? (attendancePayload as { attendance: unknown[] }).attendance
+              : [],
+            members: Array.isArray((attendancePayload as { members?: unknown[] }).members)
+              ? (attendancePayload as { members: unknown[] }).members
+              : [],
+            assigned_groups: Array.isArray((attendancePayload as { assigned_groups?: unknown[] }).assigned_groups)
+              ? (attendancePayload as { assigned_groups: unknown[] }).assigned_groups
+              : [],
+            filter_groups: Array.isArray((attendancePayload as { filter_groups?: unknown[] }).filter_groups)
+              ? (attendancePayload as { filter_groups: unknown[] }).filter_groups
+              : [],
+            eventTypeRows: [...eventTypeRows].sort((a, b) =>
+              String(a.name || "").localeCompare(String(b.name || ""))
+            ),
+          })
+        );
+      })
+    );
+  }
   tick("Events");
 
   const tasksPayload = await fetchAllTasks();
-  await setOfflineResourceCache("tasks:list:bootstrap", {
-    tasks: tasksPayload.tasks,
-    total_count: tasksPayload.total_count,
-  });
-  await setOfflineResourceCache("tasks:list:mine:open::::::all", {
-    tasks: tasksPayload.tasks.filter((t) => String(t.status || "").toLowerCase() !== "done"),
-    total_count: tasksPayload.tasks.filter((t) => String(t.status || "").toLowerCase() !== "done").length,
-  });
-  await setOfflineResourceCache("tasks:list:mine:all::::::all", {
-    tasks: tasksPayload.tasks,
-    total_count: tasksPayload.total_count,
-  });
+  await setOfflineResourceCache(
+    "tasks:list:bootstrap",
+    await hydratePayloadWithOfflineImages({
+      tasks: tasksPayload.tasks,
+      total_count: tasksPayload.total_count,
+    })
+  );
+  await setOfflineResourceCache(
+    "tasks:list:mine:open::::::all",
+    await hydratePayloadWithOfflineImages({
+      tasks: tasksPayload.tasks.filter((t) => String(t.status || "").toLowerCase() !== "done"),
+      total_count: tasksPayload.tasks.filter((t) => String(t.status || "").toLowerCase() !== "done").length,
+    })
+  );
+  await setOfflineResourceCache(
+    "tasks:list:mine:all::::::all",
+    await hydratePayloadWithOfflineImages({
+      tasks: tasksPayload.tasks,
+      total_count: tasksPayload.total_count,
+    })
+  );
+  await setOfflineResourceCache(
+    "tasks:list",
+    await hydratePayloadWithOfflineImages({
+      tasks: tasksPayload.tasks,
+      total_count: tasksPayload.total_count,
+    })
+  );
   tick("Tasks");
 
   const memberIds = membersPayload.members.map((m) => String(m.id || "")).filter(Boolean);

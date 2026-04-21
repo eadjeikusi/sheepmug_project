@@ -50,6 +50,7 @@ type TaskMemberRef = { id: string; first_name: string | null; last_name: string 
 type TaskGroupRef = { id: string; name: string | null };
 
 type ChecklistItem = { id: string; label: string; done: boolean };
+type ChecklistLineEdit = { key: string; id?: string; label: string; done: boolean };
 
 type TaskRow = {
   id: string;
@@ -114,6 +115,10 @@ function taskApiPath(id: string, t: Pick<TaskRow, 'task_type' | 'group_id' | 'me
 
 function isMemberDbId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id).trim());
+}
+
+function isChecklistLineId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id).trim());
 }
 
 function leaderIdsFromTaskRow(t: Pick<TaskRow, 'assignee_profile_id' | 'assignee_profile_ids'>): string[] {
@@ -217,6 +222,7 @@ export default function Tasks() {
   const [editDescription, setEditDescription] = useState('');
   const [editDue, setEditDue] = useState('');
   const [editAssigneeIds, setEditAssigneeIds] = useState<Set<string>>(() => new Set());
+  const [editChecklistLines, setEditChecklistLines] = useState<ChecklistLineEdit[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
@@ -714,6 +720,7 @@ export default function Tasks() {
     setEditDescription(t.description ?? '');
     setEditDue(toDatetimeLocalValue(t.due_at));
     setEditAssigneeIds(new Set(leaderIdsFromTaskRow(t)));
+    setEditChecklistLines((t.checklist ?? []).map((c) => ({ key: c.id, id: c.id, label: c.label, done: c.done })));
   };
 
   const findTaskListById = (id: string): { row: BranchTaskRow | MineTaskRow; list: 'mine' | 'branch' } | null => {
@@ -727,6 +734,7 @@ export default function Tasks() {
   const cancelEdit = () => {
     setEditingId(null);
     setEditSaving(false);
+    setEditChecklistLines([]);
   };
 
   const saveEdit = async () => {
@@ -752,6 +760,15 @@ export default function Tasks() {
       if (!groupTaskRow) {
         body.assignee_profile_ids = [...editAssigneeIds];
       }
+      body.checklist = editChecklistLines
+        .filter((line) => line.label.trim())
+        .map((line) => {
+          const label = line.label.trim();
+          if (line.id && isChecklistLineId(line.id)) {
+            return { id: line.id, label, done: line.done };
+          }
+          return { label, done: line.done };
+        });
       if (editDue.trim()) body.due_at = new Date(editDue).toISOString();
       else body.due_at = null;
       const path = taskApiPath(editingId, found.row);
@@ -1320,16 +1337,20 @@ export default function Tasks() {
                     {isEditing && (isTaskCreatorRow(t, user?.id) || isElevatedTaskViewer) ? (
                       <div className="space-y-3 p-3 rounded-lg border border-blue-200 bg-blue-50/40">
                         <p className="text-xs font-semibold text-blue-900">Edit task</p>
+                        <label className="text-xs text-gray-500 block -mb-2">Title</label>
                         <input
                           type="text"
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
+                          placeholder="Task title"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                         />
+                        <label className="text-xs text-gray-500 block -mb-2">Description</label>
                         <textarea
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
                           rows={2}
+                          placeholder="Task description"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none"
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1374,6 +1395,58 @@ export default function Tasks() {
                               splitClassName="rounded-lg border-gray-200 bg-white"
                               triggerClassName="text-sm text-gray-900"
                             />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">To-do items</p>
+                          <div className="space-y-2">
+                            {editChecklistLines.map((line) => (
+                              <div key={line.key} className="flex gap-2 items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={line.done}
+                                  onChange={(e) =>
+                                    setEditChecklistLines((prev) =>
+                                      prev.map((x) => (x.key === line.key ? { ...x, done: e.target.checked } : x)),
+                                    )
+                                  }
+                                  className="rounded border-gray-300"
+                                />
+                                <input
+                                  type="text"
+                                  value={line.label}
+                                  onChange={(e) =>
+                                    setEditChecklistLines((prev) =>
+                                      prev.map((x) => (x.key === line.key ? { ...x, label: e.target.value } : x)),
+                                    )
+                                  }
+                                  placeholder="To-do item"
+                                  className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditChecklistLines((prev) => prev.filter((x) => x.key !== line.key))
+                                  }
+                                  className="p-1 text-gray-400 hover:text-red-600"
+                                  title="Remove to-do item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditChecklistLines((prev) => [
+                                  ...prev,
+                                  { key: `e-${Date.now()}-${prev.length}`, label: '', done: false },
+                                ])
+                              }
+                              className="text-xs font-medium text-blue-600"
+                            >
+                              + Add to-do item
+                            </button>
                           </div>
                         </div>
                         <div className="flex gap-2 justify-end">
@@ -1569,16 +1642,20 @@ export default function Tasks() {
                     {isEditingMine && isTaskCreatorRow(t, user?.id) ? (
                       <div className="space-y-3 p-3 rounded-lg border border-blue-200 bg-blue-50/40">
                         <p className="text-xs font-semibold text-blue-900">Edit task</p>
+                        <label className="text-xs text-gray-500 block -mb-2">Title</label>
                         <input
                           type="text"
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
+                          placeholder="Task title"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                         />
+                        <label className="text-xs text-gray-500 block -mb-2">Description</label>
                         <textarea
                           value={editDescription}
                           onChange={(e) => setEditDescription(e.target.value)}
                           rows={2}
+                          placeholder="Task description"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none"
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1623,6 +1700,58 @@ export default function Tasks() {
                               splitClassName="rounded-lg border-gray-200 bg-white"
                               triggerClassName="text-sm text-gray-900"
                             />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">To-do items</p>
+                          <div className="space-y-2">
+                            {editChecklistLines.map((line) => (
+                              <div key={line.key} className="flex gap-2 items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={line.done}
+                                  onChange={(e) =>
+                                    setEditChecklistLines((prev) =>
+                                      prev.map((x) => (x.key === line.key ? { ...x, done: e.target.checked } : x)),
+                                    )
+                                  }
+                                  className="rounded border-gray-300"
+                                />
+                                <input
+                                  type="text"
+                                  value={line.label}
+                                  onChange={(e) =>
+                                    setEditChecklistLines((prev) =>
+                                      prev.map((x) => (x.key === line.key ? { ...x, label: e.target.value } : x)),
+                                    )
+                                  }
+                                  placeholder="To-do item"
+                                  className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditChecklistLines((prev) => prev.filter((x) => x.key !== line.key))
+                                  }
+                                  className="p-1 text-gray-400 hover:text-red-600"
+                                  title="Remove to-do item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditChecklistLines((prev) => [
+                                  ...prev,
+                                  { key: `e-${Date.now()}-${prev.length}`, label: '', done: false },
+                                ])
+                              }
+                              className="text-xs font-medium text-blue-600"
+                            >
+                              + Add to-do item
+                            </button>
                           </div>
                         </div>
                         <div className="flex gap-2 justify-end">

@@ -28,8 +28,8 @@ function normalizeDevApiBaseUrl(raw?: string): string {
 
   const isLocalHost = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
   const isPrivateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(parsed.hostname);
-
-  // In development, keep API host aligned with the current Expo host IP (phone on same LAN as Metro).
+  // In development, keep API host aligned with the current Expo host IP.
+  // This prevents stale LAN IPs in .env from breaking login after network changes.
   if (__DEV__ && detectedHost && (isLocalHost || isPrivateIp) && parsed.hostname !== detectedHost) {
     parsed.hostname = detectedHost;
     if (!parsed.port) parsed.port = "3000";

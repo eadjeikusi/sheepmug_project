@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ActivityIndicator, Alert, AppState, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { AuthProvider } from "../contexts/AuthContext";
 import { devWarn } from "../lib/devLog";
 import { BranchProvider } from "../contexts/BranchContext";
@@ -15,6 +16,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { navigateFromNotificationAction, parseExpoPushNotificationData } from "../lib/notificationNavigation";
 import { useRouter } from "expo-router";
 import { OfflineSyncProvider } from "../contexts/OfflineSyncContext";
+import { authenticateWithBiometrics, getBiometricAvailability } from "../lib/biometric";
+import { getBiometricUnlockEnabled, setBiometricUnlockEnabled } from "../lib/storage";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -43,6 +46,8 @@ function SplashSafetyHide() {
   return null;
 }
 
+const APP_LOCK_GRACE_MS = 45_000;
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
@@ -64,8 +69,89 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const { colors, resolvedScheme } = useTheme();
-  const { token } = useAuth();
+  const { token, loading, logout } = useAuth();
   const router = useRouter();
+  const [lockVisible, setLockVisible] = useState(false);
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockMessage, setLockMessage] = useState<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const lastBackgroundAtRef = useRef(Date.now());
+  const startupGuardCheckedRef = useRef(false);
+
+  const unlockApp = useCallback(async () => {
+    if (lockBusy) return;
+    setLockBusy(true);
+    try {
+      const availability = await getBiometricAvailability();
+      if (!availability.available) {
+        await setBiometricUnlockEnabled(false);
+        setLockVisible(false);
+        setLockMessage(null);
+        Alert.alert(
+          "Biometric unlock disabled",
+          availability.reason || "Biometric unlock is no longer available on this device."
+        );
+        return;
+      }
+
+      const result = await authenticateWithBiometrics("Unlock SheepMug");
+      if (result.success) {
+        setLockVisible(false);
+        setLockMessage(null);
+        return;
+      }
+      setLockMessage(result.errorMessage || "Unable to unlock. Try again.");
+    } finally {
+      setLockBusy(false);
+    }
+  }, [lockBusy]);
+
+  const checkAndLockIfNeeded = useCallback(async () => {
+    if (!token) {
+      setLockVisible(false);
+      setLockMessage(null);
+      return;
+    }
+    const enabled = await getBiometricUnlockEnabled();
+    if (!enabled) {
+      setLockVisible(false);
+      setLockMessage(null);
+      return;
+    }
+    setLockVisible(true);
+    setLockMessage(null);
+    await unlockApp();
+  }, [token, unlockApp]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (startupGuardCheckedRef.current) return;
+    startupGuardCheckedRef.current = true;
+    void checkAndLockIfNeeded();
+  }, [loading, checkAndLockIfNeeded]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      const prevState = appStateRef.current;
+      if (nextState === "active" && prevState.match(/inactive|background/)) {
+        const idleMs = Date.now() - lastBackgroundAtRef.current;
+        if (idleMs >= APP_LOCK_GRACE_MS) {
+          void checkAndLockIfNeeded();
+        }
+      }
+      if (nextState.match(/inactive|background/)) {
+        lastBackgroundAtRef.current = Date.now();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, [checkAndLockIfNeeded]);
+
+  useEffect(() => {
+    if (token) return;
+    setLockVisible(false);
+    setLockMessage(null);
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -150,6 +236,89 @@ function RootNavigator() {
         <Stack.Screen name="family/[id]" options={{ title: "Family" }} />
         <Stack.Screen name="members-deleted" options={{ title: "Deleted members" }} />
       </Stack>
+      <Modal visible={Boolean(lockVisible && token)} transparent animationType="fade" onRequestClose={() => {}}>
+        <View style={stylesLock.backdrop}>
+          <View style={[stylesLock.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[stylesLock.title, { color: colors.textPrimary }]}>Unlock SheepMug</Text>
+            <Text style={[stylesLock.body, { color: colors.textSecondary }]}>
+              {lockMessage || "Use your biometrics to continue. You can also use device passcode."}
+            </Text>
+            {lockBusy ? <ActivityIndicator color={colors.accent} /> : null}
+            <Pressable
+              style={[stylesLock.primaryBtn, { backgroundColor: colors.accent }, lockBusy && stylesLock.disabledBtn]}
+              onPress={() => void unlockApp()}
+              disabled={lockBusy}
+            >
+              <Text style={stylesLock.primaryBtnText}>Try again / Use passcode</Text>
+            </Pressable>
+            <Pressable
+              style={[stylesLock.secondaryBtn, { borderColor: colors.border }, lockBusy && stylesLock.disabledBtn]}
+              onPress={async () => {
+                await logout();
+                router.replace("/login");
+              }}
+              disabled={lockBusy}
+            >
+              <Text style={[stylesLock.secondaryBtnText, { color: colors.textPrimary }]}>Log out</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
+
+const stylesLock = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.42)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  card: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
+  },
+  title: {
+    fontSize: type.subtitle.size,
+    lineHeight: type.subtitle.lineHeight,
+    fontWeight: type.subtitle.weight,
+  },
+  body: {
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+  },
+  primaryBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  primaryBtnText: {
+    color: "#fff",
+    fontSize: type.bodyStrong.size,
+    lineHeight: type.bodyStrong.lineHeight,
+    fontWeight: type.bodyStrong.weight,
+  },
+  secondaryBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  secondaryBtnText: {
+    fontSize: type.bodyStrong.size,
+    lineHeight: type.bodyStrong.lineHeight,
+    fontWeight: type.bodyStrong.weight,
+  },
+  disabledBtn: {
+    opacity: 0.6,
+  },
+});

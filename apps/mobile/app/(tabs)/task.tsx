@@ -204,17 +204,24 @@ export default function TaskScreen() {
       setHasMore(false);
       return;
     }
+    let hasCachedRows = false;
     try {
       const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;
       const cached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(cacheKey);
       const fallbackCached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(
         "tasks:list:bootstrap"
       );
-      const cacheToUse = cached?.data ? cached : fallbackCached;
+      const legacyCached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>("tasks:list");
+      const cacheToUse = cached?.data ? cached : fallbackCached?.data ? fallbackCached : legacyCached;
+      hasCachedRows = Boolean(
+        cacheToUse?.data && Array.isArray(cacheToUse.data.tasks) && cacheToUse.data.tasks.length > 0
+      );
       if (cacheToUse?.data) {
         setTasks(Array.isArray(cacheToUse.data.tasks) ? cacheToUse.data.tasks : []);
         setTasksTotalCount(Number(cacheToUse.data.total_count || 0));
-        setHasMore(Array.isArray(cacheToUse.data.tasks) && cacheToUse.data.tasks.length === PAGE_SIZE);
+        const cachedLength = Array.isArray(cacheToUse.data.tasks) ? cacheToUse.data.tasks.length : 0;
+        const cachedTotal = Number(cacheToUse.data.total_count || cachedLength);
+        setHasMore(cachedLength < cachedTotal);
       }
         const { tasks: data, total_count } = await fetchTaskPage(0);
         setTasks(data);
@@ -223,7 +230,9 @@ export default function TaskScreen() {
         setLoadError(null);
         await setOfflineResourceCache(cacheKey, { tasks: data, total_count });
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load tasks");
+      if (!hasCachedRows) {
+        setLoadError(e instanceof Error ? e.message : "Could not load tasks");
+      }
     }
   }, [
     canSeeTaskList,

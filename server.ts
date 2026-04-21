@@ -99,6 +99,13 @@ function firstNonEmptyString(...vals: unknown[]): string {
   return "";
 }
 
+function normalizeBinaryGender(raw: unknown, out: "title" | "lower" = "title"): string | null {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === "male") return out === "lower" ? "male" : "Male";
+  if (v === "female") return out === "lower" ? "female" : "Female";
+  return null;
+}
+
 async function getOrgDefaultPhoneCountryIso(orgId: string): Promise<string> {
   const { data } = await supabaseAdmin
     .from("organizations")
@@ -2624,7 +2631,7 @@ app.post("/api/member-requests/public/:code", async (req, res) => {
         emergencyContactPhone: phonesPub.emergency_contact_phone,
         emergencyContactPhoneCountryIso: phonesPub.emergency_contact_phone_country_iso,
         dateOfBirth: formData.dob,
-        gender: formData.gender,
+        gender: normalizeBinaryGender(formData.gender, "lower") ?? "",
         maritalStatus: formData.marital_status,
         occupation: formData.occupation,
         dateJoined: formData.date_joined,
@@ -8687,7 +8694,7 @@ function normalizeImportRows(
     const phoneRaw = sanitizeImportText(row.phone, 80);
     const phone_country_iso_raw = sanitizeImportText(row.phone_country_iso, 8);
     const dobRaw = normalizeImportDate(row.dob);
-    const gender = sanitizeImportText(row.gender, 40) || null;
+    const gender = normalizeBinaryGender(sanitizeImportText(row.gender, 40), "title");
     const marital_status = sanitizeImportText(row.marital_status, 40) || null;
     const occupation = sanitizeImportText(row.occupation, 120) || null;
     const address = sanitizeImportText(row.address, 240);
@@ -12003,10 +12010,15 @@ app.put("/api/member-requests/:id", async (req, res) => {
       return res.status(400).json({ error: "form_data must be a JSON object" });
     }
 
+    const sanitizedFormData = { ...(form_data as Record<string, unknown>) };
+    if (Object.prototype.hasOwnProperty.call(sanitizedFormData, "gender")) {
+      sanitizedFormData.gender = normalizeBinaryGender(sanitizedFormData.gender, "lower") ?? "";
+    }
+
     const { data: updated, error: updateError } = await supabaseAdmin
       .from("member_requests")
       .update({
-        form_data,
+        form_data: sanitizedFormData,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -12113,7 +12125,7 @@ app.post("/api/member-requests/:id/approve", async (req, res) => {
       status: "active",
       first_name: fd.firstName || "Unknown",
       last_name: fd.lastName || "",
-      gender: fd.gender || null,
+      gender: normalizeBinaryGender(fd.gender, "title"),
       marital_status: fd.maritalStatus || null,
       occupation: fd.occupation || null,
     };
@@ -12359,7 +12371,7 @@ app.post("/api/members", async (req, res) => {
       status: memberData.status || 'active',
       first_name: memberData.first_name || (memberData.fullName ? memberData.fullName.split(' ')[0] : 'Unknown'),
       last_name: memberData.last_name || (memberData.fullName ? memberData.fullName.split(' ').slice(1).join(' ') : ''),
-      gender: memberData.gender || null,
+      gender: normalizeBinaryGender(memberData.gender, "title"),
       marital_status: memberData.marital_status || null,
       occupation: memberData.occupation || null,
       custom_fields: cfCreate.value,
@@ -12542,6 +12554,9 @@ app.put("/api/members/:id", async (req, res) => {
     mapField('gender', ['gender']);
     mapField('marital_status', ['marital_status', 'maritalStatus']);
     mapField('occupation', ['occupation']);
+    if (Object.prototype.hasOwnProperty.call(dbMemberData, "gender")) {
+      dbMemberData.gender = normalizeBinaryGender(dbMemberData.gender, "title");
+    }
 
     if (memberData.fullName || memberData.first_name || memberData.last_name) {
       if (memberData.first_name) dbMemberData.first_name = memberData.first_name;

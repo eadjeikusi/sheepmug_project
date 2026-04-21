@@ -36,6 +36,8 @@ import {
 } from "../../lib/eventLocation";
 import { colors, radius, sizes, type } from "../../theme";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
+import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
 
 type EventTab = "details" | "program" | "files" | "group" | "attendance";
 
@@ -47,6 +49,7 @@ type AttendanceMember = Member & {
   memberimage_url?: string | null;
   group_ids?: string[];
 };
+const EVENT_DETAIL_CACHE_PREFIX = "event:detail:";
 
 function eventTitle(event: EventItem | null): string {
   const raw = String((event?.name as string) || (event?.title as string) || "Event").trim() || "Event";
@@ -191,6 +194,19 @@ function asRosterMembers(raw: unknown): AttendanceMember[] {
   return raw.filter((x) => x && typeof x === "object" && !Array.isArray(x)) as AttendanceMember[];
 }
 
+function eventCoverImageFromItem(ev: EventItem | null): string | null {
+  if (!ev) return null;
+  const row = ev as EventItem & {
+    cover_image_url?: string | null;
+    cover_image?: string | null;
+    event_image_url?: string | null;
+    image_url?: string | null;
+  };
+  const raw = row.cover_image_url || row.cover_image || row.event_image_url || row.image_url;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  return normalizeImageUri(raw.trim());
+}
+
 export default function EventDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -224,25 +240,72 @@ export default function EventDetailScreen() {
       if (!id) return;
       setLoading(true);
       try {
-        const [detail, attendancePayload, typeRows] = await Promise.all([
-          api.events.detail(id).catch((): EventItem | null => null),
-          api.events.attendance.get(id).catch((): EventAttendancePayload => ({})),
-          api.eventTypes.list().catch(() => [] as EventTypeRow[]),
-        ]);
-        if (!mounted) return;
-        setEventTypeRows(
-          [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-        );
-        setEvent(detail as EventItem | null);
-        setAttendanceRows(Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : []);
-        setAudienceMembers(asRosterMembers(attendancePayload.members));
-        setAssignedGroups(
-          Array.isArray(attendancePayload.filter_groups)
-            ? attendancePayload.filter_groups
-            : Array.isArray(attendancePayload.assigned_groups)
-              ? attendancePayload.assigned_groups
-              : []
-        );
+        const cacheKey = `${EVENT_DETAIL_CACHE_PREFIX}${id}`;
+        const cached = await getOfflineResourceCache<{
+          event: EventItem | null;
+          attendance: EventAttendanceRow[];
+          members: AttendanceMember[];
+          assigned_groups: Group[];
+          filter_groups: Group[];
+          eventTypeRows: EventTypeRow[];
+        }>(cacheKey);
+        if (mounted && cached?.data) {
+          setEvent(cached.data.event ?? null);
+          setAttendanceRows(Array.isArray(cached.data.attendance) ? cached.data.attendance : []);
+          setAudienceMembers(asRosterMembers(cached.data.members));
+          setAssignedGroups(
+            Array.isArray(cached.data.filter_groups)
+              ? cached.data.filter_groups
+              : Array.isArray(cached.data.assigned_groups)
+                ? cached.data.assigned_groups
+                : []
+          );
+          setEventTypeRows(Array.isArray(cached.data.eventTypeRows) ? cached.data.eventTypeRows : []);
+        }
+        if (mounted && !cached?.data?.event) {
+          const eventsListCached = await getOfflineResourceCache<{ events: EventItem[] }>("events:list");
+          const fallbackEvent = (eventsListCached?.data?.events || []).find((e) => String(e.id) === String(id));
+          if (fallbackEvent) {
+            setEvent(fallbackEvent);
+          }
+        }
+
+        try {
+          const [detail, attendancePayload, typeRows] = await Promise.all([
+            api.events.detail(id),
+            api.events.attendance.get(id),
+            api.eventTypes.list(),
+          ]);
+          if (!mounted) return;
+          setEventTypeRows(
+            [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+          );
+          setEvent(detail as EventItem | null);
+          setAttendanceRows(Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : []);
+          setAudienceMembers(asRosterMembers(attendancePayload.members));
+          setAssignedGroups(
+            Array.isArray(attendancePayload.filter_groups)
+              ? attendancePayload.filter_groups
+              : Array.isArray(attendancePayload.assigned_groups)
+                ? attendancePayload.assigned_groups
+                : []
+          );
+          await setOfflineResourceCache(
+            cacheKey,
+            await hydratePayloadWithOfflineImages({
+              event: detail as EventItem | null,
+              attendance: Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : [],
+              members: asRosterMembers(attendancePayload.members),
+              assigned_groups: Array.isArray(attendancePayload.assigned_groups)
+                ? attendancePayload.assigned_groups
+                : [],
+              filter_groups: Array.isArray(attendancePayload.filter_groups) ? attendancePayload.filter_groups : [],
+              eventTypeRows: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+            })
+          );
+        } catch {
+          // keep cached detail/attendance/event-type payload when offline
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -423,33 +486,48 @@ export default function EventDetailScreen() {
 
   const tabs: EventTab[] = ["details", "program", "files", "group", "attendance"];
   const coverUri = useMemo(() => {
-    const raw = event?.cover_image_url;
-    if (typeof raw !== "string" || !raw.trim()) return null;
-    return normalizeImageUri(raw.trim());
-  }, [event?.cover_image_url]);
+    return eventCoverImageFromItem(event);
+  }, [event]);
 
   async function reloadDetail() {
     if (!id) return;
     setLoading(true);
     try {
-      const [detail, attendancePayload, typeRows] = await Promise.all([
-        api.events.detail(id).catch((): EventItem | null => null),
-        api.events.attendance.get(id).catch((): EventAttendancePayload => ({})),
-        api.eventTypes.list().catch(() => [] as EventTypeRow[]),
-      ]);
-      setEventTypeRows(
-        [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-      );
-      setEvent(detail as EventItem | null);
-      setAttendanceRows(Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : []);
-      setAudienceMembers(asRosterMembers(attendancePayload.members));
-      setAssignedGroups(
-        Array.isArray(attendancePayload.filter_groups)
-          ? attendancePayload.filter_groups
-          : Array.isArray(attendancePayload.assigned_groups)
-            ? attendancePayload.assigned_groups
-            : []
-      );
+      try {
+        const [detail, attendancePayload, typeRows] = await Promise.all([
+          api.events.detail(id),
+          api.events.attendance.get(id),
+          api.eventTypes.list(),
+        ]);
+        setEventTypeRows(
+          [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        );
+        setEvent(detail as EventItem | null);
+        setAttendanceRows(Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : []);
+        setAudienceMembers(asRosterMembers(attendancePayload.members));
+        setAssignedGroups(
+          Array.isArray(attendancePayload.filter_groups)
+            ? attendancePayload.filter_groups
+            : Array.isArray(attendancePayload.assigned_groups)
+              ? attendancePayload.assigned_groups
+              : []
+        );
+        await setOfflineResourceCache(
+          `${EVENT_DETAIL_CACHE_PREFIX}${id}`,
+          await hydratePayloadWithOfflineImages({
+            event: detail as EventItem | null,
+            attendance: Array.isArray(attendancePayload.attendance) ? attendancePayload.attendance : [],
+            members: asRosterMembers(attendancePayload.members),
+            assigned_groups: Array.isArray(attendancePayload.assigned_groups)
+              ? attendancePayload.assigned_groups
+              : [],
+            filter_groups: Array.isArray(attendancePayload.filter_groups) ? attendancePayload.filter_groups : [],
+            eventTypeRows: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+          })
+        );
+      } catch {
+        // keep current detail snapshot when offline
+      }
     } finally {
       setLoading(false);
     }

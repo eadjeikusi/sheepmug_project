@@ -5,19 +5,28 @@ import { useRouter } from "expo-router";
 import { useOfflineSync } from "../contexts/OfflineSyncContext";
 import {
   clearOfflineResourceCaches,
+  getOfflineBootstrapDone,
   getOfflineCacheSizeEstimate,
-  getOfflineMeta,
   setOfflineBootstrapDone,
 } from "../lib/storage";
 import { colors, radius, type } from "../theme";
 import { clearOfflineImageFiles, getOfflineImageCacheSizeBytes } from "../lib/offline/imageCache";
-import { getOfflineManifest } from "../lib/offline/manifest";
+import { cancelLocalTaskReminders } from "../lib/localTaskReminders";
 
-function formatTime(ts: string | null): string {
+function formatTimeAgo(ts: string | null): string {
   if (!ts) return "Never";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "Never";
-  return d.toLocaleString();
+  const diffMs = Date.now() - d.getTime();
+  if (diffMs < 60_000) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
 }
 
 function formatBytes(bytes: number): string {
@@ -46,6 +55,9 @@ export default function OfflineSyncScreen() {
     syncNow,
     retryItem,
     discardItem,
+    downloadRunning,
+    downloadProgressText,
+    startBackgroundDownload,
   } = useOfflineSync();
 
   const pendingItems = useMemo(
@@ -60,27 +72,17 @@ export default function OfflineSyncScreen() {
   );
   const [cacheBytes, setCacheBytes] = useState(0);
   const [imageBytes, setImageBytes] = useState(0);
-  const [cacheKeys, setCacheKeys] = useState(0);
   const [cacheLoading, setCacheLoading] = useState(true);
-  const [manifestSummary, setManifestSummary] = useState<string>("not initialized");
 
   const refreshCacheSize = useCallback(async () => {
     setCacheLoading(true);
     try {
-      const [estimate, imageSize, manifest, bootstrapDone] = await Promise.all([
+      const [estimate, imageSize] = await Promise.all([
         getOfflineCacheSizeEstimate(),
         getOfflineImageCacheSizeBytes(),
-        getOfflineManifest(),
-        getOfflineMeta("offline_bootstrap_done_v1"),
       ]);
       setCacheBytes(estimate.bytes);
       setImageBytes(imageSize);
-      setCacheKeys(estimate.keys);
-      setManifestSummary(
-        `${manifest.bootstrapped_entities.length} entities · last delta ${
-          manifest.last_delta_at ? formatTime(manifest.last_delta_at) : "Never"
-        } · setup ${bootstrapDone === "1" ? "done" : "pending"}`
-      );
     } finally {
       setCacheLoading(false);
     }
@@ -95,6 +97,29 @@ export default function OfflineSyncScreen() {
   useEffect(() => {
     void refreshCacheSize();
   }, [refreshCacheSize, queueItems.length, lastSyncAt]);
+
+  const handleDownloadPress = useCallback(() => {
+    void (async () => {
+      const alreadyDownloaded = await getOfflineBootstrapDone();
+      if (!alreadyDownloaded) {
+        await startBackgroundDownload();
+        return;
+      }
+      Alert.alert(
+        "Offline data already downloaded",
+        "This device already has full offline data. Download again to refresh with the latest updates?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Download again",
+            onPress: () => {
+              void startBackgroundDownload();
+            },
+          },
+        ]
+      );
+    })();
+  }, [startBackgroundDownload]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -113,13 +138,12 @@ export default function OfflineSyncScreen() {
             <Text style={styles.statusText}>{isOnline ? "Online" : "Offline mode"}</Text>
             {checking ? <ActivityIndicator size="small" color={colors.accent} /> : null}
           </View>
-          <Text style={styles.metaText}>Last synced: {formatTime(lastSyncAt)}</Text>
+          <Text style={styles.metaText}>Last synced: {formatTimeAgo(lastSyncAt)}</Text>
           <Text style={styles.metaText}>Pending: {pendingCount}  Failed: {failedCount}</Text>
           <Text style={styles.metaText}>
-            Local cache size: {cacheLoading ? "Calculating..." : `${formatBytes(cacheBytes)} (${cacheKeys} keys)`}
+            Local cache size: {cacheLoading ? "Calculating..." : formatBytes(cacheBytes)}
           </Text>
           <Text style={styles.metaText}>Image cache size: {cacheLoading ? "Calculating..." : formatBytes(imageBytes)}</Text>
-          <Text style={styles.metaText}>Manifest: {manifestSummary}</Text>
 
           <Pressable
             style={[styles.primaryBtn, syncing && styles.btnDisabled]}
@@ -136,6 +160,21 @@ export default function OfflineSyncScreen() {
             )}
           </Pressable>
           <Pressable
+            style={[styles.primaryBtn, (downloadRunning || syncing) && styles.btnDisabled]}
+            onPress={handleDownloadPress}
+            disabled={downloadRunning || syncing}
+          >
+            {downloadRunning ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="download-outline" size={16} color="#fff" />
+                <Text style={styles.primaryBtnText}>Download all data now</Text>
+              </>
+            )}
+          </Pressable>
+          <Text style={styles.metaText}>Download progress: {downloadProgressText}</Text>
+          <Pressable
             style={styles.secondaryBtn}
             onPress={() => {
               Alert.alert(
@@ -150,6 +189,7 @@ export default function OfflineSyncScreen() {
                       void (async () => {
                         await clearOfflineResourceCaches();
                         await clearOfflineImageFiles();
+                        await cancelLocalTaskReminders();
                         await setOfflineBootstrapDone(false);
                         await refreshCacheSize();
                         Alert.alert("Cache cleared", "Offline cache has been cleared.");
@@ -177,7 +217,7 @@ export default function OfflineSyncScreen() {
                   <Text style={styles.itemTitle}>
                     {String(item.payload.first_name || "")} {String(item.payload.last_name || "")}
                   </Text>
-                  <Text style={styles.itemMeta}>Queued: {formatTime(item.created_at)}</Text>
+                  <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
                 </View>
               </View>
             ))
@@ -193,7 +233,7 @@ export default function OfflineSyncScreen() {
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
-                  <Text style={styles.itemMeta}>Queued: {formatTime(item.created_at)}</Text>
+                  <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
                 </View>
                 <Text style={styles.pendingPill}>{item.status}</Text>
               </View>
@@ -242,7 +282,7 @@ export default function OfflineSyncScreen() {
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
-                  <Text style={styles.itemMeta}>Synced: {formatTime(item.synced_at)}</Text>
+                  <Text style={styles.itemMeta}>Synced: {formatTimeAgo(item.synced_at)}</Text>
                 </View>
                 <Text style={styles.syncedPill}>synced</Text>
               </View>

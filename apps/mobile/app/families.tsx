@@ -19,6 +19,22 @@ import { getOfflineResourceCache, setOfflineResourceCache } from "../lib/storage
 import { colors, radius, sizes, type } from "../theme";
 
 const PAGE_SIZE = 10;
+const FAMILIES_FULL_FETCH_SIZE = 200;
+
+async function fetchAllFamilies(branchId?: string): Promise<Family[]> {
+  const out: Family[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await api.families.list(
+      branchId ? { branch_id: branchId, offset, limit: FAMILIES_FULL_FETCH_SIZE } : { offset, limit: FAMILIES_FULL_FETCH_SIZE }
+    );
+    const rows = Array.isArray(page) ? page : [];
+    out.push(...rows);
+    if (rows.length < FAMILIES_FULL_FETCH_SIZE) break;
+    offset += FAMILIES_FULL_FETCH_SIZE;
+  }
+  return out;
+}
 
 export default function FamiliesListScreen() {
   const router = useRouter();
@@ -34,18 +50,20 @@ export default function FamiliesListScreen() {
     try {
       const bid = selectedBranch?.id?.trim() || undefined;
       const cacheKey = `families:list:${bid || "all"}`;
-      const cached = await getOfflineResourceCache<{ families: Family[] }>(cacheKey);
-      if (cached?.data?.families) {
-        const cachedList = Array.isArray(cached.data.families) ? cached.data.families : [];
+      const [cachedByBranch, cachedGlobal] = await Promise.all([
+        getOfflineResourceCache<{ families: Family[] }>(cacheKey),
+        getOfflineResourceCache<{ families: Family[] }>(bid ? "families:list" : "families:list:all"),
+      ]);
+      const cachedRows = cachedByBranch?.data?.families || cachedGlobal?.data?.families;
+      if (cachedRows) {
+        const cachedList = Array.isArray(cachedRows) ? cachedRows : [];
         setFamilies(cachedList);
-        setHasMore(cachedList.length === PAGE_SIZE);
+        setHasMore(false);
       }
       try {
-        const list = await api.families.list(
-          bid ? { branch_id: bid, offset: 0, limit: PAGE_SIZE } : { offset: 0, limit: PAGE_SIZE }
-        );
+        const list = await fetchAllFamilies(bid);
         setFamilies(Array.isArray(list) ? list : []);
-        setHasMore(list.length === PAGE_SIZE);
+        setHasMore(false);
         await setOfflineResourceCache(cacheKey, { families: Array.isArray(list) ? list : [] });
       } catch {
         // keep cached families when offline

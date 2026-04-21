@@ -576,16 +576,20 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
                       onClick={(e) => e.stopPropagation()}
                     >
                       <p className="text-xs font-semibold text-blue-900">Edit task</p>
+                      <label className="text-xs text-gray-500 block -mb-2">Title</label>
                       <input
                         type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Task title"
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                       />
+                      <label className="text-xs text-gray-500 block -mb-2">Description</label>
                       <textarea
                         value={editDescription}
                         onChange={(e) => setEditDescription(e.target.value)}
                         rows={2}
+                        placeholder="Task description"
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none"
                       />
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -602,7 +606,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
                         </div>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-700 mb-1">Checklist</p>
+                        <p className="text-xs font-medium text-gray-700 mb-1">To-do items</p>
                         <div className="space-y-2">
                           {editChecklistLines.map((line) => (
                             <div key={line.key} className="flex gap-2 items-center">

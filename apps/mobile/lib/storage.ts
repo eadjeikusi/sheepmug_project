@@ -129,7 +129,7 @@ export async function setThemePreference(preference: ThemePreference) {
   await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
 }
 
-/** Local preference only; server enrollment will wire in when facial recognition ships. */
+/** Local preference for device biometric unlock. */
 export async function getFaceRecognitionOptIn(): Promise<boolean> {
   const v = await AsyncStorage.getItem(FACE_RECOGNITION_OPT_IN_KEY);
   return v === "1";
@@ -137,6 +137,14 @@ export async function getFaceRecognitionOptIn(): Promise<boolean> {
 
 export async function setFaceRecognitionOptIn(enabled: boolean) {
   await AsyncStorage.setItem(FACE_RECOGNITION_OPT_IN_KEY, enabled ? "1" : "0");
+}
+
+export async function getBiometricUnlockEnabled(): Promise<boolean> {
+  return getFaceRecognitionOptIn();
+}
+
+export async function setBiometricUnlockEnabled(enabled: boolean) {
+  await setFaceRecognitionOptIn(enabled);
 }
 
 export async function getDashboardLastUpdatedAt(): Promise<string | null> {

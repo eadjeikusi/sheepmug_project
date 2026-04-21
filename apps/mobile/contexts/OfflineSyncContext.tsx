@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Alert, AppState } from "react-native";
 import { useAuth } from "./AuthContext";
 import { useBranch } from "./BranchContext";
 import {
@@ -21,6 +22,9 @@ import { probeApiOnline } from "../lib/offline/connectivity";
 import { runOfflineSync } from "../lib/offline/syncEngine";
 import type { OfflineQueueItem } from "../lib/offline/types";
 import { devLog, devWarn } from "../lib/devLog";
+import { runOfflineBootstrap } from "../lib/offline/bootstrap";
+import { setOfflineBootstrapDone } from "../lib/storage";
+import { rescheduleLocalTaskRemindersFromCache } from "../lib/localTaskReminders";
 
 type OfflineSyncState = {
   isOnline: boolean;
@@ -49,6 +53,9 @@ type OfflineSyncState = {
   queueMemberNoteDelete: (memberId: string, noteId: string) => Promise<OfflineQueueItem>;
   retryItem: (id: string) => Promise<void>;
   discardItem: (id: string) => Promise<void>;
+  downloadRunning: boolean;
+  downloadProgressText: string;
+  startBackgroundDownload: () => Promise<void>;
 };
 
 const OfflineSyncContext = createContext<OfflineSyncState | undefined>(undefined);
@@ -62,6 +69,12 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [queueItems, setQueueItems] = useState<OfflineQueueItem[]>([]);
+  const [downloadRunning, setDownloadRunning] = useState(false);
+  const [downloadProgressText, setDownloadProgressText] = useState("Not running");
+
+  const refreshLocalTaskReminders = useCallback(async () => {
+    await rescheduleLocalTaskRemindersFromCache();
+  }, []);
 
   const refreshQueue = useCallback(async () => {
     const items = await getOutboxItems();
@@ -102,6 +115,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       const run = await runOfflineSync(online);
       if (run.last_sync_at) setLastSyncAt(run.last_sync_at);
       await refreshQueue();
+      await refreshLocalTaskReminders();
       if (run.stats.attempted > 0 || run.stats.failed > 0 || run.stats.synced > 0) {
         devLog("offline sync: completed", run.stats);
       }
@@ -110,7 +124,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
     } finally {
       setSyncing(false);
     }
-  }, [syncing, checkConnectivity, refreshQueue, pendingCount, failedCount]);
+  }, [syncing, checkConnectivity, refreshQueue, pendingCount, failedCount, refreshLocalTaskReminders]);
 
   useEffect(() => {
     let mounted = true;
@@ -119,21 +133,31 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       setLastSyncAt(syncAt);
       await checkConnectivity();
+      await refreshLocalTaskReminders();
     })();
     return () => {
       mounted = false;
     };
-  }, [refreshQueue, checkConnectivity]);
+  }, [refreshQueue, checkConnectivity, refreshLocalTaskReminders]);
 
   useEffect(() => {
     const id = setInterval(() => {
-      if (pendingCount === 0 && failedCount === 0) return;
       void checkConnectivity().then((online) => {
-        if (online) void syncNow();
+        if (online && (pendingCount > 0 || failedCount > 0)) void syncNow();
       });
-    }, 20000);
+    }, 12000);
     return () => clearInterval(id);
   }, [checkConnectivity, syncNow, pendingCount, failedCount]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void checkConnectivity();
+        void refreshLocalTaskReminders();
+      }
+    });
+    return () => sub.remove();
+  }, [checkConnectivity, refreshLocalTaskReminders]);
 
   const queueMemberCreate = useCallback(
     async (payload: Record<string, unknown>) => {
@@ -250,6 +274,34 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
     await refreshQueue();
   }, [refreshQueue]);
 
+  const startBackgroundDownload = useCallback(async () => {
+    if (downloadRunning) return;
+    if (!isOnline) {
+      Alert.alert("Offline", "Connect to internet to download offline data.");
+      return;
+    }
+    setDownloadRunning(true);
+    setDownloadProgressText("Starting full data download...");
+    try {
+      await runOfflineBootstrap((p) => {
+        setDownloadProgressText(`${p.step} (${p.done}/${p.total})`);
+      });
+      await setOfflineBootstrapDone(true);
+      const now = new Date().toISOString();
+      await markLastSyncAt(now);
+      setLastSyncAt(now);
+      await refreshLocalTaskReminders();
+      setDownloadProgressText("Download complete");
+      Alert.alert("Offline data updated", "Background download complete.");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not download offline data";
+      setDownloadProgressText(`Failed: ${msg}`);
+      Alert.alert("Download failed", msg);
+    } finally {
+      setDownloadRunning(false);
+    }
+  }, [downloadRunning, isOnline, refreshLocalTaskReminders]);
+
   const pendingCount = useMemo(
     () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing").length,
     [queueItems]
@@ -279,6 +331,9 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       queueMemberNoteDelete,
       retryItem,
       discardItem,
+      downloadRunning,
+      downloadProgressText,
+      startBackgroundDownload,
     }),
     [
       isOnline,
@@ -299,6 +354,9 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       queueMemberNoteDelete,
       retryItem,
       discardItem,
+      downloadRunning,
+      downloadProgressText,
+      startBackgroundDownload,
     ]
   );
 

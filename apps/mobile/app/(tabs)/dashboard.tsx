@@ -58,6 +58,22 @@ type StripItem = {
 
 const AVATAR_STRIP_MAX = 5;
 const RECENT_MEMBERS_SPOTLIGHT_MAX = 5;
+const DASHBOARD_MEMBERS_FETCH_SIZE = 200;
+
+async function fetchAllMembersForDashboard(): Promise<{ members: Member[]; total_count: number }> {
+  const out: Member[] = [];
+  let offset = 0;
+  let totalCount = 0;
+  while (true) {
+    const page = await api.members.list({ offset, limit: DASHBOARD_MEMBERS_FETCH_SIZE });
+    const rows = Array.isArray(page.members) ? page.members : [];
+    out.push(...rows);
+    totalCount = Number(page.total_count || out.length);
+    if (rows.length < DASHBOARD_MEMBERS_FETCH_SIZE || out.length >= totalCount) break;
+    offset += DASHBOARD_MEMBERS_FETCH_SIZE;
+  }
+  return { members: out, total_count: totalCount || out.length };
+}
 
 /** Stable pseudo-shuffle so join cards show varied faces without flickering every render. */
 function shuffleMembersForStrip(members: Member[], seed: string): Member[] {
@@ -361,7 +377,8 @@ export default function DashboardScreen() {
   const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const { unreadCount } = useNotifications();
-  const { isOnline, syncing, checkConnectivity, lastSyncAt } = useOfflineSync();
+  const { isOnline, syncing, checkConnectivity, lastSyncAt, downloadRunning, downloadProgressText } = useOfflineSync();
+  const [, setClockTick] = useState(0);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -438,6 +455,13 @@ export default function DashboardScreen() {
   }, [loadMyFamilies]);
 
   useEffect(() => {
+    const id = setInterval(() => {
+      setClockTick((v) => v + 1);
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
       const [seen, cachedMembers] = await Promise.all([
@@ -450,7 +474,7 @@ export default function DashboardScreen() {
         setMembers(Array.isArray(cachedMembers.data.members) ? cachedMembers.data.members : []);
       }
       try {
-        const listPayload = await api.members.list({ limit: 100 });
+        const listPayload = await fetchAllMembersForDashboard();
         if (!mounted) return;
         setMembers(Array.isArray(listPayload?.members) ? listPayload.members : []);
         await setOfflineResourceCache("members:list", {
@@ -474,7 +498,9 @@ export default function DashboardScreen() {
         dashboardFocusSkipRefresh.current = false;
         return;
       }
-      void refreshDashboardData();
+      void refreshDashboardData().catch(() => {
+        // keep existing dashboard state when refresh fails
+      });
     }, [refreshDashboardData])
   );
 
@@ -508,7 +534,12 @@ export default function DashboardScreen() {
           members: [] as Member[],
         })),
       ]);
-      setRecentSpotlightMembers(Array.isArray(recentSpot?.members) ? recentSpot.members : []);
+      const safeRecentMembers = (
+        Array.isArray(recentSpot?.members) && recentSpot.members.length > 0
+          ? recentSpot.members
+          : homeMembers.slice(0, RECENT_MEMBERS_SPOTLIGHT_MAX)
+      ).filter((m) => Boolean(m && typeof m === "object" && typeof (m as { id?: unknown }).id === "string"));
+      setRecentSpotlightMembers(safeRecentMembers);
       setRecentSpotlightMode(
         recentSpot?.mode === "new_members" || recentSpot?.mode === "group_assignments"
           ? recentSpot.mode
@@ -529,7 +560,7 @@ export default function DashboardScreen() {
       setCountsLoading(false);
       setSpotlightLoading(false);
     }
-  }, [canViewGroupRequests, canViewMemberRequests, canViewTasks, selectedBranch?.id]);
+  }, [canViewGroupRequests, canViewMemberRequests, canViewTasks, selectedBranch?.id, homeMembers]);
 
   useEffect(() => {
     let mounted = true;
@@ -548,7 +579,9 @@ export default function DashboardScreen() {
   }, [selectedBranch?.id]);
 
   useEffect(() => {
-    void refreshDashboardData();
+    void refreshDashboardData().catch(() => {
+      // keep existing dashboard state when refresh fails
+    });
   }, [refreshDashboardData]);
 
   useEffect(() => {
@@ -650,19 +683,31 @@ export default function DashboardScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await checkConnectivity();
-      const [seen, listPayload] = await Promise.all([
-        getDashboardLastSeenCounts(),
-        api.members.list({ limit: 100 }),
-      ]);
-      setLastSeen(seen);
-      setMembers(Array.isArray(listPayload?.members) ? listPayload.members : []);
-      await setOfflineResourceCache("members:list", {
-        members: Array.isArray(listPayload?.members) ? listPayload.members : [],
-        total_count: Number(listPayload?.total_count || 0),
-      });
-      await refreshDashboardData();
-      await loadMyFamilies();
+      try {
+        await checkConnectivity();
+        const [seen, listPayload] = await Promise.all([
+          getDashboardLastSeenCounts(),
+          fetchAllMembersForDashboard(),
+        ]);
+        setLastSeen(seen);
+        setMembers(Array.isArray(listPayload?.members) ? listPayload.members : []);
+        await setOfflineResourceCache("members:list", {
+          members: Array.isArray(listPayload?.members) ? listPayload.members : [],
+          total_count: Number(listPayload?.total_count || 0),
+        });
+      } catch {
+        // keep existing/cached dashboard data when offline refresh fails
+      }
+      try {
+        await refreshDashboardData();
+      } catch {
+        // keep current dashboard cards when offline
+      }
+      try {
+        await loadMyFamilies();
+      } catch {
+        // keep current family spotlight when offline
+      }
     } finally {
       setRefreshing(false);
     }
@@ -705,12 +750,21 @@ export default function DashboardScreen() {
                 </View>
                 <Text style={styles.headerStatusMeta}>Last sync {formatTimeAgo(lastSyncAt)}</Text>
               </View>
+              {downloadRunning ? (
+                <View style={styles.downloadStatusRow}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                  <Text style={styles.downloadStatusText} numberOfLines={1}>
+                    Downloading: {downloadProgressText}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
           <View style={styles.headerActions}>
             <Pressable
-              style={styles.headerIconBtn}
+              style={[styles.headerIconBtn, (syncing || refreshing) && styles.headerIconBtnDisabled]}
               onPress={() => void onRefresh()}
+              disabled={syncing || refreshing}
               accessibilityLabel="Reload dashboard"
             >
               <Ionicons
@@ -1043,6 +1097,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
   },
+  downloadStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  downloadStatusText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 11,
+    color: colors.accent,
+    fontWeight: "600",
+  },
   dashGreeting: {
     flex: 1,
     flexDirection: "row",
@@ -1125,6 +1191,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+  },
+  headerIconBtnDisabled: {
+    opacity: 0.55,
   },
   notifBadge: {
     position: "absolute",

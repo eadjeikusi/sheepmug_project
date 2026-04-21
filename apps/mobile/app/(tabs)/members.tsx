@@ -125,6 +125,22 @@ const AGE_FILTER_MIN = 0;
 const AGE_FILTER_MAX = 100;
 const PAGE_SIZE = 10;
 const MEMBERS_CACHE_KEY = "members:list";
+const MEMBERS_FULL_FETCH_SIZE = 200;
+
+async function fetchAllMembersForOffline(): Promise<{ members: Member[]; total_count: number }> {
+  const out: Member[] = [];
+  let offset = 0;
+  let totalCount = 0;
+  while (true) {
+    const page = await api.members.list({ offset, limit: MEMBERS_FULL_FETCH_SIZE });
+    const rows = Array.isArray(page.members) ? page.members : [];
+    out.push(...rows);
+    totalCount = Number(page.total_count || out.length);
+    if (rows.length < MEMBERS_FULL_FETCH_SIZE || out.length >= totalCount) break;
+    offset += MEMBERS_FULL_FETCH_SIZE;
+  }
+  return { members: out, total_count: totalCount || out.length };
+}
 
 function parseAgeBound(value: string): number | null {
   const trimmed = value.trim();
@@ -250,14 +266,14 @@ export default function MembersScreen() {
           const cachedList = Array.isArray(cached.data.members) ? cached.data.members : [];
           setMembers(cachedList);
           setMembersTotalCount(Number(cached.data.total_count || 0));
-          setHasMoreMembers(cachedList.length === PAGE_SIZE);
+          setHasMoreMembers(false);
         }
         try {
-          const { members: list, total_count } = await api.members.list({ offset: 0, limit: PAGE_SIZE });
+          const { members: list, total_count } = await fetchAllMembersForOffline();
           if (!mounted) return;
           setMembers(list);
           setMembersTotalCount(total_count);
-          setHasMoreMembers(list.length === PAGE_SIZE);
+          setHasMoreMembers(false);
           await setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: list, total_count });
         } catch {
           // keep cached members when offline
@@ -811,14 +827,14 @@ export default function MembersScreen() {
 
   const refreshMembers = useCallback(async () => {
       const [listPayload, taskRes] = await Promise.all([
-        api.members.list({ offset: 0, limit: PAGE_SIZE }).catch(() => null),
+        fetchAllMembersForOffline().catch(() => null),
         api.tasks.mine({ status: "all", limit: 100 }).catch(() => null),
       ]);
       if (listPayload) {
         const list = listPayload.members;
         setMembers(list);
         setMembersTotalCount(listPayload.total_count);
-        setHasMoreMembers(list.length === PAGE_SIZE);
+        setHasMoreMembers(false);
         await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
           members: list,
           total_count: listPayload.total_count,
@@ -1056,11 +1072,11 @@ export default function MembersScreen() {
       }
 
       resetBulkSelection();
-      const listPayload = await api.members.list({ offset: 0, limit: PAGE_SIZE }).catch(() => null);
+      const listPayload = await fetchAllMembersForOffline().catch(() => null);
       if (listPayload) {
         setMembers(listPayload.members);
         setMembersTotalCount(listPayload.total_count);
-        setHasMoreMembers(listPayload.members.length === PAGE_SIZE);
+        setHasMoreMembers(false);
         await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
           members: listPayload.members,
           total_count: listPayload.total_count,

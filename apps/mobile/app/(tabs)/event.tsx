@@ -34,6 +34,7 @@ import {
   formatLongWeekdayDateTime,
 } from "../../lib/memberDisplayFormat";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
+import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
 
 type WhenMode = "upcoming" | "past";
 const PAGE_SIZE = 10;
@@ -79,8 +80,13 @@ function formatEventListMeta(e: EventItem): string {
 }
 
 function eventCoverImageUrl(e: EventItem): string | null {
-  const r = e as EventItem & { cover_image_url?: string | null };
-  const raw = r.cover_image_url;
+  const r = e as EventItem & {
+    cover_image_url?: string | null;
+    cover_image?: string | null;
+    event_image_url?: string | null;
+    image_url?: string | null;
+  };
+  const raw = r.cover_image_url || r.cover_image || r.event_image_url || r.image_url;
   if (typeof raw !== "string" || !raw.trim()) return null;
   return normalizeImageUri(raw.trim());
 }
@@ -214,10 +220,12 @@ export default function EventScreen() {
             [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
           );
           await setOfflineResourceCache(EVENTS_CACHE_KEY, {
-            events: data,
-            total_count,
-            groups: groupRows,
-            event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+            ...(await hydratePayloadWithOfflineImages({
+              events: data,
+              total_count,
+              groups: groupRows,
+              event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+            })),
           });
         } catch {
           // keep cached events when offline
@@ -251,10 +259,12 @@ export default function EventScreen() {
         [...safeTypes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
       );
       await setOfflineResourceCache(EVENTS_CACHE_KEY, {
-        events: data,
-        total_count,
-        groups: safeGroups,
-        event_types: [...safeTypes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+        ...(await hydratePayloadWithOfflineImages({
+          events: data,
+          total_count,
+          groups: safeGroups,
+          event_types: [...safeTypes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+        })),
       });
     } finally {
       setLoading(false);
@@ -270,12 +280,17 @@ export default function EventScreen() {
       const { events: next, total_count } = payload;
       setEvents((prev) => {
         const merged = [...prev, ...next];
-        void setOfflineResourceCache(EVENTS_CACHE_KEY, {
-          events: merged,
-          total_count,
-          groups,
-          event_types: eventTypeRows,
-        });
+        void (async () => {
+          await setOfflineResourceCache(
+            EVENTS_CACHE_KEY,
+            await hydratePayloadWithOfflineImages({
+              events: merged,
+              total_count,
+              groups,
+              event_types: eventTypeRows,
+            })
+          );
+        })();
         return merged;
       });
       setEventsTotalCount(total_count);

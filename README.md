@@ -36,3 +36,4 @@ This project implements an online member registration system for ChurchHub, allo
 ### Migration Notes:
 - The system relies on `organization_id` and `branch_id` being passed via URL parameters or context. Ensure these are correctly handled when migrating to different environments.
 - Database schema changes should be tracked in `DATABASE_SCHEMA.md`.
+

@@ -23,7 +23,7 @@ type Props = {
   onCreated: (m: Member) => void;
 };
 
-const GENDER_OPTIONS = ["Male", "Female", "Other"];
+const GENDER_OPTIONS = ["Male", "Female"];
 const MARITAL_OPTIONS = ["Single", "Married", "Divorced", "Widowed"];
 
 function todayYmd(): string {

@@ -19,12 +19,14 @@ import type { AnchorRect } from "../../components/FilterPickerModal";
 import { FilterPickerModal } from "../../components/FilterPickerModal";
 import { MinistriesGrid } from "../../components/MinistriesGrid";
 import { api } from "../../lib/api";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { useGroupTypeOptions } from "../../hooks/useGroupTypeOptions";
 import { usePermissions } from "../../hooks/usePermissions";
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { colors, radius, sizes, type } from "../../theme";
 
 const PAGE_SIZE = 10;
+const MINISTRIES_CACHE_KEY = "ministries:list";
 
 export default function MinistriesScreen() {
   const router = useRouter();
@@ -60,6 +62,16 @@ export default function MinistriesScreen() {
     async (showSpinner: boolean, reset = true) => {
       if (showSpinner) setLoading(true);
       try {
+        if (reset) {
+          const cached = await getOfflineResourceCache<{ groups: Group[]; total_count: number }>(
+            MINISTRIES_CACHE_KEY
+          );
+          if (cached?.data?.groups) {
+            const cachedRows = sortMinistriesGroups(cached.data.groups);
+            setGroups(cachedRows);
+            setHasMore(false);
+          }
+        }
         const offset = reset ? 0 : groups.length;
         const data = await api.groups.list(
           typeFilter.trim()
@@ -69,6 +81,14 @@ export default function MinistriesScreen() {
         const nextRows = sortMinistriesGroups(data);
         setGroups((prev) => (reset ? nextRows : sortMinistriesGroups([...prev, ...nextRows])));
         setHasMore(nextRows.length === PAGE_SIZE);
+        if (reset && !typeFilter.trim()) {
+          await setOfflineResourceCache(MINISTRIES_CACHE_KEY, {
+            groups: nextRows,
+            total_count: nextRows.length,
+          });
+        }
+      } catch {
+        // keep cached groups when offline
       } finally {
         if (showSpinner) setLoading(false);
       }

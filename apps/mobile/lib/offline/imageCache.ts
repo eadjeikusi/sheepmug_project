@@ -14,6 +14,34 @@ const IMAGE_FIELD_NAMES = new Set([
   "member_image_url",
 ]);
 
+function looksLikeImageField(key: string): boolean {
+  const k = key.toLowerCase();
+  return (
+    IMAGE_FIELD_NAMES.has(k) ||
+    k.endsWith("_image") ||
+    k.endsWith("_image_url") ||
+    k.endsWith("_avatar") ||
+    k.endsWith("_avatar_url") ||
+    k.endsWith("_url") ||
+    k.includes("image") ||
+    k.includes("avatar") ||
+    k.includes("photo")
+  );
+}
+
+function looksLikeImageUrl(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (!v) return false;
+  if (v.startsWith("file://")) return true;
+  if (v.startsWith("http://") || v.startsWith("https://") || v.startsWith("//") || v.startsWith("/")) {
+    if (v.includes("/storage/v1/object/public/")) return true;
+    if (v.includes("/uploads/")) return true;
+    if (/\.(png|jpe?g|webp|gif|heic|bmp)(\?|$)/i.test(v)) return true;
+    if (v.includes("image") || v.includes("avatar") || v.includes("photo")) return true;
+  }
+  return false;
+}
+
 let imageMapMemo: Record<string, string> | null = null;
 
 function imageDir(): string {
@@ -131,7 +159,7 @@ function collectImageUrls(input: unknown, out: Set<string>): void {
   if (!input || typeof input !== "object") return;
   const obj = input as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string" && IMAGE_FIELD_NAMES.has(key) && value.trim()) {
+    if (typeof value === "string" && looksLikeImageField(key) && looksLikeImageUrl(value)) {
       out.add(value.trim());
       continue;
     }
@@ -147,7 +175,7 @@ function deepReplaceImageUrls<T>(input: T, urlMap: Record<string, string>): T {
   const obj = input as Record<string, unknown>;
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string" && IMAGE_FIELD_NAMES.has(key) && value.trim()) {
+    if (typeof value === "string" && looksLikeImageField(key) && looksLikeImageUrl(value)) {
       const normalized = normalizeImageUri(value.trim()) || value.trim();
       next[key] = urlMap[normalized] || normalized;
     } else {

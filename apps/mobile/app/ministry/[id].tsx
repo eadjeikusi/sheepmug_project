@@ -42,6 +42,7 @@ import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
+import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
 import { colors, radius, sizes, type } from "../../theme";
 
 type MinistryTab = "subgroups" | "members" | "events" | "tasks" | "requests";
@@ -184,8 +185,13 @@ function formatEventListMeta(e: EventItem): string {
 }
 
 function eventCoverImageUrl(e: EventItem): string | null {
-  const r = e as EventItem & { cover_image_url?: string | null };
-  const raw = r.cover_image_url;
+  const r = e as EventItem & {
+    cover_image_url?: string | null;
+    cover_image?: string | null;
+    event_image_url?: string | null;
+    image_url?: string | null;
+  };
+  const raw = r.cover_image_url || r.cover_image || r.event_image_url || r.image_url;
   if (typeof raw !== "string" || !raw.trim()) return null;
   return normalizeImageUri(raw.trim());
 }
@@ -361,13 +367,15 @@ export default function MinistryDetailScreen() {
       setTaskLoadError(taskRowsResult.error);
       setRequests(requestRows);
       await setOfflineResourceCache(cacheKey, {
-        group: (detail ?? null) as Group | null,
-        subgroups: Array.isArray(sgRows) ? sgRows : [],
-        members: Array.isArray(memberRows) ? memberRows : [],
-        events: Array.isArray(eventRows) ? eventRows : [],
-        eventTypeRows: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
-        tasks: taskRowsResult.rows,
-        requests: Array.isArray(requestRows) ? requestRows : [],
+        ...(await hydratePayloadWithOfflineImages({
+          group: (detail ?? null) as Group | null,
+          subgroups: Array.isArray(sgRows) ? sgRows : [],
+          members: Array.isArray(memberRows) ? memberRows : [],
+          events: Array.isArray(eventRows) ? eventRows : [],
+          eventTypeRows: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+          tasks: taskRowsResult.rows,
+          requests: Array.isArray(requestRows) ? requestRows : [],
+        })),
       });
     } catch {
       // keep cached state when offline/network errors happen
