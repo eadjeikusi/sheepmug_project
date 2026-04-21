@@ -198,26 +198,30 @@ export default function EventScreen() {
           setGroups(Array.isArray(cached.data.groups) ? cached.data.groups : []);
           setEventTypeRows(Array.isArray(cached.data.event_types) ? cached.data.event_types : []);
         }
-        const [eventPayload, groupRows, typeRows] = await Promise.all([
-          api.events.list({ offset: 0, limit: PAGE_SIZE }),
-          api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]),
-          api.eventTypes.list().catch(() => [] as EventTypeRow[]),
-        ]);
-        if (!mounted) return;
-        const { events: data, total_count } = eventPayload;
-        setEvents(data);
-        setEventsTotalCount(total_count);
-        setHasMore(data.length === PAGE_SIZE);
-        setGroups(groupRows);
-        setEventTypeRows(
-          [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-        );
-        await setOfflineResourceCache(EVENTS_CACHE_KEY, {
-          events: data,
-          total_count,
-          groups: groupRows,
-          event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
-        });
+        try {
+          const [eventPayload, groupRows, typeRows] = await Promise.all([
+            api.events.list({ offset: 0, limit: PAGE_SIZE }),
+            api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]),
+            api.eventTypes.list().catch(() => [] as EventTypeRow[]),
+          ]);
+          if (!mounted) return;
+          const { events: data, total_count } = eventPayload;
+          setEvents(data);
+          setEventsTotalCount(total_count);
+          setHasMore(data.length === PAGE_SIZE);
+          setGroups(groupRows);
+          setEventTypeRows(
+            [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+          );
+          await setOfflineResourceCache(EVENTS_CACHE_KEY, {
+            events: data,
+            total_count,
+            groups: groupRows,
+            event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+          });
+        } catch {
+          // keep cached events when offline
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -231,23 +235,26 @@ export default function EventScreen() {
     setLoading(true);
     try {
       const [eventPayload, groupRows, typeRows] = await Promise.all([
-        api.events.list({ offset: 0, limit: PAGE_SIZE }),
-        api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]),
-        api.eventTypes.list().catch(() => [] as EventTypeRow[]),
+        api.events.list({ offset: 0, limit: PAGE_SIZE }).catch(() => null),
+        api.groups.list({ tree: true, limit: 100 }).catch(() => null),
+        api.eventTypes.list().catch(() => null),
       ]);
+      if (!eventPayload) return;
       const { events: data, total_count } = eventPayload;
+      const safeGroups = Array.isArray(groupRows) ? groupRows : groups;
+      const safeTypes = Array.isArray(typeRows) ? typeRows : eventTypeRows;
       setEvents(data);
       setEventsTotalCount(total_count);
       setHasMore(data.length === PAGE_SIZE);
-      setGroups(groupRows);
+      setGroups(safeGroups);
       setEventTypeRows(
-        [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        [...safeTypes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
       );
       await setOfflineResourceCache(EVENTS_CACHE_KEY, {
         events: data,
         total_count,
-        groups: groupRows,
-        event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+        groups: safeGroups,
+        event_types: [...safeTypes].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
       });
     } finally {
       setLoading(false);
@@ -258,7 +265,9 @@ export default function EventScreen() {
     if (loading || loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const { events: next, total_count } = await api.events.list({ offset: events.length, limit: PAGE_SIZE });
+      const payload = await api.events.list({ offset: events.length, limit: PAGE_SIZE }).catch(() => null);
+      if (!payload) return;
+      const { events: next, total_count } = payload;
       setEvents((prev) => {
         const merged = [...prev, ...next];
         void setOfflineResourceCache(EVENTS_CACHE_KEY, {
@@ -274,7 +283,7 @@ export default function EventScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [events.length, hasMore, loading, loadingMore]);
+  }, [events.length, hasMore, loading, loadingMore, groups, eventTypeRows]);
 
   async function onRefresh() {
     setRefreshing(true);

@@ -216,12 +216,12 @@ export default function TaskScreen() {
         setTasksTotalCount(Number(cacheToUse.data.total_count || 0));
         setHasMore(Array.isArray(cacheToUse.data.tasks) && cacheToUse.data.tasks.length === PAGE_SIZE);
       }
-      const { tasks: data, total_count } = await fetchTaskPage(0);
-      setTasks(data);
-      setTasksTotalCount(total_count);
-      setHasMore(data.length === PAGE_SIZE);
-      setLoadError(null);
-      await setOfflineResourceCache(cacheKey, { tasks: data, total_count });
+        const { tasks: data, total_count } = await fetchTaskPage(0);
+        setTasks(data);
+        setTasksTotalCount(total_count);
+        setHasMore(data.length === PAGE_SIZE);
+        setLoadError(null);
+        await setOfflineResourceCache(cacheKey, { tasks: data, total_count });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not load tasks");
     }
@@ -236,7 +236,9 @@ export default function TaskScreen() {
     if (!canSeeTaskList || loading || refreshing || loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const { tasks: next, total_count } = await fetchTaskPage(tasks.length);
+      const payload = await fetchTaskPage(tasks.length).catch(() => null);
+      if (!payload) return;
+      const { tasks: next, total_count } = payload;
       setTasks((prev) => {
         const merged = [...prev, ...next];
         const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;

@@ -68,9 +68,13 @@ export default function FamilyMembersScreen() {
       if (cached?.data?.members) {
         setMembers(Array.isArray(cached.data.members) ? cached.data.members : []);
       }
-      const list = await api.families.members(familyId);
-      setMembers(Array.isArray(list) ? list : []);
-      await setOfflineResourceCache(cacheKey, { members: Array.isArray(list) ? list : [] });
+      try {
+        const list = await api.families.members(familyId);
+        setMembers(Array.isArray(list) ? list : []);
+        await setOfflineResourceCache(cacheKey, { members: Array.isArray(list) ? list : [] });
+      } catch {
+        // keep cached members when offline
+      }
     } finally {
       setLoading(false);
     }

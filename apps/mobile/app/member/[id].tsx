@@ -406,57 +406,61 @@ export default function MemberProfileScreen() {
           setMemberStatusOptions(Array.isArray(cached.data.statusOpts) ? cached.data.statusOpts : []);
           setMemberCustomFieldDefs(Array.isArray(cached.data.fieldDefs) ? cached.data.fieldDefs : []);
         }
-        const [
-          detailMember,
-          listFallback,
-          memberGroups,
-          memberEvents,
-          memberTasksResult,
-          memberNotes,
-          memberImportantDates,
-          statusOpts,
-          fieldDefs,
-        ] = await Promise.all([
-          api.members.get(memberId),
-          api.members.list({ limit: 100 }),
-          api.members.groups(memberId),
-          api.members.events(memberId),
-          (async () => {
-            try {
-              const rows = await api.members.tasks(memberId);
-              return { rows, error: null as string | null };
-            } catch (e: unknown) {
-              const message = e instanceof Error ? e.message : "Could not load member tasks";
-              return { rows: [] as TaskItem[], error: message };
-            }
-          })(),
-          api.members.notes.list(memberId),
-          api.members.importantDates.list(memberId),
-          api.memberStatusOptions(),
-          api.customFieldDefinitions("member"),
-        ]);
-        if (!mounted) return;
+        try {
+          const [
+            detailMember,
+            listFallback,
+            memberGroups,
+            memberEvents,
+            memberTasksResult,
+            memberNotes,
+            memberImportantDates,
+            statusOpts,
+            fieldDefs,
+          ] = await Promise.all([
+            api.members.get(memberId),
+            api.members.list({ limit: 100 }),
+            api.members.groups(memberId),
+            api.members.events(memberId),
+            (async () => {
+              try {
+                const rows = await api.members.tasks(memberId);
+                return { rows, error: null as string | null };
+              } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : "Could not load member tasks";
+                return { rows: [] as TaskItem[], error: message };
+              }
+            })(),
+            api.members.notes.list(memberId),
+            api.members.importantDates.list(memberId),
+            api.memberStatusOptions(),
+            api.customFieldDefinitions("member"),
+          ]);
+          if (!mounted) return;
 
-        const fromList = listFallback.members.find((m) => m.id === memberId) || null;
-        setMember(detailMember || fromList);
-        setMinistries(memberGroups);
-        setEvents(memberEvents);
-        setTasks(memberTasksResult.rows);
-        setTaskLoadError(memberTasksResult.error);
-        setNotes(memberNotes);
-        setImportantDates(memberImportantDates);
-        setMemberStatusOptions(statusOpts);
-        setMemberCustomFieldDefs(fieldDefs);
-        await setOfflineResourceCache(memberDetailCacheKey(memberId), {
-          member: detailMember || fromList,
-          ministries: memberGroups,
-          events: memberEvents,
-          tasks: memberTasksResult.rows,
-          notes: memberNotes,
-          importantDates: memberImportantDates,
-          statusOpts,
-          fieldDefs,
-        });
+          const fromList = listFallback.members.find((m) => m.id === memberId) || null;
+          setMember(detailMember || fromList);
+          setMinistries(memberGroups);
+          setEvents(memberEvents);
+          setTasks(memberTasksResult.rows);
+          setTaskLoadError(memberTasksResult.error);
+          setNotes(memberNotes);
+          setImportantDates(memberImportantDates);
+          setMemberStatusOptions(statusOpts);
+          setMemberCustomFieldDefs(fieldDefs);
+          await setOfflineResourceCache(memberDetailCacheKey(memberId), {
+            member: detailMember || fromList,
+            ministries: memberGroups,
+            events: memberEvents,
+            tasks: memberTasksResult.rows,
+            notes: memberNotes,
+            importantDates: memberImportantDates,
+            statusOpts,
+            fieldDefs,
+          });
+        } catch {
+          // keep cached member detail when offline
+        }
       } finally {
         if (mounted) setLoading(false);
       }

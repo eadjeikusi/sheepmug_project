@@ -40,12 +40,16 @@ export default function FamiliesListScreen() {
         setFamilies(cachedList);
         setHasMore(cachedList.length === PAGE_SIZE);
       }
-      const list = await api.families.list(
-        bid ? { branch_id: bid, offset: 0, limit: PAGE_SIZE } : { offset: 0, limit: PAGE_SIZE }
-      );
-      setFamilies(Array.isArray(list) ? list : []);
-      setHasMore(list.length === PAGE_SIZE);
-      await setOfflineResourceCache(cacheKey, { families: Array.isArray(list) ? list : [] });
+      try {
+        const list = await api.families.list(
+          bid ? { branch_id: bid, offset: 0, limit: PAGE_SIZE } : { offset: 0, limit: PAGE_SIZE }
+        );
+        setFamilies(Array.isArray(list) ? list : []);
+        setHasMore(list.length === PAGE_SIZE);
+        await setOfflineResourceCache(cacheKey, { families: Array.isArray(list) ? list : [] });
+      } catch {
+        // keep cached families when offline
+      }
     } finally {
       setLoading(false);
     }
@@ -70,7 +74,9 @@ export default function FamiliesListScreen() {
     try {
       const bid = selectedBranch?.id?.trim() || undefined;
       const list = await api.families
-        .list(bid ? { branch_id: bid, offset: families.length, limit: PAGE_SIZE } : { offset: families.length, limit: PAGE_SIZE });
+        .list(bid ? { branch_id: bid, offset: families.length, limit: PAGE_SIZE } : { offset: families.length, limit: PAGE_SIZE })
+        .catch(() => null);
+      if (!list) return;
       setFamilies((prev) => {
         const merged = [...prev, ...list];
         void setOfflineResourceCache(`families:list:${bid || "all"}`, { families: merged });

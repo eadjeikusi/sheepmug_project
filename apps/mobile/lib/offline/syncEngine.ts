@@ -1,5 +1,7 @@
 import { api } from "../api";
 import { devLog, devWarn } from "../devLog";
+import { runOfflineBootstrap } from "./bootstrap";
+import { getOfflineManifest, patchOfflineManifest } from "./manifest";
 import {
   getLastSyncAt,
   getOutboxItems,
@@ -158,6 +160,27 @@ export async function runOfflineSync(
       stats.failed += 1;
       devWarn("offline sync: item failed", { id: item.id, operation: item.operation, msg });
     }
+  }
+
+  // Delta refresh strategy: until backend cursors land, refresh full caches online.
+  try {
+    const manifest = await getOfflineManifest();
+    await runOfflineBootstrap();
+    const nowIso = new Date().toISOString();
+    await patchOfflineManifest({
+      ...manifest,
+      last_delta_at: nowIso,
+      cursors: {
+        ...manifest.cursors,
+        members: nowIso,
+        events: nowIso,
+        tasks: nowIso,
+        groups: nowIso,
+        families: nowIso,
+      },
+    });
+  } catch (error) {
+    devWarn("offline delta refresh failed", error instanceof Error ? error.message : String(error));
   }
 
   return { stats, last_sync_at: await getLastSyncAt() };

@@ -24,6 +24,7 @@ import { FilterPickerModal, type AnchorRect } from "../../components/FilterPicke
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { clearOfflineResourceCaches, setOfflineBootstrapDone } from "../../lib/storage";
+import { clearOfflineImageFiles } from "../../lib/offline/imageCache";
 
 function initials(first?: string, last?: string) {
   const a = (first || "").trim()[0] || "";
@@ -182,6 +183,7 @@ export default function MenuScreen() {
                     onPress: () => {
                       void (async () => {
                         await clearOfflineResourceCaches();
+                        await clearOfflineImageFiles();
                         await setOfflineBootstrapDone(false);
                         Alert.alert("Cache cleared", "Offline cache has been cleared.");
                         router.replace("/offline-setup");

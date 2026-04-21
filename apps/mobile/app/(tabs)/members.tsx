@@ -252,12 +252,16 @@ export default function MembersScreen() {
           setMembersTotalCount(Number(cached.data.total_count || 0));
           setHasMoreMembers(cachedList.length === PAGE_SIZE);
         }
-        const { members: list, total_count } = await api.members.list({ offset: 0, limit: PAGE_SIZE });
-        if (!mounted) return;
-        setMembers(list);
-        setMembersTotalCount(total_count);
-        setHasMoreMembers(list.length === PAGE_SIZE);
-        await setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: list, total_count });
+        try {
+          const { members: list, total_count } = await api.members.list({ offset: 0, limit: PAGE_SIZE });
+          if (!mounted) return;
+          setMembers(list);
+          setMembersTotalCount(total_count);
+          setHasMoreMembers(list.length === PAGE_SIZE);
+          await setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: list, total_count });
+        } catch {
+          // keep cached members when offline
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -273,13 +277,14 @@ export default function MembersScreen() {
       const [opts, defs, taskRes] = await Promise.all([
         api.memberStatusOptions().catch(() => []),
         api.customFieldDefinitions("member").catch(() => []),
-        api.tasks.mine({ status: "all", limit: 100 }).catch(() => ({ tasks: [] as TaskItem[], total_count: 0 })),
+        api.tasks.mine({ status: "all", limit: 100 }).catch(() => null),
       ]);
       if (!mounted) return;
       setMemberStatusOptionsForAdd(opts);
       setMemberFieldDefsForAdd(defs);
       const pendingIds = new Set<string>();
-      for (const t of taskRes.tasks as Record<string, unknown>[]) {
+      const taskRows = taskRes?.tasks ?? [];
+      for (const t of taskRows as Record<string, unknown>[]) {
         if (String(t.status || "").toLowerCase() !== "pending") continue;
         const mid = t.member_id;
         if (typeof mid === "string" && mid) pendingIds.add(mid);
@@ -805,25 +810,29 @@ export default function MembersScreen() {
   const selectedCount = selectedMembers.size;
 
   const refreshMembers = useCallback(async () => {
-    const [listPayload, taskRes] = await Promise.all([
-      api.members.list({ offset: 0, limit: PAGE_SIZE }),
-      api.tasks.mine({ status: "all", limit: 100 }),
-    ]);
-    const list = listPayload.members;
-    setMembers(list);
-    setMembersTotalCount(listPayload.total_count);
-    setHasMoreMembers(list.length === PAGE_SIZE);
-    await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
-      members: list,
-      total_count: listPayload.total_count,
-    });
-    const pendingIds = new Set<string>();
-    for (const t of taskRes.tasks as Record<string, unknown>[]) {
-      if (String(t.status || "").toLowerCase() !== "pending") continue;
-      const mid = t.member_id;
-      if (typeof mid === "string" && mid) pendingIds.add(mid);
-    }
-    setMemberPendingTaskIds(pendingIds);
+      const [listPayload, taskRes] = await Promise.all([
+        api.members.list({ offset: 0, limit: PAGE_SIZE }).catch(() => null),
+        api.tasks.mine({ status: "all", limit: 100 }).catch(() => null),
+      ]);
+      if (listPayload) {
+        const list = listPayload.members;
+        setMembers(list);
+        setMembersTotalCount(listPayload.total_count);
+        setHasMoreMembers(list.length === PAGE_SIZE);
+        await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
+          members: list,
+          total_count: listPayload.total_count,
+        });
+      }
+      if (taskRes) {
+        const pendingIds = new Set<string>();
+        for (const t of taskRes.tasks as Record<string, unknown>[]) {
+          if (String(t.status || "").toLowerCase() !== "pending") continue;
+          const mid = t.member_id;
+          if (typeof mid === "string" && mid) pendingIds.add(mid);
+        }
+        setMemberPendingTaskIds(pendingIds);
+      }
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -839,9 +848,11 @@ export default function MembersScreen() {
     if (loading || refreshing || loadingMoreMembers || !hasMoreMembers) return;
     setLoadingMoreMembers(true);
     try {
-      const { members: next, total_count } = await api.members
+      const list = await api.members
         .list({ offset: members.length, limit: PAGE_SIZE })
-        .catch(() => ({ members: [] as Member[], total_count: 0 }));
+        .catch(() => null);
+      if (!list) return;
+      const { members: next, total_count } = list;
       setMembers((prev) => {
         const merged = [...prev, ...next];
         void setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: merged, total_count });
@@ -1045,12 +1056,16 @@ export default function MembersScreen() {
       }
 
       resetBulkSelection();
-      const { members: list, total_count } = await api.members
-        .list({ offset: 0, limit: PAGE_SIZE })
-        .catch(() => ({ members: [] as Member[], total_count: 0 }));
-      setMembers(list);
-      setMembersTotalCount(total_count);
-      setHasMoreMembers(list.length === PAGE_SIZE);
+      const listPayload = await api.members.list({ offset: 0, limit: PAGE_SIZE }).catch(() => null);
+      if (listPayload) {
+        setMembers(listPayload.members);
+        setMembersTotalCount(listPayload.total_count);
+        setHasMoreMembers(listPayload.members.length === PAGE_SIZE);
+        await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
+          members: listPayload.members,
+          total_count: listPayload.total_count,
+        });
+      }
 
       if (navigateToMinistryId) {
         router.push(`/ministry/${encodeURIComponent(navigateToMinistryId)}`);

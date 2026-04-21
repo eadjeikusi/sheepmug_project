@@ -1,15 +1,36 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useOfflineSync } from "../contexts/OfflineSyncContext";
+import {
+  clearOfflineResourceCaches,
+  getOfflineCacheSizeEstimate,
+  getOfflineMeta,
+  setOfflineBootstrapDone,
+} from "../lib/storage";
 import { colors, radius, type } from "../theme";
+import { clearOfflineImageFiles, getOfflineImageCacheSizeBytes } from "../lib/offline/imageCache";
+import { getOfflineManifest } from "../lib/offline/manifest";
 
 function formatTime(ts: string | null): string {
   if (!ts) return "Never";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "Never";
   return d.toLocaleString();
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const rounded = unitIndex === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded} ${units[unitIndex]}`;
 }
 
 export default function OfflineSyncScreen() {
@@ -37,12 +58,43 @@ export default function OfflineSyncScreen() {
     () => pendingItems.filter((x) => x.operation === "member_create"),
     [pendingItems]
   );
+  const [cacheBytes, setCacheBytes] = useState(0);
+  const [imageBytes, setImageBytes] = useState(0);
+  const [cacheKeys, setCacheKeys] = useState(0);
+  const [cacheLoading, setCacheLoading] = useState(true);
+  const [manifestSummary, setManifestSummary] = useState<string>("not initialized");
+
+  const refreshCacheSize = useCallback(async () => {
+    setCacheLoading(true);
+    try {
+      const [estimate, imageSize, manifest, bootstrapDone] = await Promise.all([
+        getOfflineCacheSizeEstimate(),
+        getOfflineImageCacheSizeBytes(),
+        getOfflineManifest(),
+        getOfflineMeta("offline_bootstrap_done_v1"),
+      ]);
+      setCacheBytes(estimate.bytes);
+      setImageBytes(imageSize);
+      setCacheKeys(estimate.keys);
+      setManifestSummary(
+        `${manifest.bootstrapped_entities.length} entities · last delta ${
+          manifest.last_delta_at ? formatTime(manifest.last_delta_at) : "Never"
+        } · setup ${bootstrapDone === "1" ? "done" : "pending"}`
+      );
+    } finally {
+      setCacheLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOnline || syncing) return;
     if (pendingCount === 0 && failedCount === 0) return;
     void syncNow();
   }, [isOnline, syncing, pendingCount, failedCount, syncNow]);
+
+  useEffect(() => {
+    void refreshCacheSize();
+  }, [refreshCacheSize, queueItems.length, lastSyncAt]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -63,6 +115,11 @@ export default function OfflineSyncScreen() {
           </View>
           <Text style={styles.metaText}>Last synced: {formatTime(lastSyncAt)}</Text>
           <Text style={styles.metaText}>Pending: {pendingCount}  Failed: {failedCount}</Text>
+          <Text style={styles.metaText}>
+            Local cache size: {cacheLoading ? "Calculating..." : `${formatBytes(cacheBytes)} (${cacheKeys} keys)`}
+          </Text>
+          <Text style={styles.metaText}>Image cache size: {cacheLoading ? "Calculating..." : formatBytes(imageBytes)}</Text>
+          <Text style={styles.metaText}>Manifest: {manifestSummary}</Text>
 
           <Pressable
             style={[styles.primaryBtn, syncing && styles.btnDisabled]}
@@ -77,6 +134,35 @@ export default function OfflineSyncScreen() {
                 <Text style={styles.primaryBtnText}>{isOnline ? "Sync now" : "Try sync now"}</Text>
               </>
             )}
+          </Pressable>
+          <Pressable
+            style={styles.secondaryBtn}
+            onPress={() => {
+              Alert.alert(
+                "Clear cached data",
+                "This removes downloaded offline data from this device. You can download it again.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Clear cache",
+                    style: "destructive",
+                    onPress: () => {
+                      void (async () => {
+                        await clearOfflineResourceCaches();
+                        await clearOfflineImageFiles();
+                        await setOfflineBootstrapDone(false);
+                        await refreshCacheSize();
+                        Alert.alert("Cache cleared", "Offline cache has been cleared.");
+                        router.replace("/offline-setup");
+                      })();
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="trash-outline" size={15} color="#b91c1c" />
+            <Text style={styles.secondaryBtnText}>Clear cached data</Text>
           </Pressable>
         </View>
 
@@ -225,6 +311,18 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   primaryBtnText: { color: "#fff", fontSize: type.body.size, fontWeight: "700" },
+  secondaryBtn: {
+    minHeight: 38,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    backgroundColor: "#fff1f2",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  secondaryBtnText: { color: "#b91c1c", fontSize: type.caption.size, fontWeight: "700" },
   section: {
     borderWidth: 1,
     borderColor: colors.border,
