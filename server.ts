@@ -11046,40 +11046,19 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
       update.checklist !== undefined
         ? (update.checklist as TaskChecklistItem[])
         : parseChecklistFromRow(row.checklist ?? [], row.id);
-    const explicitStatusRaw =
-      typeof body.status === "string" && String(body.status).trim().length > 0
-        ? String(body.status).trim()
-        : null;
     const hadExplicitStatusInBody =
       typeof body.status === "string" && String(body.status).trim().length > 0;
 
-    /** Checklist drives status: pending until items are checked (→ in progress); uncheck from all-done → in progress. */
+    /**
+     * Checklist updates should not auto-complete the whole task.
+     * Move pending/completed -> in_progress once any checklist item is checked, unless caller explicitly set status.
+     */
     if (body.checklist !== undefined && finalChecklist.length > 0 && !hadExplicitStatusInBody) {
-      const notAllDone = !finalChecklist.every((i) => i.done);
-      if (notAllDone) {
-        if (row.status === "completed") {
-          update.status = "in_progress";
-          update.completed_at = null;
-        } else if (row.status === "pending" && finalChecklist.some((i) => i.done)) {
-          update.status = "in_progress";
-          update.completed_at = null;
-        }
+      const anyDone = finalChecklist.some((i) => i.done);
+      if (anyDone && row.status !== "cancelled" && row.status !== "in_progress") {
+        update.status = "in_progress";
+        update.completed_at = null;
       }
-    }
-
-    const baseStatus = typeof update.status === "string" ? String(update.status) : row.status;
-    if (
-      body.checklist !== undefined &&
-      finalChecklist.length > 0 &&
-      finalChecklist.every((i) => i.done) &&
-      row.status !== "cancelled" &&
-      baseStatus !== "cancelled" &&
-      explicitStatusRaw !== "pending" &&
-      explicitStatusRaw !== "in_progress" &&
-      explicitStatusRaw !== "cancelled"
-    ) {
-      update.status = "completed";
-      update.completed_at = new Date().toISOString();
     }
 
     const { data: updated, error: upErr } = await supabaseAdmin
@@ -11778,19 +11757,16 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
       typeof body.status === "string" && String(body.status).trim().length > 0
         ? String(body.status).trim()
         : null;
-    const baseStatus = typeof update.status === "string" ? String(update.status) : row.status;
-    if (
-      body.checklist !== undefined &&
-      finalChecklist.length > 0 &&
-      finalChecklist.every((i) => i.done) &&
-      row.status !== "cancelled" &&
-      baseStatus !== "cancelled" &&
-      explicitStatusRaw !== "pending" &&
-      explicitStatusRaw !== "in_progress" &&
-      explicitStatusRaw !== "cancelled"
-    ) {
-      update.status = "completed";
-      update.completed_at = new Date().toISOString();
+    /**
+     * Keep checklist and task status decoupled for group tasks too.
+     * Explicit status updates still work; checklist progress only moves to in_progress.
+     */
+    if (body.checklist !== undefined && finalChecklist.length > 0 && explicitStatusRaw == null) {
+      const anyDone = finalChecklist.some((i) => i.done);
+      if (anyDone && row.status !== "cancelled" && row.status !== "in_progress") {
+        update.status = "in_progress";
+        update.completed_at = null;
+      }
     }
 
     const { data: updated, error: upErr } = await supabaseAdmin

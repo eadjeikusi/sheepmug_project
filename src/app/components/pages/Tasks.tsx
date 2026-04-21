@@ -671,7 +671,7 @@ export default function Tasks() {
     try {
       const canEditStruct = isGroupTask(task) ? canEditChecklistGroup : canEditChecklistMember;
       let body: Record<string, unknown>;
-      if (canEditStruct && !leaderIdsFromTaskRow(task).includes(user.id)) {
+      if (canEditStruct) {
         const full = (task.checklist ?? []).map((c) => (c.id === itemId ? { ...c, done } : c));
         body = { checklist: full.map((c) => ({ id: c.id, label: c.label, done: c.done })) };
       } else {

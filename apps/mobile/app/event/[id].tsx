@@ -139,6 +139,13 @@ function statusTone(status: AttendanceStatus): { bg: string; border: string; tex
   return { bg: "#f8fafc", border: "#cbd5e1", text: "#475569" };
 }
 
+function statusCardTone(status: AttendanceStatus): { bg: string; border: string } {
+  if (status === "present") return { bg: "#ecfdf5", border: "#86efac" };
+  if (status === "absent") return { bg: "#fef2f2", border: "#fca5a5" };
+  if (status === "unsure") return { bg: "#fffbeb", border: "#fde68a" };
+  return { bg: "#f8fafc", border: "#cbd5e1" };
+}
+
 type ProgramPart = {
   id: string;
   title: string;
@@ -853,8 +860,17 @@ export default function EventDetailScreen() {
                   const current = effectiveStatus(member.id);
                   const active = selected.has(member.id);
                   const tone = statusTone(current);
+                  const cardTone = statusCardTone(current);
                   return (
-                    <Pressable key={member.id} style={[styles.attendanceRow, active && styles.attendanceRowSelected]} onPress={() => toggleSelected(member.id)}>
+                    <Pressable
+                      key={member.id}
+                      style={[
+                        styles.attendanceRow,
+                        { backgroundColor: cardTone.bg, borderColor: cardTone.border },
+                        active && styles.attendanceRowSelected,
+                      ]}
+                      onPress={() => toggleSelected(member.id)}
+                    >
                       <Ionicons name={active ? "checkbox" : "square-outline"} size={18} color={active ? colors.accent : colors.textSecondary} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.rowPrimary}>{memberLabel(member)}</Text>
@@ -872,10 +888,19 @@ export default function EventDetailScreen() {
                     const current = effectiveStatus(member.id);
                     const active = selected.has(member.id);
                     const tone = statusTone(current);
+                    const cardTone = statusCardTone(current);
                     const imageUrl = typeof member.memberimage_url === "string" ? normalizeImageUri(member.memberimage_url) : null;
                     const initial = memberLabel(member).charAt(0).toUpperCase() || "M";
                     return (
-                      <Pressable key={member.id} style={[styles.gridCard, active && styles.gridCardSelected]} onPress={() => toggleSelected(member.id)}>
+                      <Pressable
+                        key={member.id}
+                        style={[
+                          styles.gridCard,
+                          { backgroundColor: cardTone.bg, borderColor: cardTone.border },
+                          active && styles.gridCardSelected,
+                        ]}
+                        onPress={() => toggleSelected(member.id)}
+                      >
                         <Ionicons name={active ? "checkbox" : "square-outline"} size={18} color={active ? colors.accent : colors.textSecondary} style={styles.gridCheckbox} />
                         {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.avatar} /> : <MemberInitialAvatar initial={initial} size={52} />}
                         <Text style={styles.gridName} numberOfLines={2}>{memberLabel(member)}</Text>
@@ -1232,7 +1257,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  attendanceRowSelected: { borderColor: colors.accentBorder, backgroundColor: colors.accentSurface },
+  attendanceRowSelected: {
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   statusBadge: { borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4 },
   statusBadgeText: { fontSize: 11, fontWeight: "600" },
   gridWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -1246,7 +1278,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  gridCardSelected: { borderColor: colors.accentBorder, backgroundColor: colors.accentSurface },
+  gridCardSelected: {
+    borderColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   gridCheckbox: { alignSelf: "flex-start" },
   avatar: { width: 52, height: 52, borderRadius: radius.pill, backgroundColor: "#f1f5f9" },
   avatarFallback: {

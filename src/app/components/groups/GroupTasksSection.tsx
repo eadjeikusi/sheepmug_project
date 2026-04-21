@@ -372,7 +372,8 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
 
   const handleToggleTaskChecklist = async (t: GroupTaskRow, itemId: string, done: boolean) => {
     if (!token || !canToggleChecklist(t)) return;
-    if (user?.id && leaderIdsFromGroupTask(t).includes(user.id)) {
+    const canEditStructure = can('manage_group_tasks') || can('manage_group_task_checklist');
+    if (!canEditStructure && user?.id && leaderIdsFromGroupTask(t).includes(user.id)) {
       try {
         const res = await fetch(`/api/group-tasks/${encodeURIComponent(t.id)}`, {
           method: 'PATCH',

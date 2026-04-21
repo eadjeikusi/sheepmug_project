@@ -384,7 +384,7 @@ export function TaskAssignmentList({
       const items = readChecklist(t);
       setBusyTaskId(t.id);
       try {
-        if (viewerId && leaderIdsFromTaskItem(t).includes(viewerId)) {
+        if (!canEditChecklistStructureForTask(t) && viewerId && leaderIdsFromTaskItem(t).includes(viewerId)) {
           const res = await patchTask(t, { checklist: [{ id: itemId, done }] });
           mergeTask(t.id, res.task);
         } else {

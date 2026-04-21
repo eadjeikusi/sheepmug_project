@@ -1239,7 +1239,8 @@ export default function MemberDetailPanel({
 
   const handleToggleTaskChecklist = async (t: MemberTaskRow, itemId: string, done: boolean) => {
     if (!token || !canToggleChecklist(t)) return;
-    if (user?.id && leaderIdsFromMemberTask(t).includes(user.id)) {
+    const canEditStructure = can('manage_member_tasks') || can('manage_member_task_checklist');
+    if (!canEditStructure && user?.id && leaderIdsFromMemberTask(t).includes(user.id)) {
       try {
         const res = await fetch(`/api/member-tasks/${encodeURIComponent(t.id)}`, {
           method: 'PATCH',

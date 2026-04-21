@@ -7,11 +7,14 @@ import {
   clearOfflineResourceCaches,
   getOfflineBootstrapDone,
   getOfflineCacheSizeEstimate,
+  getOfflineResourceCache,
   setOfflineBootstrapDone,
 } from "../lib/storage";
 import { colors, radius, type } from "../theme";
 import { clearOfflineImageFiles, getOfflineImageCacheSizeBytes } from "../lib/offline/imageCache";
 import { cancelLocalTaskReminders } from "../lib/localTaskReminders";
+import { displayMemberWords } from "../lib/memberDisplayFormat";
+import type { OfflineQueueItem } from "../lib/offline/types";
 
 function formatTimeAgo(ts: string | null): string {
   if (!ts) return "Never";
@@ -40,6 +43,82 @@ function formatBytes(bytes: number): string {
   }
   const rounded = unitIndex === 0 ? Math.round(value) : Math.round(value * 10) / 10;
   return `${rounded} ${units[unitIndex]}`;
+}
+
+type CachedMemberRow = {
+  id?: string;
+  first_name?: string | null;
+  last_name?: string | null;
+};
+
+type CachedMembersPayload = {
+  members?: CachedMemberRow[];
+};
+
+function memberNameByIdFromCacheRows(rows: CachedMemberRow[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    const id = String(row.id || "").trim();
+    if (!id) continue;
+    const full = `${String(row.first_name || "").trim()} ${String(row.last_name || "").trim()}`.trim();
+    if (full) out[id] = displayMemberWords(full);
+  }
+  return out;
+}
+
+function memberNameFromLookup(memberId: string, memberNameById: Record<string, string>): string {
+  const id = String(memberId || "").trim();
+  if (!id) return "a member";
+  return memberNameById[id] || "a member";
+}
+
+function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<string, string>): string {
+  if (item.operation === "member_create") {
+    const first = String(item.payload.first_name || "").trim();
+    const last = String(item.payload.last_name || "").trim();
+    const full = `${first} ${last}`.trim();
+    return full ? `You added ${displayMemberWords(full)}` : "You added a member";
+  }
+
+  if (item.operation === "attendance_update") {
+    const updates = Array.isArray(item.payload.updates)
+      ? (item.payload.updates as Array<{ member_id?: unknown; status?: unknown }>)
+      : [];
+    if (updates.length === 1) {
+      const row = updates[0];
+      const memberName = memberNameFromLookup(String(row.member_id || ""), memberNameById);
+      const status = String(row.status || "not marked").replaceAll("_", " ").toLowerCase();
+      return `You marked ${memberName} ${status}`;
+    }
+    if (updates.length > 1) {
+      const statuses = [...new Set(updates.map((u) => String(u.status || "").trim().toLowerCase()).filter(Boolean))];
+      if (statuses.length === 1) {
+        return `You marked ${updates.length} members ${statuses[0].replaceAll("_", " ")}`;
+      }
+      return `You updated attendance for ${updates.length} members`;
+    }
+    return "You updated event attendance";
+  }
+
+  if (item.operation === "task_patch") {
+    const taskType = String(item.payload.task_type || "task").trim().toLowerCase();
+    return taskType === "group" ? "You updated a group to-do list" : "You updated a member to-do list";
+  }
+
+  if (item.operation === "member_note_create") {
+    const memberName = memberNameFromLookup(String(item.payload.member_id || ""), memberNameById);
+    return `You added a note for ${memberName}`;
+  }
+  if (item.operation === "member_note_update") {
+    const memberName = memberNameFromLookup(String(item.payload.member_id || ""), memberNameById);
+    return `You updated a note for ${memberName}`;
+  }
+  if (item.operation === "member_note_delete") {
+    const memberName = memberNameFromLookup(String(item.payload.member_id || ""), memberNameById);
+    return `You deleted a note for ${memberName}`;
+  }
+
+  return item.operation.replace(/_/g, " ");
 }
 
 export default function OfflineSyncScreen() {
@@ -73,6 +152,7 @@ export default function OfflineSyncScreen() {
   const [cacheBytes, setCacheBytes] = useState(0);
   const [imageBytes, setImageBytes] = useState(0);
   const [cacheLoading, setCacheLoading] = useState(true);
+  const [memberNameById, setMemberNameById] = useState<Record<string, string>>({});
 
   const refreshCacheSize = useCallback(async () => {
     setCacheLoading(true);
@@ -97,6 +177,19 @@ export default function OfflineSyncScreen() {
   useEffect(() => {
     void refreshCacheSize();
   }, [refreshCacheSize, queueItems.length, lastSyncAt]);
+
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      const cached = await getOfflineResourceCache<CachedMembersPayload>("members:list");
+      const rows = Array.isArray(cached?.data?.members) ? cached?.data?.members : [];
+      if (!mounted) return;
+      setMemberNameById(memberNameByIdFromCacheRows(rows));
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [lastSyncAt, queueItems.length]);
 
   const handleDownloadPress = useCallback(() => {
     void (async () => {
@@ -232,7 +325,7 @@ export default function OfflineSyncScreen() {
             pendingItems.map((item) => (
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
                   <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
                 </View>
                 <Text style={styles.pendingPill}>{item.status}</Text>
@@ -249,7 +342,7 @@ export default function OfflineSyncScreen() {
             failedItems.map((item) => (
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
                   <Text style={styles.itemMeta}>{item.last_error || "Failed to sync."}</Text>
                 </View>
                 <View style={styles.failedActions}>
@@ -281,7 +374,7 @@ export default function OfflineSyncScreen() {
             syncedItems.map((item) => (
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
                   <Text style={styles.itemMeta}>Synced: {formatTimeAgo(item.synced_at)}</Text>
                 </View>
                 <Text style={styles.syncedPill}>synced</Text>
