@@ -14,6 +14,7 @@ import { type } from "../theme";
 import { useAuth } from "../contexts/AuthContext";
 import { navigateFromNotificationAction, parseExpoPushNotificationData } from "../lib/notificationNavigation";
 import { useRouter } from "expo-router";
+import { OfflineSyncProvider } from "../contexts/OfflineSyncContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -50,7 +51,9 @@ export default function RootLayout() {
         <AuthProvider>
           <BranchProvider>
             <NotificationProvider>
-              <RootNavigator />
+              <OfflineSyncProvider>
+                <RootNavigator />
+              </OfflineSyncProvider>
             </NotificationProvider>
           </BranchProvider>
         </AuthProvider>

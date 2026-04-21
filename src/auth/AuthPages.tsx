@@ -670,8 +670,8 @@ export function ForgotPasswordPage() {
     setMessage("");
     setLastFailure("");
     const normalizedCode = code.replace(/\D/g, "");
-    if (normalizedCode.length < 6 || normalizedCode.length > 10) {
-      setError("Enter the full code from your email (typically 6–8 digits).");
+    if (normalizedCode.length !== 6) {
+      setError("Enter the 6-digit code from your email.");
       return;
     }
     setVerifyingCode(true);
@@ -795,10 +795,10 @@ export function ForgotPasswordPage() {
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={10}
+                maxLength={6}
                 required
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 className="w-full rounded-lg border border-[#d1d5db] px-4 py-3 text-center text-[18px] tracking-[0.4em] outline-none ring-[#1e3a8a] focus:ring-2"
                 placeholder="••••••"
               />

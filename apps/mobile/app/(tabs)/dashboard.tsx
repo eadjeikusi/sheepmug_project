@@ -25,8 +25,15 @@ import { api } from "../../lib/api";
 import { normalizeImageUri } from "../../lib/imageUri";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { getMemberJoinRegisterUrl } from "../../lib/memberJoinRegisterUrl";
-import { getDashboardLastSeenCounts, setDashboardLastSeenCounts, type DashboardLastSeenCounts } from "../../lib/storage";
+import {
+  getDashboardLastSeenCounts,
+  getOfflineResourceCache,
+  setDashboardLastSeenCounts,
+  setOfflineResourceCache,
+  type DashboardLastSeenCounts,
+} from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 
 function firstValidImageUri(member: Member): string | null {
   const candidates = [
@@ -69,8 +76,25 @@ function hashString(s: string): number {
   return h;
 }
 
+function formatTimeAgo(ts: string | null): string {
+  if (!ts) return "never";
+  const ms = new Date(ts).getTime();
+  if (Number.isNaN(ms)) return "never";
+  const diffMs = Date.now() - ms;
+  if (diffMs < 60_000) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+}
+
 /** Resolve directory member id from GET /api/group-members row (junction or nested `members`). */
 function rowMemberIdFromGroupRow(row: unknown): string | null {
+  if (!row || typeof row !== "object") return null;
   const r = row as Record<string, unknown>;
   if (typeof r.member_id === "string" && r.member_id.trim()) return r.member_id.trim();
   const m = r.members;
@@ -337,6 +361,7 @@ export default function DashboardScreen() {
   const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const { unreadCount } = useNotifications();
+  const { isOnline, syncing, checkConnectivity, lastSyncAt } = useOfflineSync();
 
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -415,13 +440,26 @@ export default function DashboardScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [seen, listPayload] = await Promise.all([
+      const [seen, cachedMembers] = await Promise.all([
         getDashboardLastSeenCounts(),
-        api.members.list({ limit: 100 }).catch(() => ({ members: [] as Member[], total_count: 0 })),
+        getOfflineResourceCache<{ members: Member[]; total_count: number }>("members:list"),
       ]);
       if (!mounted) return;
       setLastSeen(seen);
-      setMembers(listPayload.members);
+      if (cachedMembers?.data?.members) {
+        setMembers(Array.isArray(cachedMembers.data.members) ? cachedMembers.data.members : []);
+      }
+      try {
+        const listPayload = await api.members.list({ limit: 100 });
+        if (!mounted) return;
+        setMembers(Array.isArray(listPayload?.members) ? listPayload.members : []);
+        await setOfflineResourceCache("members:list", {
+          members: Array.isArray(listPayload?.members) ? listPayload.members : [],
+          total_count: Number(listPayload?.total_count || 0),
+        });
+      } catch {
+        // keep cached members when offline
+      }
     })();
     return () => {
       mounted = false;
@@ -470,8 +508,12 @@ export default function DashboardScreen() {
           members: [] as Member[],
         })),
       ]);
-      setRecentSpotlightMembers(recentSpot.members);
-      setRecentSpotlightMode(recentSpot.mode);
+      setRecentSpotlightMembers(Array.isArray(recentSpot?.members) ? recentSpot.members : []);
+      setRecentSpotlightMode(
+        recentSpot?.mode === "new_members" || recentSpot?.mode === "group_assignments"
+          ? recentSpot.mode
+          : "group_assignments"
+      );
       const grArr = Array.isArray(gr) ? (gr as Record<string, unknown>[]) : [];
       const mrArr = Array.isArray(mr) ? (mr as Record<string, unknown>[]) : [];
       setGroupRequestRows(grArr);
@@ -608,18 +650,23 @@ export default function DashboardScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
+      await checkConnectivity();
       const [seen, listPayload] = await Promise.all([
         getDashboardLastSeenCounts(),
-        api.members.list({ limit: 100 }).catch(() => ({ members: [] as Member[], total_count: 0 })),
+        api.members.list({ limit: 100 }),
       ]);
       setLastSeen(seen);
-      setMembers(listPayload.members);
+      setMembers(Array.isArray(listPayload?.members) ? listPayload.members : []);
+      await setOfflineResourceCache("members:list", {
+        members: Array.isArray(listPayload?.members) ? listPayload.members : [],
+        total_count: Number(listPayload?.total_count || 0),
+      });
       await refreshDashboardData();
       await loadMyFamilies();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshDashboardData, loadMyFamilies]);
+  }, [refreshDashboardData, loadMyFamilies, checkConnectivity]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -645,22 +692,46 @@ export default function DashboardScreen() {
                 />
               )}
             </Pressable>
-            <Text style={styles.hiText} numberOfLines={2}>
-              Hi <Text style={styles.hiName}>{displayMemberWords(firstName)}</Text>
-            </Text>
-          </View>
-          <Pressable
-            style={styles.headerIconBtn}
-            onPress={() => router.push("/notifications")}
-            accessibilityLabel="Notifications"
-          >
-            <Ionicons name="notifications-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-            {unreadCount > 0 ? (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+            <View style={styles.greetingCopy}>
+              <Text style={styles.hiText} numberOfLines={2}>
+                Hi <Text style={styles.hiName}>{displayMemberWords(firstName)}</Text>
+              </Text>
+              <View style={styles.headerStatusRow}>
+                <View style={[styles.headerStatusPill, !isOnline ? styles.headerStatusPillOffline : null]}>
+                  <View style={[styles.headerStatusDot, { backgroundColor: isOnline ? "#16a34a" : "#dc2626" }]} />
+                  <Text style={[styles.headerStatusText, !isOnline ? styles.headerStatusTextOffline : null]}>
+                    {isOnline ? "Online" : "Offline"}
+                  </Text>
+                </View>
+                <Text style={styles.headerStatusMeta}>Last sync {formatTimeAgo(lastSyncAt)}</Text>
               </View>
-            ) : null}
-          </Pressable>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={styles.headerIconBtn}
+              onPress={() => void onRefresh()}
+              accessibilityLabel="Reload dashboard"
+            >
+              <Ionicons
+                name={syncing || refreshing ? "sync-outline" : "refresh-outline"}
+                size={sizes.headerIcon}
+                color={colors.textPrimary}
+              />
+            </Pressable>
+            <Pressable
+              style={styles.headerIconBtn}
+              onPress={() => router.push("/notifications")}
+              accessibilityLabel="Notifications"
+            >
+              <Ionicons name="notifications-outline" size={sizes.headerIcon} color={colors.textPrimary} />
+              {unreadCount > 0 ? (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.searchRow}>
@@ -928,6 +999,50 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 8,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  greetingCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  headerStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  headerStatusPill: {
+    minHeight: 20,
+    paddingHorizontal: 8,
+    borderRadius: radius.pill,
+    backgroundColor: "#e8f7ee",
+    borderWidth: 1,
+    borderColor: "#86efac",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  headerStatusPillOffline: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecaca",
+  },
+  headerStatusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  headerStatusText: {
+    fontSize: 11,
+    color: "#166534",
+    fontWeight: "700",
+  },
+  headerStatusTextOffline: {
+    color: "#b91c1c",
+  },
+  headerStatusMeta: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
   dashGreeting: {
     flex: 1,
     flexDirection: "row",
@@ -936,7 +1051,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   hiText: {
-    flex: 1,
     fontSize: type.pageTitle.size,
     lineHeight: type.pageTitle.lineHeight,
     color: colors.textPrimary,

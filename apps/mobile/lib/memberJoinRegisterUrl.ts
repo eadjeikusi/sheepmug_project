@@ -11,7 +11,7 @@ export function resolveMemberJoinBranchId(
   return String(selectedBranchId || userBranchId || "").trim();
 }
 
-/** Public self-serve member registration URL (same path as web `/register/member/:code`). */
+/** Public self-serve member registration URL (same path as web `/cms/register/member/:code`). */
 export function getMemberJoinRegisterUrl(
   selectedBranchId: string | undefined | null,
   userBranchId?: string | undefined | null

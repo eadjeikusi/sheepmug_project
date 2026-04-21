@@ -39,6 +39,7 @@ import { api } from "../../lib/api";
 import { ensurePhotoLibraryPermission } from "../../lib/photoLibraryAccess";
 import { uploadMemberImageFromUri } from "../../lib/uploadMemberImage";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import {
   displayMemberField,
@@ -48,6 +49,7 @@ import {
   formatLongWeekdayDateTime,
 } from "../../lib/memberDisplayFormat";
 import { memberStatusBadgePair } from "../../lib/memberStatusBadge";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 
 /** Tighter corners for profile cards (smaller than global radius.lg). */
@@ -63,6 +65,7 @@ const MAIN_TABS: { id: ProfileTab; label: string }[] = [
   { id: "events", label: "Events" },
   { id: "tasks", label: "Tasks" },
 ];
+const memberDetailCacheKey = (memberId: string) => `member:detail:${memberId}`;
 
 function firstValidImageUri(member: Member): string | null {
   const candidates = [
@@ -287,6 +290,8 @@ export default function MemberProfileScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const memberId = normalizeRouteId(params.id);
   const { can } = usePermissions();
+  const { isOnline, queueMemberNoteCreate, queueMemberNoteUpdate, queueMemberNoteDelete } =
+    useOfflineSync();
 
   const [member, setMember] = useState<Member | null>(null);
   const [ministries, setMinistries] = useState<Group[]>([]);
@@ -379,6 +384,28 @@ export default function MemberProfileScreen() {
       if (!memberId) return;
       setLoading(true);
       try {
+        const cached = await getOfflineResourceCache<{
+          member: Member | null;
+          ministries: Group[];
+          events: MemberEventItem[];
+          tasks: TaskItem[];
+          notes: MemberNote[];
+          importantDates: MemberImportantDate[];
+          statusOpts: MemberStatusOption[];
+          fieldDefs: CustomFieldDefinition[];
+        }>(memberDetailCacheKey(memberId));
+        if (mounted && cached?.data) {
+          setMember(cached.data.member || null);
+          setMinistries(Array.isArray(cached.data.ministries) ? cached.data.ministries : []);
+          setEvents(Array.isArray(cached.data.events) ? cached.data.events : []);
+          setTasks(Array.isArray(cached.data.tasks) ? cached.data.tasks : []);
+          setNotes(Array.isArray(cached.data.notes) ? cached.data.notes : []);
+          setImportantDates(
+            Array.isArray(cached.data.importantDates) ? cached.data.importantDates : []
+          );
+          setMemberStatusOptions(Array.isArray(cached.data.statusOpts) ? cached.data.statusOpts : []);
+          setMemberCustomFieldDefs(Array.isArray(cached.data.fieldDefs) ? cached.data.fieldDefs : []);
+        }
         const [
           detailMember,
           listFallback,
@@ -390,10 +417,10 @@ export default function MemberProfileScreen() {
           statusOpts,
           fieldDefs,
         ] = await Promise.all([
-          api.members.get(memberId).catch(() => null),
-          api.members.list({ limit: 100 }).catch(() => ({ members: [] as Member[], total_count: 0 })),
-          api.members.groups(memberId).catch(() => []),
-          api.members.events(memberId).catch(() => []),
+          api.members.get(memberId),
+          api.members.list({ limit: 100 }),
+          api.members.groups(memberId),
+          api.members.events(memberId),
           (async () => {
             try {
               const rows = await api.members.tasks(memberId);
@@ -403,10 +430,10 @@ export default function MemberProfileScreen() {
               return { rows: [] as TaskItem[], error: message };
             }
           })(),
-          api.members.notes.list(memberId).catch(() => []),
-          api.members.importantDates.list(memberId).catch(() => []),
-          api.memberStatusOptions().catch(() => []),
-          api.customFieldDefinitions("member").catch(() => []),
+          api.members.notes.list(memberId),
+          api.members.importantDates.list(memberId),
+          api.memberStatusOptions(),
+          api.customFieldDefinitions("member"),
         ]);
         if (!mounted) return;
 
@@ -420,6 +447,16 @@ export default function MemberProfileScreen() {
         setImportantDates(memberImportantDates);
         setMemberStatusOptions(statusOpts);
         setMemberCustomFieldDefs(fieldDefs);
+        await setOfflineResourceCache(memberDetailCacheKey(memberId), {
+          member: detailMember || fromList,
+          ministries: memberGroups,
+          events: memberEvents,
+          tasks: memberTasksResult.rows,
+          notes: memberNotes,
+          importantDates: memberImportantDates,
+          statusOpts,
+          fieldDefs,
+        });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -509,6 +546,19 @@ export default function MemberProfileScreen() {
   async function handleAddNote() {
     const content = newNote.trim();
     if (!memberId || !content) return;
+    if (!isOnline) {
+      const optimistic: MemberNote = {
+        id: `offline-note-${Date.now().toString(36)}`,
+        member_id: memberId,
+        content,
+        created_at: new Date().toISOString(),
+        created_by: null,
+      };
+      await queueMemberNoteCreate(memberId, content);
+      setNewNote("");
+      setNotes((prev) => [optimistic, ...prev]);
+      return;
+    }
     const res = await api.members.notes.create(memberId, content).catch(() => null);
     setNewNote("");
     if (res?.note) {
@@ -521,6 +571,11 @@ export default function MemberProfileScreen() {
 
   async function handleDeleteNote(noteId: string) {
     if (!memberId || !noteId) return;
+    if (!isOnline) {
+      await queueMemberNoteDelete(memberId, noteId);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      return;
+    }
     await api.members.notes.remove(memberId, noteId).catch(() => null);
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
   }
@@ -535,6 +590,15 @@ export default function MemberProfileScreen() {
     const noteId = editingNoteId;
     const content = editNoteDraft.trim();
     if (!content) return;
+    if (!isOnline) {
+      await queueMemberNoteUpdate(memberId, noteId, content);
+      setEditingNoteId(null);
+      setEditNoteDraft("");
+      setNotes((prev) =>
+        prev.map((n) => (n.id === noteId ? ({ ...n, content } as MemberNote) : n))
+      );
+      return;
+    }
     const res = await api.members.notes.update(memberId, noteId, content).catch(() => null);
     setEditingNoteId(null);
     setEditNoteDraft("");
@@ -744,10 +808,10 @@ export default function MemberProfileScreen() {
         statusOpts,
         fieldDefs,
       ] = await Promise.all([
-        api.members.get(memberId).catch(() => null),
-        api.members.list({ limit: 100 }).catch(() => ({ members: [] as Member[], total_count: 0 })),
-        api.members.groups(memberId).catch(() => []),
-        api.members.events(memberId).catch(() => []),
+        api.members.get(memberId),
+        api.members.list({ limit: 100 }),
+        api.members.groups(memberId),
+        api.members.events(memberId),
         (async () => {
           try {
             const rows = await api.members.tasks(memberId);
@@ -757,10 +821,10 @@ export default function MemberProfileScreen() {
             return { rows: [] as TaskItem[], error: message };
           }
         })(),
-        api.members.notes.list(memberId).catch(() => []),
-        api.members.importantDates.list(memberId).catch(() => []),
-        api.memberStatusOptions().catch(() => []),
-        api.customFieldDefinitions("member").catch(() => []),
+        api.members.notes.list(memberId),
+        api.members.importantDates.list(memberId),
+        api.memberStatusOptions(),
+        api.customFieldDefinitions("member"),
       ]);
       const fromList = listFallback.members.find((m) => m.id === memberId) || null;
       setMember(detailMember || fromList);

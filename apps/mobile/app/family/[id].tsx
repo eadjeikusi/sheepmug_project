@@ -18,6 +18,7 @@ import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { api } from "../../lib/api";
 import { normalizeImageUri } from "../../lib/imageUri";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 
 function firstValidImageUri(member: Member): string | null {
@@ -62,8 +63,14 @@ export default function FamilyMembersScreen() {
     }
     setLoading(true);
     try {
-      const list = await api.families.members(familyId).catch(() => [] as Member[]);
+      const cacheKey = `family:members:${familyId}`;
+      const cached = await getOfflineResourceCache<{ members: Member[] }>(cacheKey);
+      if (cached?.data?.members) {
+        setMembers(Array.isArray(cached.data.members) ? cached.data.members : []);
+      }
+      const list = await api.families.members(familyId);
       setMembers(Array.isArray(list) ? list : []);
+      await setOfflineResourceCache(cacheKey, { members: Array.isArray(list) ? list : [] });
     } finally {
       setLoading(false);
     }

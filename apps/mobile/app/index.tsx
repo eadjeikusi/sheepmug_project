@@ -5,13 +5,14 @@ import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { SHEEPMUG_LOGO } from "../lib/branding";
 import { devLog, devWarn } from "../lib/devLog";
-import { getOnboardingCompleted } from "../lib/storage";
+import { getOfflineBootstrapDone, getOnboardingCompleted } from "../lib/storage";
 import { colors } from "../theme";
 
 export default function IndexScreen() {
   const { token, loading } = useAuth();
   const [onboardingReady, setOnboardingReady] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(false);
+  const [offlineBootstrapDone, setOfflineBootstrapDone] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -37,8 +38,10 @@ export default function IndexScreen() {
     let cancelled = false;
     (async () => {
       const done = await getOnboardingCompleted().catch(() => false);
+      const bootstrapDone = await getOfflineBootstrapDone().catch(() => false);
       if (!cancelled) {
         setOnboardingDone(done);
+        setOfflineBootstrapDone(bootstrapDone);
         setOnboardingReady(true);
       }
     })();
@@ -64,8 +67,12 @@ export default function IndexScreen() {
       devLog("index: route → /onboarding");
       return;
     }
+    if (!offlineBootstrapDone) {
+      devLog("index: route → /offline-setup");
+      return;
+    }
     devLog("index: route → /(tabs)/dashboard");
-  }, [loading, token, onboardingReady, onboardingDone]);
+  }, [loading, token, onboardingReady, onboardingDone, offlineBootstrapDone]);
 
   if (loading) {
     return (
@@ -91,6 +98,10 @@ export default function IndexScreen() {
 
   if (!onboardingDone) {
     return <Redirect href="/onboarding" />;
+  }
+
+  if (!offlineBootstrapDone) {
+    return <Redirect href="/offline-setup" />;
   }
 
   return <Redirect href="/(tabs)/dashboard" />;

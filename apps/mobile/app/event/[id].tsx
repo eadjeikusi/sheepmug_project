@@ -35,6 +35,7 @@ import {
   type CanonicalLocationType,
 } from "../../lib/eventLocation";
 import { colors, radius, sizes, type } from "../../theme";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 
 type EventTab = "details" | "program" | "files" | "group" | "attendance";
 
@@ -194,6 +195,7 @@ export default function EventDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isOnline, queueAttendanceUpdate } = useOfflineSync();
 
   const [tab, setTab] = useState<EventTab>("details");
   const [event, setEvent] = useState<EventItem | null>(null);
@@ -352,6 +354,25 @@ export default function EventDetailScreen() {
     setSaving(true);
     try {
       const updates = Array.from(selected).map((member_id) => ({ member_id, status }));
+      if (!isOnline) {
+        await queueAttendanceUpdate(id, updates);
+        setAttendanceRows((prev) => {
+          const next = [...prev];
+          for (const memberId of selected) {
+            const idx = next.findIndex((row) => row.member_id === memberId);
+            if (idx === -1) {
+              next.push({ id: `${memberId}-${status}-${Date.now()}`, member_id: memberId, status } as EventAttendanceRow);
+            } else {
+              next[idx] = { ...next[idx], status };
+            }
+          }
+          return next;
+        });
+        setSelected(new Set());
+        Alert.alert("Saved offline", "Attendance updates were queued and will sync when internet is available.");
+        return;
+      }
+
       const payload = await api.events.attendance.update(id, updates);
       if (Array.isArray(payload.attendance)) {
         setAttendanceRows(payload.attendance);

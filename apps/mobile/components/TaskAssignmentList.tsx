@@ -28,6 +28,7 @@ import {
 } from "../lib/memberDisplayFormat";
 import { usePermissions } from "../hooks/usePermissions";
 import { colors, radius, type } from "../theme";
+import { useOfflineSync } from "../contexts/OfflineSyncContext";
 
 type ChecklistItem = { id: string; label: string; done: boolean };
 
@@ -214,6 +215,7 @@ export function TaskAssignmentList({
   onAfterGroupTaskCreated,
 }: Props) {
   const { user } = useAuth();
+  const { isOnline, queueTaskPatch } = useOfflineSync();
   const { can } = usePermissions();
   const viewerId = user?.id ?? null;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
@@ -268,12 +270,33 @@ export function TaskAssignmentList({
     [can, viewerId]
   );
 
-  const patchTask = useCallback(async (t: TaskItem, body: Record<string, unknown>) => {
-    if (isGroupTask(t)) {
-      return api.groups.patchGroupTask(t.id, body);
-    }
-    return api.members.patchMemberTask(t.id, body);
+  const applyTaskPatchLocally = useCallback((t: TaskItem, body: Record<string, unknown>): TaskItem => {
+    return {
+      ...t,
+      ...body,
+      updated_at: new Date().toISOString(),
+    } as TaskItem;
   }, []);
+
+  const patchTask = useCallback(
+    async (t: TaskItem, body: Record<string, unknown>) => {
+      if (!isOnline) {
+        const keys = Object.keys(body);
+        const isChecklistOnly = keys.length === 1 && keys[0] === "checklist" && Array.isArray(body.checklist);
+        if (!isChecklistOnly) {
+          throw new Error("Offline edits only support checklist updates.");
+        }
+        await queueTaskPatch(isGroupTask(t) ? "group" : "member", t.id, body);
+        const nextTask = applyTaskPatchLocally(t, body);
+        return { task: nextTask } as { task?: TaskItem; error?: string };
+      }
+      if (isGroupTask(t)) {
+        return api.groups.patchGroupTask(t.id, body);
+      }
+      return api.members.patchMemberTask(t.id, body);
+    },
+    [isOnline, queueTaskPatch, applyTaskPatchLocally]
+  );
 
   const canToggleChecklistForTask = useCallback(
     (t: TaskItem): boolean => {

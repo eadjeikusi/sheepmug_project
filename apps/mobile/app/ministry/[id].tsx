@@ -41,6 +41,7 @@ import {
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 
 type MinistryTab = "subgroups" | "members" | "events" | "tasks" | "requests";
@@ -311,12 +312,31 @@ export default function MinistryDetailScreen() {
     if (!id) return;
     setLoading(true);
     try {
+      const cacheKey = `ministry:detail:${id}`;
+      const cached = await getOfflineResourceCache<{
+        group: Group | null;
+        subgroups: Group[];
+        members: GroupMemberApiRow[];
+        events: EventItem[];
+        eventTypeRows: EventTypeRow[];
+        tasks: TaskItem[];
+        requests: GroupRequestItem[];
+      }>(cacheKey);
+      if (cached?.data) {
+        setGroup(cached.data.group ?? null);
+        setSubgroups(Array.isArray(cached.data.subgroups) ? sortMinistriesGroups(cached.data.subgroups) : []);
+        setMembers(Array.isArray(cached.data.members) ? cached.data.members : []);
+        setEvents(Array.isArray(cached.data.events) ? cached.data.events : []);
+        setEventTypeRows(Array.isArray(cached.data.eventTypeRows) ? cached.data.eventTypeRows : []);
+        setTasks(Array.isArray(cached.data.tasks) ? cached.data.tasks : []);
+        setRequests(Array.isArray(cached.data.requests) ? cached.data.requests : []);
+      }
       const [detail, sgRows, memberRows, eventRows, typeRows, taskRowsResult, requestRows] = await Promise.all([
-        api.groups.detail(id).catch(() => null),
-        api.groups.list({ parent_group_id: id, limit: 100 }).catch(() => []),
-        api.groups.members(id).catch(() => []),
-        api.groups.events(id).catch(() => []),
-        api.eventTypes.list().catch(() => [] as EventTypeRow[]),
+        api.groups.detail(id),
+        api.groups.list({ parent_group_id: id, limit: 100 }),
+        api.groups.members(id),
+        api.groups.events(id),
+        api.eventTypes.list(),
         canSeeMinistryTasksTab
           ? (async () => {
               try {
@@ -328,7 +348,7 @@ export default function MinistryDetailScreen() {
               }
             })()
           : Promise.resolve({ rows: [] as TaskItem[], error: null as string | null }),
-        api.groups.requests(id).catch(() => []),
+        api.groups.requests(id),
       ]);
       setGroup((detail ?? null) as Group | null);
       setSubgroups(Array.isArray(sgRows) ? sortMinistriesGroups(sgRows) : []);
@@ -340,6 +360,17 @@ export default function MinistryDetailScreen() {
       setTasks(taskRowsResult.rows);
       setTaskLoadError(taskRowsResult.error);
       setRequests(requestRows);
+      await setOfflineResourceCache(cacheKey, {
+        group: (detail ?? null) as Group | null,
+        subgroups: Array.isArray(sgRows) ? sgRows : [],
+        members: Array.isArray(memberRows) ? memberRows : [],
+        events: Array.isArray(eventRows) ? eventRows : [],
+        eventTypeRows: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+        tasks: taskRowsResult.rows,
+        requests: Array.isArray(requestRows) ? requestRows : [],
+      });
+    } catch {
+      // keep cached state when offline/network errors happen
     } finally {
       setLoading(false);
     }

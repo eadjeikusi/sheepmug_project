@@ -15,6 +15,7 @@ import type { Family } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
 import { useBranch } from "../contexts/BranchContext";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../lib/storage";
 import { colors, radius, sizes, type } from "../theme";
 
 const PAGE_SIZE = 10;
@@ -32,11 +33,19 @@ export default function FamiliesListScreen() {
     setLoading(true);
     try {
       const bid = selectedBranch?.id?.trim() || undefined;
-      const list = await api.families
-        .list(bid ? { branch_id: bid, offset: 0, limit: PAGE_SIZE } : { offset: 0, limit: PAGE_SIZE })
-        .catch(() => [] as Family[]);
+      const cacheKey = `families:list:${bid || "all"}`;
+      const cached = await getOfflineResourceCache<{ families: Family[] }>(cacheKey);
+      if (cached?.data?.families) {
+        const cachedList = Array.isArray(cached.data.families) ? cached.data.families : [];
+        setFamilies(cachedList);
+        setHasMore(cachedList.length === PAGE_SIZE);
+      }
+      const list = await api.families.list(
+        bid ? { branch_id: bid, offset: 0, limit: PAGE_SIZE } : { offset: 0, limit: PAGE_SIZE }
+      );
       setFamilies(Array.isArray(list) ? list : []);
       setHasMore(list.length === PAGE_SIZE);
+      await setOfflineResourceCache(cacheKey, { families: Array.isArray(list) ? list : [] });
     } finally {
       setLoading(false);
     }
@@ -61,13 +70,12 @@ export default function FamiliesListScreen() {
     try {
       const bid = selectedBranch?.id?.trim() || undefined;
       const list = await api.families
-        .list(
-          bid
-            ? { branch_id: bid, offset: families.length, limit: PAGE_SIZE }
-            : { offset: families.length, limit: PAGE_SIZE }
-        )
-        .catch(() => [] as Family[]);
-      setFamilies((prev) => [...prev, ...list]);
+        .list(bid ? { branch_id: bid, offset: families.length, limit: PAGE_SIZE } : { offset: families.length, limit: PAGE_SIZE });
+      setFamilies((prev) => {
+        const merged = [...prev, ...list];
+        void setOfflineResourceCache(`families:list:${bid || "all"}`, { families: merged });
+        return merged;
+      });
       setHasMore(list.length === PAGE_SIZE);
     } finally {
       setLoadingMore(false);

@@ -1,0 +1,289 @@
+import { useEffect, useMemo } from "react";
+import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useOfflineSync } from "../contexts/OfflineSyncContext";
+import { colors, radius, type } from "../theme";
+
+function formatTime(ts: string | null): string {
+  if (!ts) return "Never";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "Never";
+  return d.toLocaleString();
+}
+
+export default function OfflineSyncScreen() {
+  const router = useRouter();
+  const {
+    isOnline,
+    checking,
+    syncing,
+    queueItems,
+    pendingCount,
+    failedCount,
+    lastSyncAt,
+    syncNow,
+    retryItem,
+    discardItem,
+  } = useOfflineSync();
+
+  const pendingItems = useMemo(
+    () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing"),
+    [queueItems]
+  );
+  const failedItems = useMemo(() => queueItems.filter((x) => x.status === "failed"), [queueItems]);
+  const syncedItems = useMemo(() => queueItems.filter((x) => x.status === "synced").slice(-20).reverse(), [queueItems]);
+  const savedMembers = useMemo(
+    () => pendingItems.filter((x) => x.operation === "member_create"),
+    [pendingItems]
+  );
+
+  useEffect(() => {
+    if (!isOnline || syncing) return;
+    if (pendingCount === 0 && failedCount === 0) return;
+    void syncNow();
+  }, [isOnline, syncing, pendingCount, failedCount, syncNow]);
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.headerRow}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back">
+            <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
+            <Text style={styles.backBtnText}>Back</Text>
+          </Pressable>
+          <Text style={styles.title}>Offline Sync</Text>
+          <View style={{ width: 62 }} />
+        </View>
+        <View style={styles.statusCard}>
+          <View style={styles.statusRow}>
+            <View style={[styles.dot, { backgroundColor: isOnline ? "#16a34a" : "#dc2626" }]} />
+            <Text style={styles.statusText}>{isOnline ? "Online" : "Offline mode"}</Text>
+            {checking ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+          </View>
+          <Text style={styles.metaText}>Last synced: {formatTime(lastSyncAt)}</Text>
+          <Text style={styles.metaText}>Pending: {pendingCount}  Failed: {failedCount}</Text>
+
+          <Pressable
+            style={[styles.primaryBtn, syncing && styles.btnDisabled]}
+            onPress={() => void syncNow()}
+            disabled={syncing}
+          >
+            {syncing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="sync-outline" size={16} color="#fff" />
+                <Text style={styles.primaryBtnText}>{isOnline ? "Sync now" : "Try sync now"}</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Saved Members</Text>
+          {savedMembers.length === 0 ? (
+            <Text style={styles.emptyText}>No offline-saved members pending sync.</Text>
+          ) : (
+            savedMembers.map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>
+                    {String(item.payload.first_name || "")} {String(item.payload.last_name || "")}
+                  </Text>
+                  <Text style={styles.itemMeta}>Queued: {formatTime(item.created_at)}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Pending Actions</Text>
+          {pendingItems.length === 0 ? (
+            <Text style={styles.emptyText}>No pending actions.</Text>
+          ) : (
+            pendingItems.map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemMeta}>Queued: {formatTime(item.created_at)}</Text>
+                </View>
+                <Text style={styles.pendingPill}>{item.status}</Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Failed Actions</Text>
+          {failedItems.length === 0 ? (
+            <Text style={styles.emptyText}>No failed actions.</Text>
+          ) : (
+            failedItems.map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemMeta}>{item.last_error || "Failed to sync."}</Text>
+                </View>
+                <View style={styles.failedActions}>
+                  <Pressable style={styles.inlineBtn} onPress={() => void retryItem(item.id)}>
+                    <Text style={styles.inlineBtnText}>Retry</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.inlineBtn, styles.inlineDanger]}
+                    onPress={() => {
+                      Alert.alert("Discard action", "Remove this failed offline action?", [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Discard", style: "destructive", onPress: () => void discardItem(item.id) },
+                      ]);
+                    }}
+                  >
+                    <Text style={styles.inlineDangerText}>Discard</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recently Synced</Text>
+          {syncedItems.length === 0 ? (
+            <Text style={styles.emptyText}>No synced actions yet.</Text>
+          ) : (
+            syncedItems.map((item) => (
+              <View key={item.id} style={styles.itemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>{item.operation.replace(/_/g, " ")}</Text>
+                  <Text style={styles.itemMeta}>Synced: {formatTime(item.synced_at)}</Text>
+                </View>
+                <Text style={styles.syncedPill}>synced</Text>
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: colors.bg },
+  container: { padding: 16, gap: 12, paddingBottom: 26 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  backBtn: {
+    minWidth: 62,
+    minHeight: 34,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 2,
+    paddingHorizontal: 8,
+  },
+  backBtnText: {
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  title: {
+    fontSize: type.pageTitle.size,
+    lineHeight: type.pageTitle.lineHeight,
+    fontWeight: type.pageTitle.weight,
+    color: colors.textPrimary,
+  },
+  statusCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    padding: 12,
+    gap: 8,
+  },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: type.bodyStrong.size, color: colors.textPrimary, fontWeight: type.bodyStrong.weight },
+  metaText: { fontSize: type.caption.size, color: colors.textSecondary },
+  primaryBtn: {
+    marginTop: 2,
+    minHeight: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  btnDisabled: { opacity: 0.6 },
+  primaryBtnText: { color: "#fff", fontSize: type.body.size, fontWeight: "700" },
+  section: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    overflow: "hidden",
+  },
+  sectionTitle: {
+    fontSize: type.bodyStrong.size,
+    color: colors.textPrimary,
+    fontWeight: type.bodyStrong.weight,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  emptyText: { padding: 12, fontSize: type.body.size, color: colors.textSecondary },
+  itemRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  itemTitle: { fontSize: type.body.size, color: colors.textPrimary, fontWeight: "600" },
+  itemMeta: { marginTop: 2, fontSize: type.caption.size, color: colors.textSecondary },
+  pendingPill: {
+    fontSize: 11,
+    color: "#92400e",
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    textTransform: "capitalize",
+  },
+  syncedPill: {
+    fontSize: 11,
+    color: "#166534",
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#86efac",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  failedActions: { flexDirection: "row", gap: 8 },
+  inlineBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#f8fafc",
+  },
+  inlineBtnText: { fontSize: type.caption.size, color: colors.textPrimary, fontWeight: "600" },
+  inlineDanger: { borderColor: "#fecaca", backgroundColor: "#fff1f2" },
+  inlineDangerText: { fontSize: type.caption.size, color: "#b91c1c", fontWeight: "600" },
+});

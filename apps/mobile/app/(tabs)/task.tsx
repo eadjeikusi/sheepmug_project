@@ -28,15 +28,21 @@ import { TaskAssignmentList } from "../../components/TaskAssignmentList";
 import type { TaskItem } from "@sheepmug/shared-api";
 import { api } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
-import { setDashboardLastSeenCounts } from "../../lib/storage";
+import {
+  getOfflineResourceCache,
+  setDashboardLastSeenCounts,
+  setOfflineResourceCache,
+} from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 
 type StatusScope = "open" | "all";
 type TaskTypeFilter = "all" | "member" | "group";
 type DueMonthMode = "single" | "range";
 const PAGE_SIZE = 10;
+const TASKS_CACHE_KEY = "tasks:list";
 
 type StaffRow = {
   id: string;
@@ -111,6 +117,7 @@ function monthEndIso(value: string): string | undefined {
 export default function TaskScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { isOnline } = useOfflineSync();
   const { can } = usePermissions();
   const isElevatedTaskViewer = user?.is_org_owner === true || user?.is_super_admin === true;
   const canSeeMine = can("view_member_tasks") || can("view_group_tasks");
@@ -198,15 +205,24 @@ export default function TaskScreen() {
       return;
     }
     try {
+      const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;
+      const cached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(cacheKey);
+      const fallbackCached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(
+        "tasks:list:bootstrap"
+      );
+      const cacheToUse = cached?.data ? cached : fallbackCached;
+      if (cacheToUse?.data) {
+        setTasks(Array.isArray(cacheToUse.data.tasks) ? cacheToUse.data.tasks : []);
+        setTasksTotalCount(Number(cacheToUse.data.total_count || 0));
+        setHasMore(Array.isArray(cacheToUse.data.tasks) && cacheToUse.data.tasks.length === PAGE_SIZE);
+      }
       const { tasks: data, total_count } = await fetchTaskPage(0);
       setTasks(data);
       setTasksTotalCount(total_count);
       setHasMore(data.length === PAGE_SIZE);
       setLoadError(null);
+      await setOfflineResourceCache(cacheKey, { tasks: data, total_count });
     } catch (e) {
-      setTasks([]);
-      setTasksTotalCount(0);
-      setHasMore(false);
       setLoadError(e instanceof Error ? e.message : "Could not load tasks");
     }
   }, [
@@ -221,7 +237,12 @@ export default function TaskScreen() {
     setLoadingMore(true);
     try {
       const { tasks: next, total_count } = await fetchTaskPage(tasks.length);
-      setTasks((prev) => [...prev, ...next]);
+      setTasks((prev) => {
+        const merged = [...prev, ...next];
+        const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;
+        void setOfflineResourceCache(cacheKey, { tasks: merged, total_count });
+        return merged;
+      });
       setTasksTotalCount(total_count);
       setHasMore(next.length === PAGE_SIZE);
     } finally {
@@ -433,6 +454,10 @@ export default function TaskScreen() {
 
   function openCreateTask() {
     if (!canCreateTask) return;
+    if (!isOnline) {
+      Alert.alert("Offline limitation", "Creating tasks is only available online.");
+      return;
+    }
     if (canCreateMemberTask && canCreateGroupTask) {
       Alert.alert("Create task", "Choose task type.", [
         { text: "Member task", onPress: () => setMemberCreateOpen(true) },

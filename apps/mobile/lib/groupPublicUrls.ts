@@ -5,15 +5,46 @@ function trimOrigin(s: string): string {
   return s.replace(/\/$/, "");
 }
 
-/** Base URL of the web app (Vite) where `/public/groups/` and `/join-group/` are served. */
-export function getWebOrigin(): string {
+function trimPath(s: string): string {
+  return s.replace(/\/+$/, "");
+}
+
+const DEFAULT_LIVE_WEB_ORIGIN = "https://www.sheepmug.com";
+
+/**
+ * Base web URL where CMS public/join/register pages are served.
+ * Accepts EXPO_PUBLIC_WEB_ORIGIN as full origin (or origin + optional path).
+ */
+function getWebBaseUrl(): string {
   const env = (process.env.EXPO_PUBLIC_WEB_ORIGIN || "").trim();
-  if (env) return trimOrigin(env);
+  if (env) return trimPath(env);
   try {
-    return trimOrigin(new URL(API_BASE_URL).origin);
+    const apiUrl = new URL(API_BASE_URL);
+    const host = apiUrl.hostname.replace(/^api\./i, "");
+    const derived = `${apiUrl.protocol}//${host}`;
+    return trimOrigin(derived);
   } catch {
-    return "http://localhost:5173";
+    return DEFAULT_LIVE_WEB_ORIGIN;
   }
+}
+
+function getCmsBasePath(baseUrl: string): string {
+  try {
+    const parsed = new URL(baseUrl);
+    const currentPath = trimPath(parsed.pathname);
+    if (currentPath.toLowerCase().endsWith("/cms")) {
+      return trimPath(`${parsed.origin}${currentPath}`);
+    }
+    return `${trimOrigin(parsed.origin)}/cms`;
+  } catch {
+    const raw = trimPath(baseUrl);
+    return raw.toLowerCase().endsWith("/cms") ? raw : `${raw}/cms`;
+  }
+}
+
+/** Base URL of the CMS app where `/public/groups/` and `/join-group/` are served. */
+export function getWebOrigin(): string {
+  return getCmsBasePath(getWebBaseUrl());
 }
 
 /** Public mini-site is on by default; only explicit false turns it off (matches web MinistryDetail). */

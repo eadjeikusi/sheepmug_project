@@ -39,11 +39,13 @@ import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { api } from "../../lib/api";
 import { useBranch } from "../../contexts/BranchContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { colors, radius, sizes, type } from "../../theme";
 import { ymdToDueAtIso } from "../../lib/dateTimeFormat";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { getMemberJoinRegisterUrl } from "../../lib/memberJoinRegisterUrl";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 
 function firstValidImageUri(member: Member): string | null {
   const candidates = [
@@ -122,6 +124,7 @@ const GROUP_FILTER_ALL_TOKEN = "__all_groups__";
 const AGE_FILTER_MIN = 0;
 const AGE_FILTER_MAX = 100;
 const PAGE_SIZE = 10;
+const MEMBERS_CACHE_KEY = "members:list";
 
 function parseAgeBound(value: string): number | null {
   const trimmed = value.trim();
@@ -179,6 +182,7 @@ export default function MembersScreen() {
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ status?: string }>();
   const { user } = useAuth();
+  const { isOnline } = useOfflineSync();
   const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const [members, setMembers] = useState<Member[]>([]);
@@ -239,11 +243,21 @@ export default function MembersScreen() {
     (async () => {
       setLoading(true);
       try {
+        const cached = await getOfflineResourceCache<{ members: Member[]; total_count: number }>(
+          MEMBERS_CACHE_KEY
+        );
+        if (mounted && cached?.data) {
+          const cachedList = Array.isArray(cached.data.members) ? cached.data.members : [];
+          setMembers(cachedList);
+          setMembersTotalCount(Number(cached.data.total_count || 0));
+          setHasMoreMembers(cachedList.length === PAGE_SIZE);
+        }
         const { members: list, total_count } = await api.members.list({ offset: 0, limit: PAGE_SIZE });
         if (!mounted) return;
         setMembers(list);
         setMembersTotalCount(total_count);
         setHasMoreMembers(list.length === PAGE_SIZE);
+        await setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: list, total_count });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -792,13 +806,17 @@ export default function MembersScreen() {
 
   const refreshMembers = useCallback(async () => {
     const [listPayload, taskRes] = await Promise.all([
-      api.members.list({ offset: 0, limit: PAGE_SIZE }).catch(() => ({ members: [] as Member[], total_count: 0 })),
-      api.tasks.mine({ status: "all", limit: 100 }).catch(() => ({ tasks: [] as TaskItem[], total_count: 0 })),
+      api.members.list({ offset: 0, limit: PAGE_SIZE }),
+      api.tasks.mine({ status: "all", limit: 100 }),
     ]);
     const list = listPayload.members;
     setMembers(list);
     setMembersTotalCount(listPayload.total_count);
     setHasMoreMembers(list.length === PAGE_SIZE);
+    await setOfflineResourceCache(MEMBERS_CACHE_KEY, {
+      members: list,
+      total_count: listPayload.total_count,
+    });
     const pendingIds = new Set<string>();
     for (const t of taskRes.tasks as Record<string, unknown>[]) {
       if (String(t.status || "").toLowerCase() !== "pending") continue;
@@ -824,7 +842,11 @@ export default function MembersScreen() {
       const { members: next, total_count } = await api.members
         .list({ offset: members.length, limit: PAGE_SIZE })
         .catch(() => ({ members: [] as Member[], total_count: 0 }));
-      setMembers((prev) => [...prev, ...next]);
+      setMembers((prev) => {
+        const merged = [...prev, ...next];
+        void setOfflineResourceCache(MEMBERS_CACHE_KEY, { members: merged, total_count });
+        return merged;
+      });
       setMembersTotalCount(total_count);
       setHasMoreMembers(next.length === PAGE_SIZE);
     } finally {
@@ -887,6 +909,13 @@ export default function MembersScreen() {
 
   async function handleAssignSelected() {
     if (selectedCount === 0) return;
+    if (!isOnline) {
+      Alert.alert(
+        "Offline limitation",
+        "This action is only available online. Offline edits are limited to member add, attendance, task checklist, and member notes."
+      );
+      return;
+    }
     const memberIds = Array.from(selectedMembers);
     /** When exactly one ministry was chosen and assign had no hard errors, open that group’s profile. */
     let navigateToMinistryId: string | null = null;

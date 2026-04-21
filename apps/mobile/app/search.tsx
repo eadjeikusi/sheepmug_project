@@ -18,7 +18,12 @@ import type { Group, Member } from "@sheepmug/shared-api";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { api } from "../lib/api";
 import { useBranch } from "../contexts/BranchContext";
-import { getSearchHistory, prependSearchHistory } from "../lib/storage";
+import {
+  getOfflineResourceCache,
+  getSearchHistory,
+  prependSearchHistory,
+  setOfflineResourceCache,
+} from "../lib/storage";
 import { normalizeImageUri } from "../lib/imageUri";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
 import { colors, radius, sizes, type } from "../theme";
@@ -61,13 +66,22 @@ export default function SearchScreen() {
   const loadSearchData = useCallback(async (showSpinner: boolean) => {
     if (showSpinner) setLoading(true);
     try {
+      const cached = await getOfflineResourceCache<{ members: Member[]; groups: Group[] }>("search:seed");
+      if (cached?.data) {
+        setMembers(Array.isArray(cached.data.members) ? cached.data.members : []);
+        setGroups(Array.isArray(cached.data.groups) ? cached.data.groups : []);
+      }
       const [mPayload, g, h] = await Promise.all([
-        api.members.list({ limit: 100 }).catch(() => ({ members: [] as Member[], total_count: 0 })),
-        api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]),
+        api.members.list({ limit: 100 }),
+        api.groups.list({ tree: true, limit: 100 }),
         getSearchHistory(),
       ]);
       setMembers(mPayload.members);
       setGroups(g);
+      setHistory(h);
+      await setOfflineResourceCache("search:seed", { members: mPayload.members, groups: g });
+    } catch {
+      const h = await getSearchHistory();
       setHistory(h);
     } finally {
       if (showSpinner) setLoading(false);

@@ -9,6 +9,9 @@ const DASH_LAST_SEEN_KEY = "dashboard_last_seen_counts_v1";
 const SEARCH_HISTORY_KEY = "global_search_history_v1";
 const THEME_PREFERENCE_KEY = "theme_preference_v1";
 const FACE_RECOGNITION_OPT_IN_KEY = "face_recognition_opt_in_v1";
+const DASHBOARD_LAST_UPDATED_AT_KEY = "dashboard_last_updated_at_v1";
+const OFFLINE_RESOURCE_CACHE_PREFIX = "offline_resource_cache_v1:";
+const OFFLINE_BOOTSTRAP_DONE_KEY = "offline_bootstrap_done_v1";
 const SEARCH_HISTORY_MAX = 12;
 
 export async function getToken() {
@@ -132,4 +135,68 @@ export async function getFaceRecognitionOptIn(): Promise<boolean> {
 
 export async function setFaceRecognitionOptIn(enabled: boolean) {
   await AsyncStorage.setItem(FACE_RECOGNITION_OPT_IN_KEY, enabled ? "1" : "0");
+}
+
+export async function getDashboardLastUpdatedAt(): Promise<string | null> {
+  return AsyncStorage.getItem(DASHBOARD_LAST_UPDATED_AT_KEY);
+}
+
+export async function setDashboardLastUpdatedAt(ts: string | null) {
+  if (!ts) {
+    await AsyncStorage.removeItem(DASHBOARD_LAST_UPDATED_AT_KEY);
+    return;
+  }
+  await AsyncStorage.setItem(DASHBOARD_LAST_UPDATED_AT_KEY, ts);
+}
+
+type OfflineCacheEnvelope<T> = {
+  updated_at: string;
+  data: T;
+};
+
+function offlineResourceKey(key: string): string {
+  return `${OFFLINE_RESOURCE_CACHE_PREFIX}${key}`;
+}
+
+export async function getOfflineResourceCache<T>(key: string): Promise<OfflineCacheEnvelope<T> | null> {
+  const raw = await AsyncStorage.getItem(offlineResourceKey(key));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as OfflineCacheEnvelope<T>;
+    if (!parsed || typeof parsed !== "object" || !("data" in parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function setOfflineResourceCache<T>(key: string, data: T): Promise<void> {
+  const envelope: OfflineCacheEnvelope<T> = {
+    updated_at: new Date().toISOString(),
+    data,
+  };
+  await AsyncStorage.setItem(offlineResourceKey(key), JSON.stringify(envelope));
+}
+
+export async function getOfflineBootstrapDone(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+  return raw === "1";
+}
+
+export async function setOfflineBootstrapDone(done: boolean): Promise<void> {
+  if (!done) {
+    await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+    return;
+  }
+  await AsyncStorage.setItem(OFFLINE_BOOTSTRAP_DONE_KEY, "1");
+}
+
+export async function clearOfflineResourceCaches(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  const offlineKeys = keys.filter(
+    (k) => k.startsWith(OFFLINE_RESOURCE_CACHE_PREFIX) || k === OFFLINE_BOOTSTRAP_DONE_KEY
+  );
+  if (offlineKeys.length > 0) {
+    await AsyncStorage.multiRemove(offlineKeys);
+  }
 }

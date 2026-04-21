@@ -13,6 +13,7 @@ import { FormModalShell } from "./FormModalShell";
 import { MemberInitialAvatar } from "./MemberInitialAvatar";
 import { PhoneCountryField } from "./PhoneCountryField";
 import { YmdDateField } from "./YmdDateField";
+import { useOfflineSync } from "../contexts/OfflineSyncContext";
 
 type Props = {
   visible: boolean;
@@ -63,6 +64,7 @@ function OptionPills({
 }
 
 export function MemberAddModal({ visible, onClose, memberStatusOptions, fieldDefs, onCreated }: Props) {
+  const { isOnline, queueMemberCreate } = useOfflineSync();
   const defaultCountry = getDeviceDefaultCountryIso();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -146,7 +148,7 @@ export function MemberAddModal({ visible, onClose, memberStatusOptions, fieldDef
     setSaving(true);
     try {
       let profileImageUrl: string | null = null;
-      if (profileImageUri) {
+      if (profileImageUri && isOnline) {
         profileImageUrl = await uploadMemberImageFromUri(profileImageUri);
       }
 
@@ -189,6 +191,24 @@ export function MemberAddModal({ visible, onClose, memberStatusOptions, fieldDef
         }
         body.custom_fields = cf;
       }
+      if (!isOnline) {
+        await queueMemberCreate(body);
+        const tempMember = {
+          id: `offline-member-${Date.now()}`,
+          first_name: displayMemberWords(firstName.trim()),
+          last_name: displayMemberWords(lastName.trim()),
+          email: email.trim() || null,
+          phone: phoneNational.trim(),
+          status: displayMemberWords(status.trim() || "active"),
+          profile_image: null,
+          local_only: true,
+        } as Member;
+        onCreated(tempMember);
+        Alert.alert("Saved offline", "Member was saved offline and will sync when internet is available.");
+        onClose();
+        return;
+      }
+
       const created = await api.members.create(body);
       onCreated(created);
       onClose();

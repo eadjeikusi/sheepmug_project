@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Keyboard,
@@ -14,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import type { EventItem, EventTypeRow, Group } from "@sheepmug/shared-api";
 import { useRouter } from "expo-router";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { FilterResultsChips, HeaderCountTile, type FilterResultChip } from "../../components/FilterResultsSection";
 import { FormModalShell } from "../../components/FormModalShell";
 import { EventUpsertModal } from "../../components/EventUpsertModal";
@@ -31,9 +33,11 @@ import {
   formatCalendarCountdown,
   formatLongWeekdayDateTime,
 } from "../../lib/memberDisplayFormat";
+import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 
 type WhenMode = "upcoming" | "past";
 const PAGE_SIZE = 10;
+const EVENTS_CACHE_KEY = "events:list";
 
 function eventTitle(e: EventItem): string {
   const r = e as EventItem & { title?: string };
@@ -156,6 +160,7 @@ function eventMatchesWhenFilters(e: EventItem, whenModes: Set<WhenMode>): boolea
 
 export default function EventScreen() {
   const router = useRouter();
+  const { isOnline } = useOfflineSync();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -180,6 +185,19 @@ export default function EventScreen() {
     (async () => {
       setLoading(true);
       try {
+        const cached = await getOfflineResourceCache<{
+          events: EventItem[];
+          total_count: number;
+          groups: Group[];
+          event_types: EventTypeRow[];
+        }>(EVENTS_CACHE_KEY);
+        if (mounted && cached?.data) {
+          setEvents(Array.isArray(cached.data.events) ? cached.data.events : []);
+          setEventsTotalCount(Number(cached.data.total_count || 0));
+          setHasMore(Array.isArray(cached.data.events) && cached.data.events.length === PAGE_SIZE);
+          setGroups(Array.isArray(cached.data.groups) ? cached.data.groups : []);
+          setEventTypeRows(Array.isArray(cached.data.event_types) ? cached.data.event_types : []);
+        }
         const [eventPayload, groupRows, typeRows] = await Promise.all([
           api.events.list({ offset: 0, limit: PAGE_SIZE }),
           api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]),
@@ -194,6 +212,12 @@ export default function EventScreen() {
         setEventTypeRows(
           [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
         );
+        await setOfflineResourceCache(EVENTS_CACHE_KEY, {
+          events: data,
+          total_count,
+          groups: groupRows,
+          event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+        });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -219,6 +243,12 @@ export default function EventScreen() {
       setEventTypeRows(
         [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
       );
+      await setOfflineResourceCache(EVENTS_CACHE_KEY, {
+        events: data,
+        total_count,
+        groups: groupRows,
+        event_types: [...typeRows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
+      });
     } finally {
       setLoading(false);
     }
@@ -229,7 +259,16 @@ export default function EventScreen() {
     setLoadingMore(true);
     try {
       const { events: next, total_count } = await api.events.list({ offset: events.length, limit: PAGE_SIZE });
-      setEvents((prev) => [...prev, ...next]);
+      setEvents((prev) => {
+        const merged = [...prev, ...next];
+        void setOfflineResourceCache(EVENTS_CACHE_KEY, {
+          events: merged,
+          total_count,
+          groups,
+          event_types: eventTypeRows,
+        });
+        return merged;
+      });
       setEventsTotalCount(total_count);
       setHasMore(next.length === PAGE_SIZE);
     } finally {
@@ -451,7 +490,13 @@ export default function EventScreen() {
           <View style={styles.headerActions}>
             <Pressable
               accessibilityLabel="Create event"
-              onPress={() => setShowCreateModal(true)}
+              onPress={() => {
+                if (!isOnline) {
+                  Alert.alert("Offline limitation", "Creating events is only available online.");
+                  return;
+                }
+                setShowCreateModal(true);
+              }}
               style={styles.iconButton}
             >
               <Ionicons name="add-outline" size={sizes.headerIcon} color={colors.textPrimary} />

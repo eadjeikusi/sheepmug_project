@@ -3,13 +3,11 @@ import {
   Alert,
   Image,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from "react-native";
@@ -19,17 +17,34 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { radius, type } from "../../theme";
 import Constants from "expo-constants";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
-import { getFaceRecognitionOptIn, setFaceRecognitionOptIn } from "../../lib/storage";
+import { clearOfflineResourceCaches, setOfflineBootstrapDone } from "../../lib/storage";
 
 function initials(first?: string, last?: string) {
   const a = (first || "").trim()[0] || "";
   const b = (last || "").trim()[0] || "";
   return (a + b || "U").toUpperCase();
+}
+
+function formatTimeAgo(ts: string | null): string {
+  if (!ts) return "never";
+  const ms = new Date(ts).getTime();
+  if (Number.isNaN(ms)) return "never";
+  const diffMs = Date.now() - ms;
+  if (diffMs < 60_000) return "just now";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
 }
 
 function MenuRow({
@@ -73,6 +88,7 @@ export default function MenuScreen() {
   const { branches, selectedBranch, selectBranch, refreshBranches } = useBranch();
   useNotifications();
   const { colors } = useTheme();
+  const { lastSyncAt } = useOfflineSync();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [refreshing, setRefreshing] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -80,25 +96,6 @@ export default function MenuScreen() {
   const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [branchPickerAnchor, setBranchPickerAnchor] = useState<AnchorRect | null>(null);
   const branchRowRef = useRef<View>(null);
-  const [faceRecognitionOptIn, setFaceRecognitionOptInState] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    void (async () => {
-      const on = await getFaceRecognitionOptIn();
-      if (mounted) setFaceRecognitionOptInState(on);
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const switchTrackColor = useMemo(
-    () => ({ false: colors.border, true: colors.accent }),
-    [colors.accent, colors.border]
-  );
-
-  const biometricLabel = Platform.OS === "ios" ? "Face ID" : "Face unlock";
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -148,62 +145,53 @@ export default function MenuScreen() {
           <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
         </Pressable>
 
-        <Text style={styles.sectionLabel}>Facial recognition</Text>
+        <Text style={styles.sectionLabel}>Other settings</Text>
         <View style={styles.block}>
-          <View style={styles.faceSwitchRow}>
-            <View style={styles.faceSwitchTextWrap}>
-              <Text style={styles.faceSwitchTitle}>Allow facial recognition</Text>
-              <Text style={styles.faceSwitchDesc}>
-                When your church turns this on, you can use {biometricLabel} on this device for a faster, optional sign-in
-                flow. Your face data stays on-device until enrollment is implemented.
-              </Text>
-            </View>
-            <Switch
-              value={faceRecognitionOptIn}
-              onValueChange={(v) => {
-                setFaceRecognitionOptInState(v);
-                void setFaceRecognitionOptIn(v);
-              }}
-              trackColor={switchTrackColor}
-              thumbColor={faceRecognitionOptIn ? "#ffffff" : "#f4f3f4"}
-              accessibilityLabel="Allow facial recognition"
-            />
-          </View>
-          <View style={styles.faceDivider} />
           <MenuRow
             icon="scan-outline"
-            label="Enroll or update face data"
+            label="Facial recognition"
             colors={colors}
             onPress={() => {
-              if (!faceRecognitionOptIn) {
-                Alert.alert(
-                  "Turn on facial recognition",
-                  `Enable “Allow facial recognition” first. Enrollment will use ${biometricLabel} when the feature is ready.`
-                );
-                return;
-              }
               Alert.alert(
-                "Face enrollment",
-                "Enrollment is not available yet. When your organization enables facial recognition, you will complete a short scan here so SheepMug can verify it is you at sign-in."
+                "Facial recognition",
+                "Facial recognition enrollment is not available yet. When this feature is enabled for your organization, setup will be available here."
               );
             }}
           />
           <MenuRow
+            icon="cloud-upload-outline"
+            label="Offline Sync"
+            onPress={() => router.push("/offline-sync")}
+            colors={colors}
+            rightNode={<Text style={styles.menuRowMeta}>Last sync {formatTimeAgo(lastSyncAt)}</Text>}
+          />
+          <MenuRow
             icon="trash-outline"
-            label="Remove face data from this device"
+            label="Clear cached data"
             colors={colors}
             danger
             onPress={() => {
               Alert.alert(
-                "Remove face data",
-                "There is no enrolled template stored in SheepMug yet. When enrollment launches, you will be able to clear it from this screen."
+                "Clear cached data",
+                "This removes all offline cached data and images. You can download it again later.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Clear cache",
+                    style: "destructive",
+                    onPress: () => {
+                      void (async () => {
+                        await clearOfflineResourceCaches();
+                        await setOfflineBootstrapDone(false);
+                        Alert.alert("Cache cleared", "Offline cache has been cleared.");
+                        router.replace("/offline-setup");
+                      })();
+                    },
+                  },
+                ]
               );
             }}
           />
-        </View>
-
-        <Text style={styles.sectionLabel}>Other settings</Text>
-        <View style={styles.block}>
           <View ref={branchRowRef} collapsable={false}>
             <MenuRow
               icon="git-branch-outline"
@@ -225,7 +213,6 @@ export default function MenuScreen() {
               }}
             />
           </View>
-          <MenuRow icon="person-outline" label="Profile details" onPress={goProfile} colors={colors} />
           <MenuRow
             icon="notifications-outline"
             label="Notification settings"
@@ -383,32 +370,6 @@ function makeStyles(colors: {
     backgroundColor: colors.card,
     overflow: "hidden",
   },
-  faceSwitchRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  faceSwitchTextWrap: { flex: 1, gap: 6 },
-  faceSwitchTitle: {
-    fontSize: type.subtitle.size,
-    lineHeight: type.subtitle.lineHeight,
-    color: colors.textPrimary,
-    fontWeight: type.subtitle.weight,
-    letterSpacing: type.subtitle.letterSpacing,
-  },
-  faceSwitchDesc: {
-    fontSize: type.caption.size,
-    lineHeight: type.caption.lineHeight + 2,
-    color: colors.textSecondary,
-    letterSpacing: type.caption.letterSpacing,
-  },
-  faceDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginLeft: 12,
-  },
   menuRow: {
     minHeight: 54,
     borderBottomWidth: 1,
@@ -426,6 +387,12 @@ function makeStyles(colors: {
     letterSpacing: type.subtitle.letterSpacing,
   },
   menuRowDanger: { color: "#dc2626" },
+  menuRowMeta: {
+    color: colors.textSecondary,
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
+    fontWeight: type.caption.weight,
+  },
   branchDropRight: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "58%" },
   branchDropValue: {
     color: colors.textSecondary,
