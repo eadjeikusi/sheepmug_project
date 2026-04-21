@@ -976,16 +976,16 @@ export default function Tasks() {
               </ul>
             ))}
         </div>
-        <div
-          className={`flex flex-wrap gap-1.5 shrink-0 items-start justify-end ${actionOpacityClass}`}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className={`flex flex-wrap gap-1.5 shrink-0 items-start justify-end ${actionOpacityClass}`}>
           {opts.includeManageButtons && (isCreator || (opts.reload === 'branch' && isElevatedTaskViewer)) && (
             <>
               <button
                 type="button"
                 title="Edit task"
-                onClick={() => startEdit(t as BranchTaskRow)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  startEdit(t as BranchTaskRow);
+                }}
                 className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
               >
                 <Pencil className="w-4 h-4" />
@@ -993,7 +993,10 @@ export default function Tasks() {
               <button
                 type="button"
                 title="Delete task"
-                onClick={() => void deleteBranchTask(t.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void deleteBranchTask(t.id);
+                }}
                 className="p-2 rounded-lg text-red-600 border border-red-100 hover:bg-red-50"
               >
                 <Trash2 className="w-4 h-4" />
@@ -1038,19 +1041,38 @@ export default function Tasks() {
                     }.`}
               </p>
             </div>
-            <div className="relative shrink-0 flex items-center gap-2" ref={createMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setBranchFiltersOpen((v) => !v)}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
-                    branchFiltersOpen
-                      ? 'bg-blue-50 border-blue-200 text-blue-700'
-                      : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <SlidersHorizontal className="w-4 h-4" />
-                  Filters
-                </button>
+            <div className="relative shrink-0 flex items-center gap-2 flex-wrap sm:flex-nowrap" ref={createMenuRef}>
+                <div className="relative min-w-[12rem] sm:min-w-[16rem] md:min-w-[20rem] flex-1 sm:flex-none items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm flex">
+                  <motion.span
+                    animate={branchSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                    transition={{ duration: 0.45, repeat: branchSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
+                    className="text-gray-400 shrink-0 mr-2"
+                  >
+                    <Search className="w-4 h-4" aria-hidden />
+                  </motion.span>
+                  <input
+                    type="search"
+                    placeholder="Search tasks..."
+                    value={branchSearch}
+                    onChange={(e) => setBranchSearch(e.target.value)}
+                    onFocus={() => setBranchSearchFocus(true)}
+                    onBlur={() => setBranchSearchFocus(false)}
+                    className="flex-1 min-w-0 text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
+                    aria-label="Search tasks"
+                  />
+                </div>
+              <button
+                type="button"
+                onClick={() => setBranchFiltersOpen((v) => !v)}
+                className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
+                  branchFiltersOpen
+                    ? 'bg-blue-50 border-blue-200 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Filters
+              </button>
                 {(canManageMember || canManageGroup) && (
                   <>
                     <button
@@ -1150,25 +1172,6 @@ export default function Tasks() {
                       {label}
                     </button>
                   ))}
-                </div>
-                <div className="relative flex flex-1 min-w-[12rem] max-w-md items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-                  <motion.span
-                    animate={branchSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.45, repeat: branchSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
-                    className="text-gray-400 shrink-0 mr-2"
-                  >
-                    <Search className="w-4 h-4" aria-hidden />
-                  </motion.span>
-                  <input
-                    type="search"
-                    placeholder="Search follow-ups…"
-                    value={branchSearch}
-                    onChange={(e) => setBranchSearch(e.target.value)}
-                    onFocus={() => setBranchSearchFocus(true)}
-                    onBlur={() => setBranchSearchFocus(false)}
-                    className="flex-1 min-w-0 text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
-                    aria-label="Search follow-ups in this list"
-                  />
                 </div>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-3 items-end">

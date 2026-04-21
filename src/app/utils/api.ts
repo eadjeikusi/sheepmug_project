@@ -26,6 +26,19 @@ function clearStoredSession() {
   localStorage.removeItem(USER_KEY);
 }
 
+async function parseApiBody(response: Response): Promise<Record<string, unknown>> {
+  const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    return (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  }
+  const raw = await response.text().catch(() => '');
+  const short = raw.trim().slice(0, 240);
+  return {
+    error: short || 'Unexpected non-JSON API response.',
+    _non_json: true,
+  };
+}
+
 async function attemptTokenRefresh(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight;
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
@@ -38,7 +51,7 @@ async function attemptTokenRefresh(): Promise<string | null> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await parseApiBody(response);
       if (response.status === 403) {
         throw new Error((payload as { error?: string }).error || 'Access denied for this account.');
       }
@@ -96,12 +109,14 @@ async function apiRequest<T = any>(
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
+    const error = await parseApiBody(response);
     const fallback = response.status === 403 ? 'Access denied for this account.' : 'API request failed';
     throw new Error((error as { error?: string }).error || fallback);
   }
 
-  return await response.json();
+  if (response.status === 204) return undefined as T;
+  const body = await parseApiBody(response);
+  return body as T;
 }
 
 // ============================================

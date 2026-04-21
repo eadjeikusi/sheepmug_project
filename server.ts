@@ -20211,6 +20211,14 @@ async function runAutomatedNotificationJobs(): Promise<void> {
   }
 }
 
+/**
+ * Keep API errors JSON-only even for unknown endpoints.
+ * This prevents HTML/text fallback bodies that break `res.json()` callers in the web UI.
+ */
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "API route not found" });
+});
+
 async function startServer() {
   const mig = await runCustomFieldsMigrationFromEnv();
   if (mig.skipped) {
