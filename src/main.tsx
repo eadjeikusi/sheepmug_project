@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { Analytics } from "@vercel/analytics/react";
 import App from "./app/App.tsx";
 import "./styles/index.css";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -15,5 +16,6 @@ createRoot(document.getElementById("root")!).render(
         </BranchProvider>
       </AppProvider>
     </AuthProvider>
+    <Analytics />
   </ErrorBoundary>
 );
