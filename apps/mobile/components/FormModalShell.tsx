@@ -13,7 +13,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FormModalOverlayHost } from "../contexts/FormModalOverlayContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { colors, radius, sizes, type } from "../theme";
+import { HeaderIconCircle, HeaderIconCircleButton } from "./HeaderIconCircle";
 
 export type FormModalVariant = "full" | "compact";
 
@@ -44,6 +46,7 @@ export function FormModalShell({
   children,
   footer,
 }: Props) {
+  const { colors: themedColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
   const compact = variant === "compact";
@@ -63,9 +66,9 @@ export function FormModalShell({
             <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
               <View style={styles.headerRow}>
               {headerIcon ? (
-                <View style={styles.iconCircle}>
-                  <Ionicons name={headerIcon} size={sizes.headerIcon} color={colors.accent} />
-                </View>
+                <HeaderIconCircle>
+                  <Ionicons name={headerIcon} size={sizes.headerIcon} color={themedColors.accent} />
+                </HeaderIconCircle>
               ) : null}
               <View style={styles.headerTextWrap}>
                 <Text style={styles.title} numberOfLines={2}>
@@ -77,9 +80,9 @@ export function FormModalShell({
                   </Text>
                 ) : null}
               </View>
-              <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn} accessibilityLabel="Close">
-                <Ionicons name="close" size={sizes.headerIcon} color={colors.textPrimary} />
-              </Pressable>
+              <HeaderIconCircleButton onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+                <Ionicons name="close" size={sizes.headerIcon} color={themedColors.textPrimary} />
+              </HeaderIconCircleButton>
               </View>
               <DashedRule />
               <ScrollView
@@ -133,14 +136,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
   },
-  iconCircle: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderRadius: sizes.headerIconButton / 2,
-    backgroundColor: colors.accentSurface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   headerTextWrap: { flex: 1, minWidth: 0, paddingTop: 2 },
   title: {
     fontSize: type.subtitle.size,
@@ -155,7 +150,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: type.caption.letterSpacing,
   },
-  closeBtn: { padding: 4, marginTop: -4 },
   dashedRule: {
     marginHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,

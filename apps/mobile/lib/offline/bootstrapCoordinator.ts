@@ -39,7 +39,10 @@ export function subscribeOfflineBootstrapProgress(
  * Runs full offline bootstrap once per user until success. Concurrent callers share the same work.
  * Does not set bootstrap-done if the run throws.
  */
-export async function ensureOfflineBootstrap(userId: string): Promise<void> {
+export async function ensureOfflineBootstrap(
+  userId: string,
+  organizationId?: string | null
+): Promise<void> {
   const id = String(userId || "").trim();
   if (!id) throw new Error("Missing user id");
 
@@ -52,7 +55,10 @@ export async function ensureOfflineBootstrap(userId: string): Promise<void> {
   }
 
   const promise = (async () => {
-    await runOfflineBootstrap((p) => notifyProgress(id, p));
+    await runOfflineBootstrap((p) => notifyProgress(id, p), {
+      accountUserId: id,
+      organizationId: organizationId ?? null,
+    });
     await setOfflineBootstrapDone(id, true);
     const now = new Date().toISOString();
     await markLastSyncAt(now);

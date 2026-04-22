@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { UpcomingImportantDateItem } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { colors, radius, sizes, type } from "../theme";
 import { formatLongWeekdayDate } from "../lib/memberDisplayFormat";
 
@@ -63,9 +64,9 @@ export default function ImportantDatesScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
         <View style={{ flex: 1 }}>
           <Text style={styles.topTitle}>All Important Dates</Text>
           <Text style={styles.topSub}>{subtitle}</Text>
@@ -140,7 +141,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   topTitle: { fontSize: type.title.size, fontWeight: type.title.weight, color: colors.textPrimary },
   topSub: { fontSize: type.caption.size, color: colors.textSecondary },
   filters: { paddingHorizontal: 12, paddingTop: 12, gap: 10 },

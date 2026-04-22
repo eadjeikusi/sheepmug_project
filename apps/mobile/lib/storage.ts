@@ -238,44 +238,60 @@ export async function setOfflineResourceCache<T>(key: string, data: T): Promise<
   await AsyncStorage.setItem(offlineResourceKey(key), JSON.stringify(envelope));
 }
 
+async function offlineBootstrapManifestMatchesUser(userId: string): Promise<boolean> {
+  const { getOfflineManifest } = await import("./offline/manifest");
+  const m = await getOfflineManifest();
+  const saved = m.bootstrap_account_user_id != null ? String(m.bootstrap_account_user_id).trim() : "";
+  if (!saved) return false;
+  return saved === userId;
+}
+
 /** Per-user offline bootstrap completion. Pass `user.id` from auth; missing id returns false. */
 export async function getOfflineBootstrapDone(userId: string | null | undefined): Promise<boolean> {
   const id = String(userId || "").trim();
   if (!id) return false;
   const metaKey = offlineBootstrapKeyForUser(id);
-  const db = await getOfflineDb();
-  const row = await db.getFirstAsync<{ meta_value: string }>(
-    "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
-    [metaKey]
-  );
-  if (row?.meta_value === "1") return true;
   const raw = await AsyncStorage.getItem(metaKey);
-  if (raw === "1") return true;
+
+  if (raw === "1") {
+    const manifestOk = await offlineBootstrapManifestMatchesUser(id);
+    if (!manifestOk) {
+      const db = await getOfflineDb();
+      await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [metaKey]);
+      await AsyncStorage.removeItem(metaKey);
+      return false;
+    }
+    return true;
+  }
+
+  const db = await getOfflineDb();
+
   const legacyRow = await db.getFirstAsync<{ meta_value: string }>(
     "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
     [OFFLINE_BOOTSTRAP_DONE_KEY]
   );
-  if (legacyRow?.meta_value === "1") {
-    await db.runAsync("INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);", [
-      metaKey,
-      "1",
-    ]);
-    await AsyncStorage.setItem(metaKey, "1");
+  const legacyRaw = await AsyncStorage.getItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+  if (legacyRow?.meta_value === "1" || legacyRaw === "1") {
     await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [OFFLINE_BOOTSTRAP_DONE_KEY]);
     await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
-    return true;
   }
-  const legacyRaw = await AsyncStorage.getItem(OFFLINE_BOOTSTRAP_DONE_KEY);
-  if (legacyRaw === "1") {
-    await db.runAsync("INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);", [
-      metaKey,
-      "1",
-    ]);
-    await AsyncStorage.setItem(metaKey, "1");
-    await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
-    return true;
+
+  const row = await db.getFirstAsync<{ meta_value: string }>(
+    "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
+    [metaKey]
+  );
+  const asyncAgain = await AsyncStorage.getItem(metaKey);
+  const flagged = row?.meta_value === "1" || asyncAgain === "1";
+  if (!flagged) return false;
+
+  const manifestOk = await offlineBootstrapManifestMatchesUser(id);
+  if (!manifestOk) {
+    await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [metaKey]);
+    await AsyncStorage.removeItem(metaKey);
+    return false;
   }
-  return false;
+  await AsyncStorage.setItem(metaKey, "1");
+  return true;
 }
 
 export async function setOfflineBootstrapDone(
@@ -357,13 +373,19 @@ function offlineMetaKey(key: string): string {
 }
 
 export async function getOfflineMeta(key: string): Promise<string | null> {
+  const fullKey = offlineMetaKey(key);
+  const fromAsync = await AsyncStorage.getItem(fullKey);
+  if (fromAsync != null && fromAsync !== "") return fromAsync;
   const db = await getOfflineDb();
   const row = await db.getFirstAsync<{ meta_value: string }>(
     "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
-    [offlineMetaKey(key)]
+    [fullKey]
   );
-  if (row?.meta_value != null) return row.meta_value;
-  return AsyncStorage.getItem(offlineMetaKey(key));
+  if (row?.meta_value != null) {
+    await AsyncStorage.setItem(fullKey, row.meta_value);
+    return row.meta_value;
+  }
+  return null;
 }
 
 export async function setOfflineMeta(key: string, value: string | null): Promise<void> {

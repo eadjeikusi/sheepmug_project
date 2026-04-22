@@ -31,6 +31,7 @@ import type {
 } from "@sheepmug/shared-api";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
 import { FilterTriggerButton } from "../../components/FilterTriggerButton";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberEditModal } from "../../components/MemberEditModal";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { MemberTasksTab } from "../../components/MemberTasksTab";
@@ -854,9 +855,9 @@ export default function MemberProfileScreen() {
       >
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <Pressable onPress={() => router.back()} style={styles.backBtn}>
-              <Text style={styles.backText}>‹</Text>
-            </Pressable>
+            <HeaderIconCircleButton onPress={() => router.back()} accessibilityLabel="Go back">
+              <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
+            </HeaderIconCircleButton>
             <Text style={styles.topTitle} numberOfLines={1}>
               Member profile
             </Text>
@@ -864,14 +865,13 @@ export default function MemberProfileScreen() {
           <View style={styles.topBarRight}>
             {member && headerOverflowOptions.length > 0 ? (
               <View ref={headerOverflowRef} collapsable={false}>
-                <Pressable
+                <HeaderIconCircleButton
                   accessibilityLabel="Member actions"
                   onPress={openHeaderOverflowMenu}
-                  style={({ pressed }) => [styles.headerIconBtn, pressed && styles.headerIconBtnPressed]}
                   hitSlop={12}
                 >
                   <Ionicons name="ellipsis-vertical" size={sizes.headerIcon} color={colors.textPrimary} />
-                </Pressable>
+                </HeaderIconCircleButton>
               </View>
             ) : null}
           </View>
@@ -1921,15 +1921,6 @@ const styles = StyleSheet.create({
     fontWeight: type.h1.weight,
     letterSpacing: type.h1.letterSpacing,
   },
-  headerIconBtn: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderRadius: radius.pill,
-    backgroundColor: "#eceff3",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerIconBtnPressed: { opacity: 0.85 },
   segmentWrap: {
     flexDirection: "row",
     backgroundColor: colors.accentSurface,
@@ -1998,20 +1989,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 18,
     gap: 12,
-  },
-  backBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: radius.pill,
-    backgroundColor: "#eceff3",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backText: {
-    color: colors.textPrimary,
-    fontSize: type.title.size,
-    lineHeight: type.title.lineHeight,
-    fontWeight: type.bodyStrong.weight,
   },
   heroCard: {
     backgroundColor: colors.card,

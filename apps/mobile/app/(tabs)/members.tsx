@@ -33,6 +33,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { DatePickerField } from "../../components/datetime/DatePickerField";
 import { HeaderCountTile } from "../../components/FilterResultsSection";
 import { FormModalShell } from "../../components/FormModalShell";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberAddModal } from "../../components/MemberAddModal";
 import { MemberJoinQrModal } from "../../components/MemberJoinQrModal";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
@@ -1102,8 +1103,8 @@ export default function MembersScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
-              style={[styles.iconButton, showSearch && styles.iconButtonActive]}
+            <HeaderIconCircleButton
+              active={showSearch}
               onPress={() => {
                 if (showSearch) {
                   setShowSearch(false);
@@ -1119,27 +1120,23 @@ export default function MembersScreen() {
                 size={sizes.headerIcon}
                 color={colors.textPrimary}
               />
-            </Pressable>
-            <Pressable
-              style={[styles.iconButton, hasAppliedFilters && styles.iconButtonActive]}
-              onPress={() => setFilterOpen(true)}
-            >
+            </HeaderIconCircleButton>
+            <HeaderIconCircleButton active={hasAppliedFilters} onPress={() => setFilterOpen(true)}>
               <Ionicons
                 name={hasAppliedFilters ? "filter" : "filter-outline"}
                 size={sizes.headerIcon}
                 color={hasAppliedFilters ? colors.accent : colors.textPrimary}
               />
-            </Pressable>
-            <Pressable
+            </HeaderIconCircleButton>
+            <HeaderIconCircleButton
               accessibilityLabel="Member list options"
-              style={styles.iconButton}
               onPress={() => {
                 resetBulkSelection();
                 setHeaderMenuOpen(true);
               }}
             >
               <Ionicons name="ellipsis-vertical" size={sizes.headerIcon} color={colors.textPrimary} />
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         </View>
         {showSearch && (
@@ -1151,12 +1148,9 @@ export default function MembersScreen() {
               style={styles.input}
               returnKeyType="search"
             />
-            <Pressable
-              style={styles.searchAction}
-              onPress={() => setQuery((v) => v.trim())}
-            >
+            <HeaderIconCircleButton onPress={() => setQuery((v) => v.trim())}>
               <Ionicons name="search-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         )}
         <View style={styles.filtersBlock}>
@@ -1953,20 +1947,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: type.pageTitle.letterSpacing,
   },
-  iconButton: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSurface,
-  },
   headerMenuRoot: { flex: 1 },
   headerMenuBackdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -2026,16 +2006,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: 12,
     backgroundColor: colors.card,
-  },
-  searchAction: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
   filtersBlock: {
     backgroundColor: colors.bg,

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import type { NotificationPreferences } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { useTheme } from "../contexts/ThemeContext";
 import { radius, sizes, type } from "../theme";
 
@@ -192,9 +193,9 @@ export default function NotificationSettingsScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <HeaderIconCircleButton onPress={() => router.back()} accessibilityLabel="Go back">
             <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-          </Pressable>
+          </HeaderIconCircleButton>
           <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>Notification Settings</Text>
         </View>
 
@@ -296,14 +297,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { padding: 16, gap: 12, paddingBottom: 24 },
   topBar: { flexDirection: "row", alignItems: "center", gap: 10 },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   pageTitle: {
     fontSize: type.h1.size,
     lineHeight: type.h1.lineHeight,

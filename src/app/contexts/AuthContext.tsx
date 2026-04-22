@@ -76,6 +76,13 @@ function mergeIncomingUser(prev: User | null, incoming: User): User {
   if (prev && incoming.ministry_scope === undefined && prev.ministry_scope !== undefined) {
     merged.ministry_scope = prev.ministry_scope;
   }
+  if (
+    prev &&
+    incoming.cms_onboarding_completed === undefined &&
+    prev.cms_onboarding_completed !== undefined
+  ) {
+    merged.cms_onboarding_completed = prev.cms_onboarding_completed;
+  }
   return merged;
 }
 
@@ -245,6 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
         profile_image: meta.profile_image || null,
         organization: meta.organization || { id: meta.organization_id || '', name: meta.organization_name || '', slug: meta.organization_slug || '' },
+        cms_onboarding_completed: false,
       } as User;
 
       localStorage.setItem(TOKEN_KEY, session.access_token);

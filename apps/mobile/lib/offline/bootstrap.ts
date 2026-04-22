@@ -11,7 +11,8 @@ export type OfflineBootstrapProgress = {
 };
 
 export async function runOfflineBootstrap(
-  onProgress?: (progress: OfflineBootstrapProgress) => void
+  onProgress?: (progress: OfflineBootstrapProgress) => void,
+  options?: { accountUserId?: string; organizationId?: string | null }
 ): Promise<void> {
   const total = 8;
   let done = 0;
@@ -270,6 +271,12 @@ export async function runOfflineBootstrap(
   );
   tick("Search data");
 
+  const accountUserId = String(options?.accountUserId || "").trim();
+  const organizationId =
+    options?.organizationId != null && String(options.organizationId).trim()
+      ? String(options.organizationId).trim()
+      : null;
+
   await patchOfflineManifest({
     last_bootstrap_at: nowIso,
     last_delta_at: nowIso,
@@ -290,5 +297,11 @@ export async function runOfflineBootstrap(
       groups: nowIso,
       families: nowIso,
     },
+    ...(accountUserId
+      ? {
+          bootstrap_account_user_id: accountUserId,
+          bootstrap_organization_id: organizationId,
+        }
+      : {}),
   });
 }

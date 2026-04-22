@@ -18,6 +18,7 @@ import type { AuthUser } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
 import { ensurePhotoLibraryPermission } from "../lib/photoLibraryAccess";
 import { uploadMemberImageFromUri } from "../lib/uploadMemberImage";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
@@ -131,11 +132,11 @@ export default function ProfileDetailsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <HeaderIconCircleButton onPress={() => router.back()} accessibilityLabel="Go back">
             <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-          </Pressable>
+          </HeaderIconCircleButton>
           <Text style={styles.title}>Profile Details</Text>
-          <View style={styles.backBtn} />
+          <View style={styles.topBarSpacer} />
         </View>
 
         <View style={styles.card}>
@@ -224,14 +225,7 @@ function makeStyles(colors: {
     fontWeight: type.h1.weight,
     letterSpacing: type.h1.letterSpacing,
   },
-  backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#eceff3",
-  },
+  topBarSpacer: { width: sizes.headerIconButton },
   card: {
     borderWidth: 1,
     borderColor: colors.border,

@@ -2,6 +2,7 @@ import { ActivityIndicator, FlatList, Image, Pressable, RefreshControl, SafeArea
 import { useCallback, useState } from "react";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { useNotifications } from "../contexts/NotificationContext";
 import { colors, radius, sizes, type } from "../theme";
 import { capitalizeLeadingChar, displayMemberWords, formatLongWeekdayDateTime } from "../lib/memberDisplayFormat";
@@ -29,9 +30,9 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
         <Text style={styles.headerTitle}>Notifications</Text>
         {unreadCount > 0 ? (
           <Pressable onPress={() => void markAllRead()} hitSlop={8}>
@@ -126,7 +127,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { padding: 8 },
   headerTitle: {
     flex: 1,
     textAlign: "center",
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     letterSpacing: type.pageTitle.letterSpacing,
     color: colors.textPrimary,
   },
-  headerSpacer: { width: 72 },
+  headerSpacer: { width: sizes.headerIconButton },
   markAll: {
     width: 72,
     textAlign: "right",

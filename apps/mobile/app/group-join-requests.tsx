@@ -22,12 +22,13 @@ import { Ionicons } from "@expo/vector-icons";
 import type { AnchorRect } from "../components/FilterPickerModal";
 import { FilterPickerModal } from "../components/FilterPickerModal";
 import { FilterTriggerButton } from "../components/FilterTriggerButton";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { api } from "../lib/api";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
 import { usePermissions } from "../hooks/usePermissions";
 import { setDashboardLastSeenCounts } from "../lib/storage";
-import { colors, radius, type } from "../theme";
+import { colors, radius, sizes, type } from "../theme";
 
 function statusLabel(raw: string): string {
   const cleaned = raw.trim().replace(/_/g, " ");
@@ -435,9 +436,9 @@ export default function GroupJoinRequestsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.navHeader}>
-        <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </Pressable>
+        <HeaderIconCircleButton onPress={goBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Go back">
+          <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
+        </HeaderIconCircleButton>
         <View style={styles.headerTextBlock}>
           <Text style={styles.pageTitle}>Group join requests</Text>
           <Text style={styles.subhead}>Tap a row to review. Long-press to select.</Text>
@@ -640,7 +641,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { padding: 8 },
   headerTextBlock: { flex: 1, minWidth: 0 },
   pageTitle: {
     fontSize: type.pageTitle.size,

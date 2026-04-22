@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { FilterResultsChips, HeaderCountTile, type FilterResultChip } from "../../components/FilterResultsSection";
 import { FormModalShell } from "../../components/FormModalShell";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { EventUpsertModal } from "../../components/EventUpsertModal";
 import { api } from "../../lib/api";
 import { normalizeImageUri } from "../../lib/imageUri";
@@ -512,7 +513,7 @@ export default function EventScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
+            <HeaderIconCircleButton
               accessibilityLabel="Create event"
               onPress={() => {
                 if (!isOnline) {
@@ -521,14 +522,13 @@ export default function EventScreen() {
                 }
                 setShowCreateModal(true);
               }}
-              style={styles.iconButton}
             >
               <Ionicons name="add-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-            </Pressable>
-            <Pressable
+            </HeaderIconCircleButton>
+            <HeaderIconCircleButton
               accessibilityLabel={hasAppliedFilters ? "Edit filters" : "Open filters"}
               accessibilityState={{ selected: hasAppliedFilters }}
-              style={[styles.iconButton, hasAppliedFilters && styles.iconButtonActive]}
+              active={hasAppliedFilters}
               onPress={() => setFilterOpen(true)}
             >
               <Ionicons
@@ -536,10 +536,10 @@ export default function EventScreen() {
                 size={sizes.headerIcon}
                 color={hasAppliedFilters ? colors.accent : colors.textPrimary}
               />
-            </Pressable>
-            <Pressable
+            </HeaderIconCircleButton>
+            <HeaderIconCircleButton
               accessibilityLabel={showSearch ? "Close search" : "Search events"}
-              style={[styles.iconButton, showSearch && styles.iconButtonActive]}
+              active={showSearch}
               onPress={toggleSearch}
             >
               <Ionicons
@@ -547,7 +547,7 @@ export default function EventScreen() {
                 size={sizes.headerIcon}
                 color={colors.textPrimary}
               />
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         </View>
       </View>
@@ -564,13 +564,9 @@ export default function EventScreen() {
             autoCapitalize="none"
             returnKeyType="search"
           />
-          <Pressable
-            accessibilityLabel="Trim search text"
-            style={styles.searchAction}
-            onPress={() => setSearch((v) => v.trim())}
-          >
+          <HeaderIconCircleButton accessibilityLabel="Trim search text" onPress={() => setSearch((v) => v.trim())}>
             <Ionicons name="search-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-          </Pressable>
+          </HeaderIconCircleButton>
         </View>
       ) : null}
 
@@ -850,20 +846,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     justifyContent: "flex-end",
   },
-  iconButton: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSurface,
-  },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginTop: 8 },
   input: {
     flex: 1,
@@ -876,16 +858,6 @@ const styles = StyleSheet.create({
     fontSize: type.body.size,
     lineHeight: type.body.lineHeight,
     color: colors.textPrimary,
-  },
-  searchAction: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
   title: {
     fontSize: type.pageTitle.size,

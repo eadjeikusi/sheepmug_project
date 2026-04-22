@@ -17,6 +17,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Member } from "@sheepmug/shared-api";
 import { ApiError } from "@sheepmug/shared-api";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { api } from "../lib/api";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
@@ -163,11 +164,11 @@ export default function MembersDeletedScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+          <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
             <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-          </Pressable>
+          </HeaderIconCircleButton>
           <Text style={styles.topTitle}>{headerTitle}</Text>
-          <View style={{ width: 40 }} />
+          <View style={{ width: sizes.headerIconButton }} />
         </View>
         <View style={styles.centerMsg}>
           <Text style={styles.muted}>You do not have permission to view deleted members.</Text>
@@ -179,13 +180,13 @@ export default function MembersDeletedScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
         <Text style={styles.topTitle} numberOfLines={1}>
           {headerTitle}
         </Text>
-        <View style={{ width: 40 }} />
+        <View style={{ width: sizes.headerIconButton }} />
       </View>
 
       {canPurge && selected.size > 0 ? (
@@ -306,7 +307,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   topTitle: {
     flex: 1,
     fontSize: type.title.size,

@@ -1,19 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
 import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
+import { patchOfflineManifest } from "../lib/offline/manifest";
 import { getOfflineBootstrapDone, setOfflineBootstrapDone } from "../lib/storage";
 import { colors, radius, type } from "../theme";
 
 /**
- * Recovery path when onboarding finished but offline bootstrap did not complete
- * (network error, force-close, or skip from tour).
+ * After onboarding, user chooses whether to download full offline data.
+ * Nothing runs until they tap "Download" (avoids startup SQLite / bootstrap races).
  */
 export default function OfflineSetupScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const uid = user?.id ?? null;
+  const organizationId = user?.organization_id ?? null;
   const [running, setRunning] = useState(false);
   const [progressText, setProgressText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,41 +24,21 @@ export default function OfflineSetupScreen() {
     if (!uid) return;
     let cancelled = false;
 
-    const start = async () => {
+    const check = async () => {
       const done = await getOfflineBootstrapDone(uid).catch(() => false);
       if (cancelled) return;
       if (done) {
         router.replace("/(tabs)/dashboard");
-        return;
-      }
-      setRunning(true);
-      setError(null);
-      setProgressText("Starting…");
-      const unsub = subscribeOfflineBootstrapProgress(uid, (p) => {
-        setProgressText(`${p.step} (${p.done}/${p.total})`);
-      });
-      try {
-        await ensureOfflineBootstrap(uid);
-        if (cancelled) return;
-        setProgressText("Ready");
-        router.replace("/(tabs)/dashboard");
-      } catch (e: unknown) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Could not load offline data");
-        }
-      } finally {
-        unsub();
-        if (!cancelled) setRunning(false);
       }
     };
 
-    void start();
+    void check();
     return () => {
       cancelled = true;
     };
   }, [uid, router]);
 
-  const retry = async () => {
+  const startDownload = useCallback(async () => {
     if (!uid) return;
     setRunning(true);
     setError(null);
@@ -65,7 +47,7 @@ export default function OfflineSetupScreen() {
       setProgressText(`${p.step} (${p.done}/${p.total})`);
     });
     try {
-      await ensureOfflineBootstrap(uid);
+      await ensureOfflineBootstrap(uid, organizationId);
       setProgressText("Ready");
       router.replace("/(tabs)/dashboard");
     } catch (e: unknown) {
@@ -74,10 +56,14 @@ export default function OfflineSetupScreen() {
       unsub();
       setRunning(false);
     }
-  };
+  }, [uid, organizationId, router]);
 
   const skip = async () => {
     if (!uid) return;
+    await patchOfflineManifest({
+      bootstrap_account_user_id: uid,
+      bootstrap_organization_id: organizationId,
+    });
     await setOfflineBootstrapDone(uid, true);
     router.replace("/(tabs)/dashboard");
   };
@@ -86,26 +72,31 @@ export default function OfflineSetupScreen() {
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ title: "Offline setup" }} />
       <View style={styles.container}>
-        <Text style={styles.title}>Getting offline data</Text>
+        <Text style={styles.title}>Use Sheepmug offline?</Text>
         <Text style={styles.body}>
-          We are downloading members, events, tasks, and ministries so the app works without internet.
+          You can download members, events, tasks, and ministries for full offline access. This uses storage and may take a
+          minute on slower connections. You can skip and download later from the dashboard or settings.
         </Text>
 
         <View style={styles.statusCard}>
           <Text style={styles.statusLabel}>Status</Text>
-          <Text style={styles.statusText}>{progressText || "…"}</Text>
+          <Text style={styles.statusText}>
+            {running ? progressText || "…" : error ? "Download failed" : "Not started — tap download when you are ready."}
+          </Text>
           {running ? <ActivityIndicator color={colors.accent} style={{ marginTop: 8 }} /> : null}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
-        {error ? (
-          <Pressable style={styles.primaryBtn} onPress={() => void retry()}>
-            <Text style={styles.primaryBtnText}>Retry download</Text>
-          </Pressable>
-        ) : null}
+        <Pressable
+          style={[styles.primaryBtn, running && styles.primaryBtnDisabled]}
+          onPress={() => void startDownload()}
+          disabled={running}
+        >
+          <Text style={styles.primaryBtnText}>{error ? "Retry download" : "Download for offline use"}</Text>
+        </Pressable>
 
-        <Pressable style={styles.skipBtn} onPress={() => void skip()}>
-          <Text style={styles.skipBtnText}>Skip for now</Text>
+        <Pressable style={styles.skipBtn} onPress={() => void skip()} disabled={running}>
+          <Text style={styles.skipBtnText}>Not now</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -147,6 +138,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  primaryBtnDisabled: { opacity: 0.65 },
   primaryBtnText: { color: "#fff", fontSize: type.bodyStrong.size, fontWeight: "700" },
   skipBtn: { alignItems: "center", justifyContent: "center", minHeight: 42 },
   skipBtnText: { color: colors.textSecondary, fontSize: type.body.size, fontWeight: "600" },

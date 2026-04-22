@@ -4,6 +4,8 @@ export interface AuthUser {
   first_name: string;
   last_name: string;
   organization_id: string;
+  /** Display name from GET /api/auth/me (organizations.name). */
+  organization_name?: string | null;
   branch_id?: string | null;
   is_super_admin?: boolean;
   is_org_owner?: boolean;

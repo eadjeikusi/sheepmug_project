@@ -15,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { Group, Member } from "@sheepmug/shared-api";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { api } from "../lib/api";
 import { useBranch } from "../contexts/BranchContext";
@@ -167,9 +168,9 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.toolbar}>
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Close search">
-          <Ionicons name="close" size={26} color={colors.textPrimary} />
-        </Pressable>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={10} accessibilityLabel="Close search">
+          <Ionicons name="close" size={sizes.headerIcon} color={colors.textPrimary} />
+        </HeaderIconCircleButton>
         <View style={styles.searchField}>
           <Ionicons name="search-outline" size={sizes.headerIcon} color={colors.textSecondary} />
           <TextInput

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Redirect } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Image, InteractionManager, StyleSheet, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { SHEEPMUG_LOGO } from "../lib/branding";
 import { devLog, devWarn } from "../lib/devLog";
@@ -36,33 +36,36 @@ export default function IndexScreen() {
       return;
     }
     let cancelled = false;
-    (async () => {
-      let uid = user?.id ?? null;
-      if (!uid) {
-        const raw = await getStoredUserJson();
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw) as { id?: string };
-            uid = String(parsed.id || "").trim() || null;
-          } catch {
-            uid = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      void (async () => {
+        let uid = user?.id ?? null;
+        if (!uid) {
+          const raw = await getStoredUserJson();
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw) as { id?: string };
+              uid = String(parsed.id || "").trim() || null;
+            } catch {
+              uid = null;
+            }
           }
         }
-      }
-      if (!uid) {
-        if (!cancelled) setOnboardingReady(false);
-        return;
-      }
-      const done = await getOnboardingCompleted(uid).catch(() => false);
-      const bootstrapDone = await getOfflineBootstrapDone(uid).catch(() => false);
-      if (!cancelled) {
-        setOnboardingDone(done);
-        setOfflineBootstrapDone(bootstrapDone);
-        setOnboardingReady(true);
-      }
-    })();
+        if (!uid) {
+          if (!cancelled) setOnboardingReady(false);
+          return;
+        }
+        const done = await getOnboardingCompleted(uid).catch(() => false);
+        const bootstrapDone = await getOfflineBootstrapDone(uid).catch(() => false);
+        if (!cancelled) {
+          setOnboardingDone(done);
+          setOfflineBootstrapDone(bootstrapDone);
+          setOnboardingReady(true);
+        }
+      })();
+    });
     return () => {
       cancelled = true;
+      task.cancel();
     };
   }, [loading, token, user?.id]);
 

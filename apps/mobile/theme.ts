@@ -7,6 +7,8 @@ export type ThemeColors = {
   accent: string;
   accentSurface: string;
   accentBorder: string;
+  /** Pill background for header / toolbar icon buttons (matches dashboard). */
+  headerIconCircleBg: string;
   success: string;
   softFilter: {
     triggerBg: string;
@@ -38,6 +40,7 @@ export const lightColors: ThemeColors = {
   accentSurface: "#eff6ff",
   /** Softer border on accent-tinted surfaces (e.g. filter chips). */
   accentBorder: "#bfdbfe",
+  headerIconCircleBg: "#f1f5f9",
   success: "#16a34a",
   /**
    * Search + filter dropdowns (blue-aligned with app accent).
@@ -69,6 +72,7 @@ export const darkColors: ThemeColors = {
   accent: "#60a5fa",
   accentSurface: "#0f172a",
   accentBorder: "#1e3a8a",
+  headerIconCircleBg: "#1e293b",
   success: "#4ade80",
   softFilter: {
     triggerBg: "#172554",

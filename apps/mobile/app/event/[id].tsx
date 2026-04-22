@@ -25,6 +25,7 @@ import { api } from "../../lib/api";
 import { eventAttachmentStoragePath, shareEventAttachmentDownload } from "../../lib/downloadEventAttachment";
 
 type EventAttendancePayload = Awaited<ReturnType<typeof api.events.attendance.get>>;
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { normalizeImageUri } from "../../lib/imageUri";
 import { displayMemberWords, formatCalendarCountdown } from "../../lib/memberDisplayFormat";
@@ -605,18 +606,17 @@ export default function EventDetailScreen() {
             </View>
           )}
           <View style={[styles.coverOverlayRow, { paddingTop: insets.top + 6 }]}>
-            <Pressable onPress={() => router.back()} style={styles.coverIconBtn} hitSlop={12}>
-              <Text style={styles.coverBackText}>‹</Text>
-            </Pressable>
+            <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
+              <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
+            </HeaderIconCircleButton>
             <View style={{ flex: 1 }} />
-            <Pressable
+            <HeaderIconCircleButton
               accessibilityLabel="Edit event"
               onPress={() => setShowEditModal(true)}
-              style={({ pressed }) => [styles.coverIconBtn, pressed && styles.coverIconBtnPressed]}
               hitSlop={12}
             >
               <Ionicons name="create-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         </View>
 
@@ -986,21 +986,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  coverIconBtn: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderRadius: radius.pill,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  coverIconBtnPressed: { opacity: 0.88 },
-  coverBackText: { color: colors.textPrimary, fontSize: type.title.size, fontWeight: type.bodyStrong.weight },
   heroCard: {
     borderRadius: radius.lg,
     backgroundColor: colors.card,

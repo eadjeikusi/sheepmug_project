@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
+import { CmsOnboardingModal } from './modals/CmsOnboardingModal';
 import { AppProvider } from '@/contexts/AppContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -78,6 +79,7 @@ export default function Root() {
             </main>
           </div>
         </div>
+        {user.cms_onboarding_completed !== true ? <CmsOnboardingModal /> : null}
       </NotificationProvider>
     </AppProvider>
   );

@@ -34,10 +34,13 @@ export default function TabsLayout() {
         ),
         headerRight: () => (
           <View style={styles.headerRightWrap}>
-            <Pressable style={styles.headerIconButton}>
+            <Pressable style={[styles.headerIconButton, { backgroundColor: themedColors.headerIconCircleBg }]}>
               <Ionicons name="headset-outline" size={sizes.headerIcon} color={themedColors.textPrimary} />
             </Pressable>
-            <Pressable style={styles.headerIconButton} onPress={() => router.push("/notifications")}>
+            <Pressable
+              style={[styles.headerIconButton, { backgroundColor: themedColors.headerIconCircleBg }]}
+              onPress={() => router.push("/notifications")}
+            >
               <Ionicons name="notifications-outline" size={sizes.headerIcon} color={themedColors.textPrimary} />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
@@ -166,7 +169,6 @@ const styles = StyleSheet.create({
     width: sizes.headerIconButton,
     height: sizes.headerIconButton,
     borderRadius: radius.pill,
-    backgroundColor: "#f5f5f6",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",

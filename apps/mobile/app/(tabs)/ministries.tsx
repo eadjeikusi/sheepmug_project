@@ -15,6 +15,7 @@ import type { Group } from "@sheepmug/shared-api";
 import { useRouter } from "expo-router";
 import { AddMinistryModal } from "../../components/AddMinistryModal";
 import { FilterResultsChips, FilterResultsHeaderCount } from "../../components/FilterResultsSection";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import type { AnchorRect } from "../../components/FilterPickerModal";
 import { FilterPickerModal } from "../../components/FilterPickerModal";
 import { MinistriesGrid } from "../../components/MinistriesGrid";
@@ -177,17 +178,12 @@ export default function MinistriesScreen() {
           </View>
           <View style={styles.topActions}>
             {canManageGroups ? (
-              <Pressable
-                accessibilityLabel="Add ministry"
-                onPress={() => setAddOpen(true)}
-                style={styles.iconButton}
-                hitSlop={8}
-              >
+              <HeaderIconCircleButton accessibilityLabel="Add ministry" onPress={() => setAddOpen(true)} hitSlop={8}>
                 <Ionicons name="add-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-              </Pressable>
+              </HeaderIconCircleButton>
             ) : null}
             <View ref={typeFilterRef} collapsable={false}>
-              <Pressable
+              <HeaderIconCircleButton
                 accessibilityLabel={
                   typeFilter
                     ? `Filter by group type, ${typeFilter} selected. Opens menu.`
@@ -195,10 +191,7 @@ export default function MinistriesScreen() {
                 }
                 accessibilityState={{ selected: Boolean(typeFilter.trim()) }}
                 onPress={openTypeFilterMenu}
-                style={[
-                  styles.iconButton,
-                  (Boolean(typeFilter.trim()) || typeMenuOpen) && styles.iconButtonActive,
-                ]}
+                active={Boolean(typeFilter.trim()) || typeMenuOpen}
                 hitSlop={8}
               >
                 <Ionicons
@@ -206,12 +199,12 @@ export default function MinistriesScreen() {
                   size={sizes.headerIcon}
                   color={typeFilter.trim() ? colors.accent : colors.textPrimary}
                 />
-              </Pressable>
+              </HeaderIconCircleButton>
             </View>
-            <Pressable
+            <HeaderIconCircleButton
               accessibilityLabel={searchOpen ? "Close search" : "Search ministries"}
               onPress={toggleSearch}
-              style={[styles.iconButton, searchOpen && styles.iconButtonActive]}
+              active={searchOpen}
               hitSlop={8}
             >
               <Ionicons
@@ -219,7 +212,7 @@ export default function MinistriesScreen() {
                 size={sizes.headerIcon}
                 color={colors.textPrimary}
               />
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         </View>
 
@@ -303,20 +296,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  iconButton: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSurface,
-  },
   titleBlock: { flex: 1, minWidth: 0, paddingRight: 10 },
   title: {
     fontSize: type.pageTitle.size,

@@ -13,6 +13,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { Family } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { useBranch } from "../contexts/BranchContext";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../lib/storage";
@@ -117,9 +118,9 @@ export default function FamiliesListScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
         <Text style={styles.headerTitle}>Families</Text>
         <View style={styles.headerSpacer} />
       </View>
@@ -189,7 +190,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { padding: 8 },
   headerTitle: {
     flex: 1,
     textAlign: "center",
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     letterSpacing: type.pageTitle.letterSpacing,
     color: colors.textPrimary,
   },
-  headerSpacer: { width: 40 },
+  headerSpacer: { width: sizes.headerIconButton },
   scroll: { padding: 16, paddingBottom: 32 },
   centered: { alignItems: "center", gap: 10, paddingVertical: 24 },
   muted: {

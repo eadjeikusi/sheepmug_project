@@ -1747,6 +1747,9 @@ function buildUserAuthPayload(
     linkedMemberAvatar != null && String(linkedMemberAvatar).trim()
       ? String(linkedMemberAvatar).trim()
       : fromProfilesRow;
+  const cmsAt = profileData.cms_onboarding_completed_at;
+  const cmsDone =
+    cmsAt != null && String(cmsAt).trim() !== "" && String(cmsAt).toLowerCase() !== "null";
   return {
     id: profileData.id,
     email: profileData.email,
@@ -1759,6 +1762,7 @@ function buildUserAuthPayload(
     is_super_admin: profileData.is_super_admin === true,
     permissions: [...perm.permissionSet],
     profile_image: img || null,
+    cms_onboarding_completed: cmsDone,
   };
 }
 
@@ -1789,7 +1793,13 @@ async function buildUserAuthPayloadWithMemberAvatar(
       /* optional columns */
     }
   }
-  return { ...base, ministry_scope };
+  let organization_name: string | null = null;
+  if (orgId) {
+    const { data: orgRow } = await supabaseAdmin.from("organizations").select("name").eq("id", orgId).maybeSingle();
+    const n = orgRow && typeof (orgRow as { name?: unknown }).name === "string" ? String((orgRow as { name: string }).name).trim() : "";
+    organization_name = n.length > 0 ? n : null;
+  }
+  return { ...base, ministry_scope, organization_name };
 }
 
 async function pushTokenForProfile(profileId: string): Promise<string | null> {
@@ -3155,6 +3165,53 @@ app.get("/api/auth/me", async (req, res) => {
     }
     const permRow = await permissionSetForProfileRow(prof);
     res.json({ user: await buildUserAuthPayloadWithMemberAvatar(prof as Record<string, unknown>, permRow) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Internal server error" });
+  }
+});
+
+app.post("/api/auth/complete-cms-onboarding", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+  const token = authHeader.split(" ")[1];
+  try {
+    const supabase = getSupabaseClient(token);
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) return res.status(401).json({ error: "Invalid token" });
+
+    const nowIso = new Date().toISOString();
+    const { error: upErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ cms_onboarding_completed_at: nowIso })
+      .eq("id", user.id);
+    if (upErr) {
+      const msg = String(upErr.message || "").toLowerCase();
+      if (msg.includes("column") && msg.includes("cms_onboarding")) {
+        return res.status(503).json({
+          error: "Database migration required: run migrations/profiles_cms_onboarding.sql",
+        });
+      }
+      return res.status(500).json({ error: upErr.message || "Could not update profile" });
+    }
+
+    const { data: profileData, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+    if (profileError || !profileData) {
+      return res.status(404).json({ error: "User profile not found" });
+    }
+    const prof = profileData as Record<string, unknown> & { is_org_owner?: boolean | null };
+    const access = await assertStaffPlatformAccess(prof);
+    if (!access.ok) {
+      return res.status(403).json({ error: access.message, code: access.code });
+    }
+    const permRow = await permissionSetForProfileRow(prof);
+    res.json({ user: await buildUserAuthPayloadWithMemberAvatar(prof, permRow) });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Internal server error" });
   }

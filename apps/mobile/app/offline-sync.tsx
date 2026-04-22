@@ -11,7 +11,8 @@ import {
   getOfflineResourceCache,
   setOfflineBootstrapDone,
 } from "../lib/storage";
-import { colors, radius, type } from "../theme";
+import { HeaderIconCircle } from "../components/HeaderIconCircle";
+import { colors, radius, sizes, type } from "../theme";
 import { clearOfflineImageFiles, getOfflineImageCacheSizeBytes } from "../lib/offline/imageCache";
 import { cancelLocalTaskReminders } from "../lib/localTaskReminders";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
@@ -221,12 +222,22 @@ export default function OfflineSyncScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.headerRow}>
-          <Pressable style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back">
-            <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
-            <Text style={styles.backBtnText}>Back</Text>
-          </Pressable>
-          <Text style={styles.title}>Offline Sync</Text>
-          <View style={{ width: 62 }} />
+          <View style={{ flex: 1, alignItems: "flex-start" }}>
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityLabel="Go back"
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              <HeaderIconCircle pointerEvents="none">
+                <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
+              </HeaderIconCircle>
+              <Text style={styles.backBtnText}>Back</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.title, { flexShrink: 0 }]} numberOfLines={1}>
+            Offline Sync
+          </Text>
+          <View style={{ flex: 1 }} />
         </View>
         <View style={styles.statusCard}>
           <View style={styles.statusRow}>
@@ -397,19 +408,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  backBtn: {
-    minWidth: 62,
-    minHeight: 34,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 2,
-    paddingHorizontal: 8,
   },
   backBtnText: {
     fontSize: type.caption.size,

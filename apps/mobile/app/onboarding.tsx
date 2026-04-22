@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   ListRenderItem,
@@ -19,6 +20,8 @@ import { Stack, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
+import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../components/MemberInitialAvatar";
 import { api } from "../lib/api";
 import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
@@ -51,9 +54,14 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user, refreshUser, setUserLocal } = useAuth();
+  const { colors: themeColors } = useTheme();
   const uid = user?.id ?? null;
 
   const firstName = String(user?.first_name ?? "").trim() || "there";
+  const orgName = String(user?.organization_name ?? "").trim();
+  const organizationId = user?.organization_id ?? null;
+
+  const progressAnim = useRef(new Animated.Value(0)).current;
   /** Fixed for this tour so the pager does not reshuffle after the user uploads a photo. */
   const [tourIncludePhoto] = useState(() => !Boolean(String(user?.profile_image ?? "").trim()));
 
@@ -70,18 +78,17 @@ export default function OnboardingScreen() {
   const [offlineReady, setOfflineReady] = useState(false);
   const [offlineRunning, setOfflineRunning] = useState(false);
   const [offlineProgress, setOfflineProgress] = useState("");
+  const [offlineProgressPct, setOfflineProgressPct] = useState(0);
   const [offlineError, setOfflineError] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshUser().catch(() => undefined);
   }, [refreshUser]);
 
-  /** Background prefetch so the offline step is often already complete. */
   useEffect(() => {
     if (!uid) return;
     void getOfflineBootstrapDone(uid).then((done) => {
       if (done) setOfflineReady(true);
-      else void ensureOfflineBootstrap(uid).catch(() => {});
     });
   }, [uid]);
 
@@ -93,12 +100,27 @@ export default function OnboardingScreen() {
     });
     const unsub = subscribeOfflineBootstrapProgress(uid, (p) => {
       setOfflineProgress(formatBootstrapProgress(p.step, p.done, p.total));
+      const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
+      setOfflineProgressPct(pct);
+      Animated.timing(progressAnim, {
+        toValue: pct,
+        duration: 260,
+        useNativeDriver: false,
+      }).start();
     });
     return () => {
       cancelled = true;
       unsub();
     };
   }, [uid, page, steps]);
+
+  useEffect(() => {
+    if (steps[page] !== "offline") return;
+    if (offlineReady) {
+      setOfflineProgressPct(100);
+      progressAnim.setValue(100);
+    }
+  }, [page, steps, offlineReady, progressAnim]);
 
   const skipEntireTour = useCallback(async () => {
     if (!uid) return;
@@ -107,9 +129,7 @@ export default function OnboardingScreen() {
     } catch {
       /* still navigate */
     }
-    const bootstrapDone = await getOfflineBootstrapDone(uid).catch(() => false);
-    if (bootstrapDone) router.replace("/(tabs)/dashboard");
-    else router.replace("/offline-setup");
+    router.replace("/");
   }, [router, uid]);
 
   const finishToApp = useCallback(async () => {
@@ -119,7 +139,7 @@ export default function OnboardingScreen() {
     } catch {
       /* still navigate */
     }
-    router.replace("/(tabs)/dashboard");
+    router.replace("/");
   }, [router, uid]);
 
   const goNext = useCallback(() => {
@@ -207,11 +227,17 @@ export default function OnboardingScreen() {
     if (!uid) return;
     setOfflineRunning(true);
     setOfflineError(null);
-    void ensureOfflineBootstrap(uid)
-      .then(() => setOfflineReady(true))
+    setOfflineProgressPct(0);
+    progressAnim.setValue(0);
+    void ensureOfflineBootstrap(uid, organizationId)
+      .then(() => {
+        setOfflineReady(true);
+        setOfflineProgressPct(100);
+        Animated.timing(progressAnim, { toValue: 100, duration: 200, useNativeDriver: false }).start();
+      })
       .catch((e: unknown) => setOfflineError(e instanceof Error ? e.message : "Download failed"))
       .finally(() => setOfflineRunning(false));
-  }, [uid]);
+  }, [uid, organizationId]);
 
   const renderSlideBody = (kind: StepKind) => {
     switch (kind) {
@@ -221,39 +247,57 @@ export default function OnboardingScreen() {
             <View style={[styles.illustrationCircle, { backgroundColor: "#f3f4f6" }]}>
               <Ionicons name="hand-left-outline" size={72} color={colors.textPrimary} />
             </View>
-            <Text style={styles.title}>Welcome, {firstName}</Text>
+            <Text style={styles.welcomePrefix}>Welcome,</Text>
+            <Text style={styles.welcomeName}>{firstName}</Text>
+            {orgName ? <Text style={styles.orgLine}>{orgName}</Text> : null}
             <Text style={styles.body}>
               Take a minute while we set up your account on this device. Swipe through a quick tour, or skip anytime.
             </Text>
           </>
         );
-      case "photo":
+      case "photo": {
+        const hasPhoto = Boolean(String(user?.profile_image ?? "").trim());
         return (
           <>
-            <Pressable
-              onPress={() => void pickAndUploadPhoto()}
-              disabled={uploadingImage}
-              style={[styles.illustrationCircle, { backgroundColor: "#eff6ff" }]}
-            >
-              {user?.profile_image ? (
-                <Image source={{ uri: user.profile_image }} style={styles.photoHero} />
-              ) : (
-                <MemberInitialAvatar initial={firstName[0] || "U"} size={96} textStyle={styles.photoInitial} />
-              )}
-              {uploadingImage ? (
-                <View style={styles.uploadOverlay}>
-                  <ActivityIndicator size="large" color="#fff" />
-                  <Text style={styles.uploadOverlayText}>Uploading…</Text>
-                </View>
+            <View style={styles.photoCircleWrap}>
+              <Pressable
+                onPress={() => void pickAndUploadPhoto()}
+                disabled={uploadingImage}
+                style={[styles.illustrationCircle, styles.illustrationCirclePhoto, { backgroundColor: "#eff6ff" }]}
+              >
+                {hasPhoto ? (
+                  <Image source={{ uri: user!.profile_image! }} style={styles.photoHero} />
+                ) : (
+                  <MemberInitialAvatar initial={firstName[0] || "U"} size={96} textStyle={styles.photoInitial} />
+                )}
+                {uploadingImage ? (
+                  <View style={styles.uploadOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.uploadOverlayText}>Uploading…</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+              {hasPhoto && !uploadingImage ? (
+                <Pressable
+                  style={styles.photoEditFab}
+                  onPress={() => void pickAndUploadPhoto()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile photo"
+                >
+                  <Ionicons name="create-outline" size={20} color="#111827" />
+                </Pressable>
               ) : null}
-            </Pressable>
+            </View>
             <Text style={styles.title}>Add a profile photo</Text>
             <Text style={styles.body}>Help your team recognize you. You can skip this or add a photo from your library.</Text>
             <Pressable style={styles.secondaryOutlineBtn} onPress={() => void pickAndUploadPhoto()} disabled={uploadingImage}>
-              <Text style={styles.secondaryOutlineBtnText}>{uploadingImage ? "Uploading…" : "Choose photo"}</Text>
+              <Text style={styles.secondaryOutlineBtnText}>
+                {uploadingImage ? "Uploading…" : hasPhoto ? "Profile image set" : "Choose photo"}
+              </Text>
             </Pressable>
           </>
         );
+      }
       case "members_tasks":
         return (
           <>
@@ -279,7 +323,12 @@ export default function OnboardingScreen() {
             </Text>
           </>
         );
-      case "offline":
+      case "offline": {
+        const progressWidth = progressAnim.interpolate({
+          inputRange: [0, 100],
+          outputRange: ["0%", "100%"],
+        });
+        const showProgressTrack = offlineRunning || offlineProgressPct > 0;
         return (
           <>
             <View style={[styles.illustrationCircle, { backgroundColor: "#ecfdf5" }]}>
@@ -291,6 +340,14 @@ export default function OnboardingScreen() {
               completely offline.
             </Text>
             {offlineError ? <Text style={styles.offlineError}>{offlineError}</Text> : null}
+            {showProgressTrack && !offlineReady ? (
+              <View style={styles.progressBlock}>
+                <View style={styles.progressTrack}>
+                  <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+                </View>
+                <Text style={styles.progressPercent}>{offlineProgressPct}%</Text>
+              </View>
+            ) : null}
             {offlineProgress ? <Text style={styles.offlineProgress}>{offlineProgress}</Text> : null}
             {!offlineReady ? (
               <Pressable
@@ -309,6 +366,7 @@ export default function OnboardingScreen() {
             )}
           </>
         );
+      }
       case "finale":
         return (
           <>
@@ -332,11 +390,14 @@ export default function OnboardingScreen() {
     ),
     [
       firstName,
+      orgName,
       offlineError,
       offlineProgress,
+      offlineProgressPct,
       offlineReady,
       offlineRunning,
       pickAndUploadPhoto,
+      progressAnim,
       startOfflineDownload,
       uploadingImage,
       user?.profile_image,
@@ -356,15 +417,14 @@ export default function OnboardingScreen() {
 
       <View style={styles.pagerWrap}>
         <View style={[styles.onboardingTopBar, { paddingTop: insets.top }]}>
-          <Pressable
+          <HeaderIconCircleButton
             onPress={goHeaderBack}
             hitSlop={12}
-            style={styles.onboardingBackBtn}
             accessibilityRole="button"
             accessibilityLabel={page > 0 ? "Previous slide" : "Go back"}
           >
-            <Ionicons name="chevron-back" size={sizes.headerIcon} color="#111827" />
-          </Pressable>
+            <Ionicons name="chevron-back" size={sizes.headerIcon} color={themeColors.textPrimary} />
+          </HeaderIconCircleButton>
         </View>
         <FlatList
           ref={listRef}
@@ -442,13 +502,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 4,
   },
-  onboardingBackBtn: {
-    padding: 8,
-    minWidth: sizes.headerIconButton,
-    minHeight: sizes.headerIconButton,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   list: {
     flex: 1,
     minHeight: 0,
@@ -459,6 +512,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  welcomePrefix: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "600",
+    color: "#111827",
+    textAlign: "center",
+  },
+  welcomeName: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  orgLine: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  photoCircleWrap: {
+    width: 200,
+    height: 200,
+    marginBottom: 32,
+    position: "relative",
+    alignSelf: "center",
+  },
+  photoEditFab: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3,
+  },
   illustrationCircle: {
     width: 200,
     height: 200,
@@ -467,6 +569,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 32,
     overflow: "hidden",
+  },
+  illustrationCirclePhoto: {
+    marginBottom: 0,
   },
   photoHero: {
     width: 200,
@@ -514,6 +619,30 @@ const styles = StyleSheet.create({
     fontSize: type.caption.size,
     textAlign: "center",
   },
+  progressBlock: {
+    width: "100%",
+    maxWidth: 320,
+    marginTop: 12,
+    alignSelf: "center",
+    gap: 8,
+  },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#e5e7eb",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+  },
+  progressPercent: {
+    fontSize: type.bodyStrong.size,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
   offlinePrimaryBtn: {
     marginTop: 16,
     minHeight: 48,
@@ -535,8 +664,9 @@ const styles = StyleSheet.create({
   },
   offlineReadyHint: {
     marginTop: 12,
-    fontSize: type.body.size,
-    color: colors.textSecondary,
+    fontSize: type.bodyStrong.size,
+    fontWeight: "700",
+    color: colors.success,
     textAlign: "center",
     maxWidth: 320,
   },

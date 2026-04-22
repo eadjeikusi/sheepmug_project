@@ -22,6 +22,7 @@ import {
   type FilterResultChip,
 } from "../../components/FilterResultsSection";
 import { FormModalShell } from "../../components/FormModalShell";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { GroupCreateTaskModal } from "../../components/GroupCreateTaskModal";
 import { MemberCreateTaskModal } from "../../components/MemberCreateTaskModal";
 import { TaskAssignmentList } from "../../components/TaskAssignmentList";
@@ -530,13 +531,13 @@ export default function TaskScreen() {
           {canSeeTaskList ? (
             <View style={styles.headerActions}>
               {canCreateTask ? (
-                <Pressable accessibilityLabel="Create task" style={styles.iconButton} onPress={openCreateTask}>
+                <HeaderIconCircleButton accessibilityLabel="Create task" onPress={openCreateTask}>
                   <Ionicons name="add-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-                </Pressable>
+                </HeaderIconCircleButton>
               ) : null}
-              <Pressable
+              <HeaderIconCircleButton
                 accessibilityLabel={filtersOpen ? "Close filters" : "Open filters"}
-                style={[styles.iconButton, filtersOpen && styles.iconButtonActive]}
+                active={filtersOpen}
                 onPress={toggleFilters}
               >
                 <Ionicons
@@ -544,10 +545,10 @@ export default function TaskScreen() {
                   size={sizes.headerIcon}
                   color={colors.textPrimary}
                 />
-              </Pressable>
-              <Pressable
+              </HeaderIconCircleButton>
+              <HeaderIconCircleButton
                 accessibilityLabel={showSearch ? "Close search" : "Search tasks"}
-                style={[styles.iconButton, showSearch && styles.iconButtonActive]}
+                active={showSearch}
                 onPress={toggleSearch}
               >
                 <Ionicons
@@ -555,7 +556,7 @@ export default function TaskScreen() {
                   size={sizes.headerIcon}
                   color={colors.textPrimary}
                 />
-              </Pressable>
+              </HeaderIconCircleButton>
             </View>
           ) : null}
         </View>
@@ -592,13 +593,9 @@ export default function TaskScreen() {
                 autoCapitalize="none"
                 returnKeyType="search"
               />
-              <Pressable
-                accessibilityLabel="Trim search text"
-                style={styles.searchAction}
-                onPress={() => setSearch((v) => v.trim())}
-              >
+              <HeaderIconCircleButton accessibilityLabel="Trim search text" onPress={() => setSearch((v) => v.trim())}>
                 <Ionicons name="search-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-              </Pressable>
+              </HeaderIconCircleButton>
             </View>
           ) : null}
 
@@ -878,20 +875,6 @@ const styles = StyleSheet.create({
   headerTitleWrap: { flex: 1, paddingRight: 10, minWidth: 0, gap: 4 },
   titleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
-  iconButton: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSurface,
-  },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginTop: 8 },
   input: {
     flex: 1,
@@ -904,16 +887,6 @@ const styles = StyleSheet.create({
     fontSize: type.body.size,
     lineHeight: type.body.lineHeight,
     color: colors.textPrimary,
-  },
-  searchAction: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
   filterFooter: {
     flexDirection: "row",

@@ -14,6 +14,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type { Member } from "@sheepmug/shared-api";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { api } from "../../lib/api";
 import { normalizeImageUri } from "../../lib/imageUri";
@@ -109,9 +110,9 @@ export default function FamilyMembersScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+        <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
         <View style={styles.titleBlock}>
           <Text style={styles.screenTitle} numberOfLines={1}>
             {headerTitle}
@@ -134,9 +135,9 @@ export default function FamilyMembersScreen() {
           autoCorrect={false}
           autoCapitalize="none"
         />
-        <Pressable style={styles.searchAction} onPress={() => setQuery((v) => v.trim())}>
+        <HeaderIconCircleButton onPress={() => setQuery((v) => v.trim())}>
           <Ionicons name="search-outline" size={sizes.headerIcon} color={colors.textPrimary} />
-        </Pressable>
+        </HeaderIconCircleButton>
       </View>
 
       {loading && members.length === 0 ? (
@@ -199,8 +200,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  backBtn: { padding: 8 },
-  backSpacer: { width: 40 },
+  backSpacer: { width: sizes.headerIconButton },
   titleBlock: { flex: 1, minWidth: 0 },
   screenTitle: {
     fontSize: type.pageTitle.size,
@@ -234,16 +234,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     fontSize: type.body.size,
     color: colors.textPrimary,
-  },
-  searchAction: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
   },
   listContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 32 },
   loadingWrap: { alignItems: "center", gap: 10, paddingVertical: 24 },

@@ -19,6 +19,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { usePermissions } from "../../hooks/usePermissions";
+import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { MemberJoinQrModal } from "../../components/MemberJoinQrModal";
 import { api } from "../../lib/api";
@@ -761,10 +762,9 @@ export default function DashboardScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
-              style={[styles.headerIconBtn, (syncing || refreshing) && styles.headerIconBtnDisabled]}
-              onPress={() => void onRefresh()}
+            <HeaderIconCircleButton
               disabled={syncing || refreshing}
+              onPress={() => void onRefresh()}
               accessibilityLabel="Reload dashboard"
             >
               <Ionicons
@@ -772,19 +772,15 @@ export default function DashboardScreen() {
                 size={sizes.headerIcon}
                 color={colors.textPrimary}
               />
-            </Pressable>
-            <Pressable
-              style={styles.headerIconBtn}
-              onPress={() => router.push("/notifications")}
-              accessibilityLabel="Notifications"
-            >
+            </HeaderIconCircleButton>
+            <HeaderIconCircleButton onPress={() => router.push("/notifications")} accessibilityLabel="Notifications">
               <Ionicons name="notifications-outline" size={sizes.headerIcon} color={colors.textPrimary} />
               {unreadCount > 0 ? (
                 <View style={styles.notifBadge}>
                   <Text style={styles.notifBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
                 </View>
               ) : null}
-            </Pressable>
+            </HeaderIconCircleButton>
           </View>
         </View>
 
@@ -1182,18 +1178,6 @@ const styles = StyleSheet.create({
   },
   tagChipTextActive: {
     color: "#ffffff",
-  },
-  headerIconBtn: {
-    width: sizes.headerIconButton,
-    height: sizes.headerIconButton,
-    borderRadius: radius.pill,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  headerIconBtnDisabled: {
-    opacity: 0.55,
   },
   notifBadge: {
     position: "absolute",

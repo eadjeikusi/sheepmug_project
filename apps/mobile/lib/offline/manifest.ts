@@ -8,6 +8,9 @@ export type OfflineManifest = {
   last_delta_at: string | null;
   bootstrapped_entities: string[];
   cursors: Record<string, string>;
+  /** Account that last completed a full bootstrap (avoids showing “ready” for another user’s cache). */
+  bootstrap_account_user_id?: string | null;
+  bootstrap_organization_id?: string | null;
 };
 
 function defaultManifest(): OfflineManifest {
@@ -17,6 +20,8 @@ function defaultManifest(): OfflineManifest {
     last_delta_at: null,
     bootstrapped_entities: [],
     cursors: {},
+    bootstrap_account_user_id: null,
+    bootstrap_organization_id: null,
   };
 }
 
@@ -34,6 +39,10 @@ export async function getOfflineManifest(): Promise<OfflineManifest> {
         ? parsed.bootstrapped_entities.map((x) => String(x))
         : [],
       cursors: parsed.cursors && typeof parsed.cursors === "object" ? parsed.cursors : {},
+      bootstrap_account_user_id:
+        parsed.bootstrap_account_user_id != null ? String(parsed.bootstrap_account_user_id).trim() || null : null,
+      bootstrap_organization_id:
+        parsed.bootstrap_organization_id != null ? String(parsed.bootstrap_organization_id).trim() || null : null,
     };
   } catch {
     return defaultManifest();
@@ -53,6 +62,8 @@ export async function patchOfflineManifest(
     ...patch,
     bootstrapped_entities: patch.bootstrapped_entities ?? prev.bootstrapped_entities,
     cursors: patch.cursors ?? prev.cursors,
+    bootstrap_account_user_id: patch.bootstrap_account_user_id ?? prev.bootstrap_account_user_id ?? null,
+    bootstrap_organization_id: patch.bootstrap_organization_id ?? prev.bootstrap_organization_id ?? null,
   };
   await setOfflineManifest(next);
   return next;

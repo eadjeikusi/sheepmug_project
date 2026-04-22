@@ -53,6 +53,10 @@ export interface User {
   first_name: string;
   last_name: string;
   organization_id: string;
+  /** From API (organizations.name); may be absent on older cached sessions until refresh. */
+  organization_name?: string | null;
+  /** Set when `profiles.cms_onboarding_completed_at` is non-null (web CMS tour). */
+  cms_onboarding_completed?: boolean;
   branch_id?: string;
   organization?: any;
   role_id?: string | null;

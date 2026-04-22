@@ -290,7 +290,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       setDownloadProgressText(`${p.step} (${p.done}/${p.total})`);
     });
     try {
-      await ensureOfflineBootstrap(uid);
+      await ensureOfflineBootstrap(uid, user?.organization_id ?? null);
       const now = new Date().toISOString();
       setLastSyncAt(now);
       await refreshLocalTaskReminders();
@@ -304,7 +304,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       unsub();
       setDownloadRunning(false);
     }
-  }, [downloadRunning, isOnline, refreshLocalTaskReminders, user?.id]);
+  }, [downloadRunning, isOnline, refreshLocalTaskReminders, user?.id, user?.organization_id]);
 
   const pendingCount = useMemo(
     () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing").length,
