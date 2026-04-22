@@ -22,8 +22,7 @@ import { probeApiOnline } from "../lib/offline/connectivity";
 import { runOfflineSync } from "../lib/offline/syncEngine";
 import type { OfflineQueueItem } from "../lib/offline/types";
 import { devLog, devWarn } from "../lib/devLog";
-import { runOfflineBootstrap } from "../lib/offline/bootstrap";
-import { setOfflineBootstrapDone } from "../lib/storage";
+import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
 import { rescheduleLocalTaskRemindersFromCache } from "../lib/localTaskReminders";
 
 type OfflineSyncState = {
@@ -276,19 +275,23 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
 
   const startBackgroundDownload = useCallback(async () => {
     if (downloadRunning) return;
+    const uid = user?.id;
+    if (!uid) {
+      Alert.alert("Offline", "Sign in to download offline data.");
+      return;
+    }
     if (!isOnline) {
       Alert.alert("Offline", "Connect to internet to download offline data.");
       return;
     }
     setDownloadRunning(true);
     setDownloadProgressText("Starting full data download...");
+    const unsub = subscribeOfflineBootstrapProgress(uid, (p) => {
+      setDownloadProgressText(`${p.step} (${p.done}/${p.total})`);
+    });
     try {
-      await runOfflineBootstrap((p) => {
-        setDownloadProgressText(`${p.step} (${p.done}/${p.total})`);
-      });
-      await setOfflineBootstrapDone(true);
+      await ensureOfflineBootstrap(uid);
       const now = new Date().toISOString();
-      await markLastSyncAt(now);
       setLastSyncAt(now);
       await refreshLocalTaskReminders();
       setDownloadProgressText("Download complete");
@@ -298,9 +301,10 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       setDownloadProgressText(`Failed: ${msg}`);
       Alert.alert("Download failed", msg);
     } finally {
+      unsub();
       setDownloadRunning(false);
     }
-  }, [downloadRunning, isOnline, refreshLocalTaskReminders]);
+  }, [downloadRunning, isOnline, refreshLocalTaskReminders, user?.id]);
 
   const pendingCount = useMemo(
     () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing").length,

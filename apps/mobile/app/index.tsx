@@ -5,11 +5,11 @@ import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { SHEEPMUG_LOGO } from "../lib/branding";
 import { devLog, devWarn } from "../lib/devLog";
-import { getOfflineBootstrapDone, getOnboardingCompleted } from "../lib/storage";
+import { getOfflineBootstrapDone, getOnboardingCompleted, getStoredUserJson } from "../lib/storage";
 import { colors } from "../theme";
 
 export default function IndexScreen() {
-  const { token, loading } = useAuth();
+  const { token, loading, user } = useAuth();
   const [onboardingReady, setOnboardingReady] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [offlineBootstrapDone, setOfflineBootstrapDone] = useState(false);
@@ -37,8 +37,24 @@ export default function IndexScreen() {
     }
     let cancelled = false;
     (async () => {
-      const done = await getOnboardingCompleted().catch(() => false);
-      const bootstrapDone = await getOfflineBootstrapDone().catch(() => false);
+      let uid = user?.id ?? null;
+      if (!uid) {
+        const raw = await getStoredUserJson();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as { id?: string };
+            uid = String(parsed.id || "").trim() || null;
+          } catch {
+            uid = null;
+          }
+        }
+      }
+      if (!uid) {
+        if (!cancelled) setOnboardingReady(false);
+        return;
+      }
+      const done = await getOnboardingCompleted(uid).catch(() => false);
+      const bootstrapDone = await getOfflineBootstrapDone(uid).catch(() => false);
       if (!cancelled) {
         setOnboardingDone(done);
         setOfflineBootstrapDone(bootstrapDone);
@@ -48,7 +64,7 @@ export default function IndexScreen() {
     return () => {
       cancelled = true;
     };
-  }, [loading, token]);
+  }, [loading, token, user?.id]);
 
   useEffect(() => {
     if (loading) {

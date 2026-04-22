@@ -1,60 +1,110 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { runOfflineBootstrap } from "../lib/offline/bootstrap";
-import { setOfflineBootstrapDone } from "../lib/storage";
+import { useAuth } from "../contexts/AuthContext";
+import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
+import { getOfflineBootstrapDone, setOfflineBootstrapDone } from "../lib/storage";
 import { colors, radius, type } from "../theme";
 
+/**
+ * Recovery path when onboarding finished but offline bootstrap did not complete
+ * (network error, force-close, or skip from tour).
+ */
 export default function OfflineSetupScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const uid = user?.id ?? null;
   const [running, setRunning] = useState(false);
-  const [progressText, setProgressText] = useState("Ready");
+  const [progressText, setProgressText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const finish = async () => {
-    await setOfflineBootstrapDone(true);
-    router.replace("/(tabs)/dashboard");
-  };
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
 
-  const startBootstrap = async () => {
-    if (running) return;
-    setRunning(true);
-    setError(null);
-    setProgressText("Starting...");
-    try {
-      await runOfflineBootstrap((p) => {
+    const start = async () => {
+      const done = await getOfflineBootstrapDone(uid).catch(() => false);
+      if (cancelled) return;
+      if (done) {
+        router.replace("/(tabs)/dashboard");
+        return;
+      }
+      setRunning(true);
+      setError(null);
+      setProgressText("Starting…");
+      const unsub = subscribeOfflineBootstrapProgress(uid, (p) => {
         setProgressText(`${p.step} (${p.done}/${p.total})`);
       });
-      setProgressText("Offline data loaded");
-      await finish();
+      try {
+        await ensureOfflineBootstrap(uid);
+        if (cancelled) return;
+        setProgressText("Ready");
+        router.replace("/(tabs)/dashboard");
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Could not load offline data");
+        }
+      } finally {
+        unsub();
+        if (!cancelled) setRunning(false);
+      }
+    };
+
+    void start();
+    return () => {
+      cancelled = true;
+    };
+  }, [uid, router]);
+
+  const retry = async () => {
+    if (!uid) return;
+    setRunning(true);
+    setError(null);
+    setProgressText("Starting…");
+    const unsub = subscribeOfflineBootstrapProgress(uid, (p) => {
+      setProgressText(`${p.step} (${p.done}/${p.total})`);
+    });
+    try {
+      await ensureOfflineBootstrap(uid);
+      setProgressText("Ready");
+      router.replace("/(tabs)/dashboard");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not load offline data");
     } finally {
+      unsub();
       setRunning(false);
     }
+  };
+
+  const skip = async () => {
+    if (!uid) return;
+    await setOfflineBootstrapDone(uid, true);
+    router.replace("/(tabs)/dashboard");
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ title: "Offline setup" }} />
       <View style={styles.container}>
-        <Text style={styles.title}>Prepare app for offline use</Text>
+        <Text style={styles.title}>Getting offline data</Text>
         <Text style={styles.body}>
-          Load data now so members, tasks, events, ministries, families, and search work when internet is down.
+          We are downloading members, events, tasks, and ministries so the app works without internet.
         </Text>
 
         <View style={styles.statusCard}>
           <Text style={styles.statusLabel}>Status</Text>
-          <Text style={styles.statusText}>{progressText}</Text>
+          <Text style={styles.statusText}>{progressText || "…"}</Text>
           {running ? <ActivityIndicator color={colors.accent} style={{ marginTop: 8 }} /> : null}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
-        <Pressable style={[styles.primaryBtn, running && styles.primaryBtnDisabled]} disabled={running} onPress={() => void startBootstrap()}>
-          <Text style={styles.primaryBtnText}>{running ? "Loading..." : "Load Data for Offline Use"}</Text>
-        </Pressable>
+        {error ? (
+          <Pressable style={styles.primaryBtn} onPress={() => void retry()}>
+            <Text style={styles.primaryBtnText}>Retry download</Text>
+          </Pressable>
+        ) : null}
 
-        <Pressable style={styles.skipBtn} onPress={() => void finish()}>
+        <Pressable style={styles.skipBtn} onPress={() => void skip()}>
           <Text style={styles.skipBtnText}>Skip for now</Text>
         </Pressable>
       </View>
@@ -97,7 +147,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtnDisabled: { opacity: 0.7 },
   primaryBtnText: { color: "#fff", fontSize: type.bodyStrong.size, fontWeight: "700" },
   skipBtn: { alignItems: "center", justifyContent: "center", minHeight: 42 },
   skipBtnText: { color: colors.textSecondary, fontSize: type.body.size, fontWeight: "600" },

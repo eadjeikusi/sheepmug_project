@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useAuth } from "../contexts/AuthContext";
 import { useOfflineSync } from "../contexts/OfflineSyncContext";
 import {
   clearOfflineResourceCaches,
@@ -123,6 +124,7 @@ function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<s
 
 export default function OfflineSyncScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const {
     isOnline,
     checking,
@@ -193,7 +195,8 @@ export default function OfflineSyncScreen() {
 
   const handleDownloadPress = useCallback(() => {
     void (async () => {
-      const alreadyDownloaded = await getOfflineBootstrapDone();
+      const uid = user?.id ?? null;
+      const alreadyDownloaded = uid ? await getOfflineBootstrapDone(uid) : false;
       if (!alreadyDownloaded) {
         await startBackgroundDownload();
         return;
@@ -212,7 +215,7 @@ export default function OfflineSyncScreen() {
         ]
       );
     })();
-  }, [startBackgroundDownload]);
+  }, [startBackgroundDownload, user?.id]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -283,7 +286,7 @@ export default function OfflineSyncScreen() {
                         await clearOfflineResourceCaches();
                         await clearOfflineImageFiles();
                         await cancelLocalTaskReminders();
-                        await setOfflineBootstrapDone(false);
+                        await setOfflineBootstrapDone(user?.id ?? null, false);
                         await refreshCacheSize();
                         Alert.alert("Cache cleared", "Offline cache has been cleared.");
                         router.replace("/offline-setup");

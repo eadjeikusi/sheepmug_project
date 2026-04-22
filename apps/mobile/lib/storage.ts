@@ -6,6 +6,7 @@ const REFRESH_TOKEN_KEY = "auth_refresh_token";
 const BRANCH_KEY = "selected_branch_id";
 const USER_KEY = "auth_user";
 const ONBOARDING_KEY = "onboarding_completed_v1";
+const ONBOARDING_COMPLETED_USER_PREFIX = "onboarding_completed_v2:";
 const DASH_LAST_SEEN_KEY = "dashboard_last_seen_counts_v1";
 const SEARCH_HISTORY_KEY = "global_search_history_v1";
 const THEME_PREFERENCE_KEY = "theme_preference_v1";
@@ -13,6 +14,7 @@ const FACE_RECOGNITION_OPT_IN_KEY = "face_recognition_opt_in_v1";
 const DASHBOARD_LAST_UPDATED_AT_KEY = "dashboard_last_updated_at_v1";
 const OFFLINE_RESOURCE_CACHE_PREFIX = "offline_resource_cache_v1:";
 const OFFLINE_BOOTSTRAP_DONE_KEY = "offline_bootstrap_done_v1";
+const OFFLINE_BOOTSTRAP_DONE_USER_PREFIX = "offline_bootstrap_done_v2:";
 const OFFLINE_META_PREFIX = "offline_meta_v1:";
 const SEARCH_HISTORY_MAX = 12;
 
@@ -64,16 +66,37 @@ export async function setStoredUserJson(value: string | null) {
   await AsyncStorage.setItem(USER_KEY, value);
 }
 
-export async function getOnboardingCompleted(): Promise<boolean> {
-  const v = await AsyncStorage.getItem(ONBOARDING_KEY);
-  return v === "1";
+function onboardingKeyForUser(userId: string): string {
+  return `${ONBOARDING_COMPLETED_USER_PREFIX}${userId}`;
 }
 
-export async function setOnboardingCompleted(completed: boolean) {
-  if (completed) {
-    await AsyncStorage.setItem(ONBOARDING_KEY, "1");
-  } else {
+function offlineBootstrapKeyForUser(userId: string): string {
+  return `${OFFLINE_BOOTSTRAP_DONE_USER_PREFIX}${userId}`;
+}
+
+/** Per-user onboarding flag. Pass `user.id` from auth; missing id returns false. */
+export async function getOnboardingCompleted(userId: string | null | undefined): Promise<boolean> {
+  const id = String(userId || "").trim();
+  if (!id) return false;
+  const v = await AsyncStorage.getItem(onboardingKeyForUser(id));
+  if (v === "1") return true;
+  const legacy = await AsyncStorage.getItem(ONBOARDING_KEY);
+  if (legacy === "1") {
+    await AsyncStorage.setItem(onboardingKeyForUser(id), "1");
     await AsyncStorage.removeItem(ONBOARDING_KEY);
+    return true;
+  }
+  return false;
+}
+
+export async function setOnboardingCompleted(userId: string | null | undefined, completed: boolean) {
+  const id = String(userId || "").trim();
+  if (!id) return;
+  if (completed) {
+    await AsyncStorage.setItem(onboardingKeyForUser(id), "1");
+    await AsyncStorage.removeItem(ONBOARDING_KEY);
+  } else {
+    await AsyncStorage.removeItem(onboardingKeyForUser(id));
   }
 }
 
@@ -215,29 +238,66 @@ export async function setOfflineResourceCache<T>(key: string, data: T): Promise<
   await AsyncStorage.setItem(offlineResourceKey(key), JSON.stringify(envelope));
 }
 
-export async function getOfflineBootstrapDone(): Promise<boolean> {
+/** Per-user offline bootstrap completion. Pass `user.id` from auth; missing id returns false. */
+export async function getOfflineBootstrapDone(userId: string | null | undefined): Promise<boolean> {
+  const id = String(userId || "").trim();
+  if (!id) return false;
+  const metaKey = offlineBootstrapKeyForUser(id);
   const db = await getOfflineDb();
   const row = await db.getFirstAsync<{ meta_value: string }>(
     "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
+    [metaKey]
+  );
+  if (row?.meta_value === "1") return true;
+  const raw = await AsyncStorage.getItem(metaKey);
+  if (raw === "1") return true;
+  const legacyRow = await db.getFirstAsync<{ meta_value: string }>(
+    "SELECT meta_value FROM offline_meta WHERE meta_key = ? LIMIT 1;",
     [OFFLINE_BOOTSTRAP_DONE_KEY]
   );
-  if (row?.meta_value) return row.meta_value === "1";
-  const raw = await AsyncStorage.getItem(OFFLINE_BOOTSTRAP_DONE_KEY);
-  return raw === "1";
-}
-
-export async function setOfflineBootstrapDone(done: boolean): Promise<void> {
-  const db = await getOfflineDb();
-  if (!done) {
+  if (legacyRow?.meta_value === "1") {
+    await db.runAsync("INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);", [
+      metaKey,
+      "1",
+    ]);
+    await AsyncStorage.setItem(metaKey, "1");
     await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [OFFLINE_BOOTSTRAP_DONE_KEY]);
     await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+    return true;
+  }
+  const legacyRaw = await AsyncStorage.getItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+  if (legacyRaw === "1") {
+    await db.runAsync("INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);", [
+      metaKey,
+      "1",
+    ]);
+    await AsyncStorage.setItem(metaKey, "1");
+    await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
+    return true;
+  }
+  return false;
+}
+
+export async function setOfflineBootstrapDone(
+  userId: string | null | undefined,
+  done: boolean
+): Promise<void> {
+  const id = String(userId || "").trim();
+  if (!id) return;
+  const metaKey = offlineBootstrapKeyForUser(id);
+  const db = await getOfflineDb();
+  if (!done) {
+    await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [metaKey]);
+    await AsyncStorage.removeItem(metaKey);
     return;
   }
-  await db.runAsync(
-    "INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);",
-    [OFFLINE_BOOTSTRAP_DONE_KEY, "1"]
-  );
-  await AsyncStorage.setItem(OFFLINE_BOOTSTRAP_DONE_KEY, "1");
+  await db.runAsync("INSERT OR REPLACE INTO offline_meta (meta_key, meta_value) VALUES (?, ?);", [
+    metaKey,
+    "1",
+  ]);
+  await AsyncStorage.setItem(metaKey, "1");
+  await db.runAsync("DELETE FROM offline_meta WHERE meta_key = ?;", [OFFLINE_BOOTSTRAP_DONE_KEY]);
+  await AsyncStorage.removeItem(OFFLINE_BOOTSTRAP_DONE_KEY);
 }
 
 export async function clearOfflineResourceCaches(): Promise<void> {
@@ -250,7 +310,8 @@ export async function clearOfflineResourceCaches(): Promise<void> {
   const offlineKeys = keys.filter((k) =>
     k.startsWith(OFFLINE_RESOURCE_CACHE_PREFIX) ||
     k.startsWith(OFFLINE_META_PREFIX) ||
-    k === OFFLINE_BOOTSTRAP_DONE_KEY
+    k === OFFLINE_BOOTSTRAP_DONE_KEY ||
+    k.startsWith(OFFLINE_BOOTSTRAP_DONE_USER_PREFIX)
   );
   if (offlineKeys.length > 0) {
     await AsyncStorage.multiRemove(offlineKeys);
@@ -272,7 +333,8 @@ export async function getOfflineCacheSizeEstimate(): Promise<OfflineCacheSizeEst
   const offlineKeys = keys.filter((k) =>
     k.startsWith(OFFLINE_RESOURCE_CACHE_PREFIX) ||
     k.startsWith(OFFLINE_META_PREFIX) ||
-    k === OFFLINE_BOOTSTRAP_DONE_KEY
+    k === OFFLINE_BOOTSTRAP_DONE_KEY ||
+    k.startsWith(OFFLINE_BOOTSTRAP_DONE_USER_PREFIX)
   );
   if (offlineKeys.length === 0) {
     return { bytes: sqliteBytes, keys: Number(countRow?.count ?? 0) };
