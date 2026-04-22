@@ -68,10 +68,10 @@ function statusLabel(s: AttendanceStatus): string {
 
 function StatusBadge({ status }: { status: AttendanceStatus }) {
   const styles: Record<AttendanceStatus, string> = {
-    present: 'bg-blue-50 text-blue-800 border-blue-200',
+    present: 'bg-emerald-50 text-emerald-900 border-emerald-200',
     absent: 'bg-red-50 text-red-800 border-red-200',
     unsure: 'bg-amber-50 text-amber-900 border-amber-200',
-    not_marked: 'bg-gray-50 text-gray-600 border-gray-200',
+    not_marked: 'bg-slate-50 text-slate-600 border-slate-200',
   };
   return (
     <span
@@ -83,6 +83,20 @@ function StatusBadge({ status }: { status: AttendanceStatus }) {
       {statusLabel(status)}
     </span>
   );
+}
+
+/** Row / card chrome aligned with mobile: green present, red absent, amber unsure, slate not marked. */
+function statusCardClass(st: AttendanceStatus): string {
+  switch (st) {
+    case 'present':
+      return 'border border-emerald-200 bg-emerald-50/90';
+    case 'absent':
+      return 'border border-red-200 bg-red-50/90';
+    case 'unsure':
+      return 'border border-amber-200 bg-amber-50/90';
+    default:
+      return 'border border-slate-200 bg-slate-50/80';
+  }
 }
 
 export default function EventAttendanceTab({
@@ -330,21 +344,21 @@ export default function EventAttendanceTab({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-center">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-center">
           <p className={type.stat}>{counts.present}</p>
-          <p className="mt-1 text-xs font-semibold text-gray-700">Present</p>
+          <p className="mt-1 text-xs font-semibold text-emerald-900">Present</p>
         </div>
-        <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-center">
+        <div className="rounded-2xl border border-red-200 bg-red-50/80 p-4 text-center">
           <p className={type.stat}>{counts.absent}</p>
-          <p className="mt-1 text-xs font-semibold text-gray-700">Absent</p>
+          <p className="mt-1 text-xs font-semibold text-red-900">Absent</p>
         </div>
-        <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-center">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-center">
           <p className={type.stat}>{counts.unsure}</p>
-          <p className="mt-1 text-xs font-semibold text-gray-700">Not sure</p>
+          <p className="mt-1 text-xs font-semibold text-amber-900">Not sure</p>
         </div>
-        <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-center">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-center">
           <p className={type.stat}>{counts.not_marked}</p>
-          <p className="mt-1 text-xs font-semibold text-gray-700">Not marked</p>
+          <p className="mt-1 text-xs font-semibold text-slate-700">Not marked</p>
         </div>
       </div>
 
@@ -448,18 +462,19 @@ export default function EventAttendanceTab({
           </div>
 
           {view === 'list' ? (
-            <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-100 overflow-hidden">
+            <ul className="space-y-2">
               {filteredMembers.map((m) => {
                 const st = effectiveStatus(m.id);
                 const isSel = selected.has(m.id);
                 return (
-                  <li key={m.id}>
+                  <li key={m.id} className="overflow-hidden rounded-2xl">
                     <button
                       type="button"
                       onClick={() => toggleSelect(m.id)}
                       className={cn(
-                        'flex w-full items-center gap-3 px-3 py-3 text-left transition-colors sm:px-4',
-                        isSel ? 'bg-blue-50/60' : 'hover:bg-gray-50/80',
+                        'flex w-full items-center gap-3 px-3 py-3 text-left transition-shadow sm:px-4',
+                        statusCardClass(st),
+                        isSel ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : 'hover:brightness-[0.99]',
                       )}
                     >
                       <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center')}>
@@ -500,10 +515,9 @@ export default function EventAttendanceTab({
                       type="button"
                       onClick={() => toggleSelect(m.id)}
                       className={cn(
-                        'flex w-full flex-col items-center rounded-2xl border p-3 text-center transition-colors',
-                        isSel
-                          ? 'border-blue-300 bg-blue-50/50 ring-2 ring-blue-200'
-                          : 'border-gray-100 bg-white hover:bg-gray-50/80',
+                        'flex w-full flex-col items-center rounded-2xl p-3 text-center transition-shadow',
+                        statusCardClass(st),
+                        isSel ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : 'hover:brightness-[0.99]',
                       )}
                     >
                       <span className="mb-2 flex h-5 w-5 self-start">
@@ -563,7 +577,7 @@ export default function EventAttendanceTab({
                 onClick={() => void applyStatusToSelected(st)}
                 className={cn(
                   'inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 sm:text-sm',
-                  st === 'present' && 'bg-blue-600 text-white hover:bg-blue-700',
+                  st === 'present' && 'bg-emerald-600 text-white hover:bg-emerald-700',
                   st === 'absent' && 'bg-red-600 text-white hover:bg-red-700',
                   st === 'unsure' && 'bg-amber-500 text-white hover:bg-amber-600',
                   st === 'not_marked' && 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50',
