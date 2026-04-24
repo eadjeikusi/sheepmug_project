@@ -15,6 +15,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { notifyMemberTasksChanged } from '@/hooks/useMyOpenTaskCount';
 import { usePermissions } from '@/hooks/usePermissions';
+import { canReshapeGroupTaskChecklist, canWriteGroupTasks } from '../../../permissions/atomicCanHelpers';
 import AssignGroupTaskModal from '../modals/AssignGroupTaskModal';
 import { DateTimePickerField } from '@/components/datetime';
 import { capitalizeSentencesForUi } from '@/utils/sentenceCaseDisplay';
@@ -124,7 +125,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
 
   useEffect(() => {
     if (!openAssignOnMount || !groupId || !isUuid(groupId)) return;
-    if (!can('manage_group_tasks')) return;
+    if (!can('add_group_tasks')) return;
     setAssignOpen(true);
   }, [openAssignOnMount, groupId, can]);
 
@@ -158,7 +159,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
   };
 
   const canActOnTaskStatus = (t: GroupTaskRow) =>
-    Boolean(user?.id && (leaderIdsFromGroupTask(t).includes(user.id) || can('manage_group_tasks')));
+    Boolean(user?.id && (leaderIdsFromGroupTask(t).includes(user.id) || canWriteGroupTasks(can)));
 
   const canToggleChecklist = (t: GroupTaskRow) =>
     Boolean(
@@ -166,15 +167,16 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
         t.status !== 'cancelled' &&
         t.status !== 'completed' &&
         (leaderIdsFromGroupTask(t).includes(user.id) ||
-          can('manage_group_tasks') ||
-          can('manage_group_task_checklist')),
+          canWriteGroupTasks(can) ||
+          can('edit_group_task_checklist') ||
+          can('complete_group_task_checklist')),
     );
 
   const canFullEditTask = (t: GroupTaskRow) =>
     Boolean(
       user?.id &&
         (user.is_org_owner === true ||
-          can('manage_group_tasks') ||
+          can('edit_group_tasks') ||
           t.created_by_profile_id === user.id),
     );
 
@@ -206,7 +208,13 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
   const handleDelete = async (taskId: string) => {
     const task = tasks.find((x) => x.id === taskId);
     if (!token || !task || !user?.id) return;
-    if (!(user.is_org_owner === true || can('manage_group_tasks') || task.created_by_profile_id === user.id)) {
+    if (
+      !(
+        user.is_org_owner === true ||
+        can('delete_group_tasks') ||
+        task.created_by_profile_id === user.id
+      )
+    ) {
       return;
     }
     if (
@@ -332,7 +340,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
   };
 
   const handleSaveChecklistOnlyEdit = async () => {
-    if (!token || !taskBeingEditedId || !can('manage_group_task_checklist')) return;
+    if (!token || !taskBeingEditedId || !can('edit_group_task_checklist')) return;
     setEditSubmitting(true);
     try {
       const checklist = editChecklistLines
@@ -372,7 +380,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
 
   const handleToggleTaskChecklist = async (t: GroupTaskRow, itemId: string, done: boolean) => {
     if (!token || !canToggleChecklist(t)) return;
-    const canEditStructure = can('manage_group_tasks') || can('manage_group_task_checklist');
+    const canEditStructure = canReshapeGroupTaskChecklist(can);
     if (!canEditStructure && user?.id && leaderIdsFromGroupTask(t).includes(user.id)) {
       try {
         const res = await fetch(`/api/group-tasks/${encodeURIComponent(t.id)}`, {
@@ -442,7 +450,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
 
   return (
     <div className="space-y-4">
-      {can('manage_group_tasks') && groupId && isUuid(groupId) && (
+      {can('add_group_tasks') && groupId && isUuid(groupId) && (
         <button
           type="button"
           onClick={() => setAssignOpen(true)}
@@ -822,7 +830,7 @@ export default function GroupTasksSection({ groupId, openAssignOnMount = false }
                               </button>
                             </>
                           )}
-                          {can('manage_group_task_checklist') && !canFullEditTask(t) && (
+                          {can('edit_group_task_checklist') && !canFullEditTask(t) && (
                             <button
                               type="button"
                               title="Edit checklist"

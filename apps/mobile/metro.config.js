@@ -13,4 +13,18 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
+const { resolveRequest: upstreamResolve } = config.resolver;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === "@sheepmug/permissions-catalog") {
+    return {
+      filePath: path.resolve(monorepoRoot, "src/permissions/catalog.ts"),
+      type: "sourceFile",
+    };
+  }
+  if (typeof upstreamResolve === "function") {
+    return upstreamResolve(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

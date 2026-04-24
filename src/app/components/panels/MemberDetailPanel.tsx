@@ -9,6 +9,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useBranch } from '../../contexts/BranchContext';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { usePermissions } from '@/hooks/usePermissions';
+import {
+  canReshapeMemberTaskChecklist,
+  canWriteMemberTasks,
+} from '../../../permissions/atomicCanHelpers';
 import { DatePickerField, DateTimePickerField, TimePickerField } from '@/components/datetime';
 import { notifyMemberTasksChanged } from '@/hooks/useMyOpenTaskCount';
 import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
@@ -214,7 +218,7 @@ export default function MemberDetailPanel({
     { key: string; id?: string; label: string; done: boolean }[]
   >([]);
   const [editSubmitting, setEditSubmitting] = useState(false);
-  /** When true, only checklist is edited (user has manage_member_task_checklist but not manage_member_tasks). */
+  /** When true, only checklist is edited (user has edit_member_task_checklist but not full task edit). */
   const [editingChecklistOnly, setEditingChecklistOnly] = useState(false);
 
   const branchMembers = useMemo(() => {
@@ -449,7 +453,7 @@ export default function MemberDetailPanel({
   }, [isOpen, member?.id, token, selectedBranch?.id, activeTab, can]);
 
   useEffect(() => {
-    if (!isOpen || !token || activeTab !== 'tasks' || !can('manage_member_tasks')) {
+    if (!isOpen || !token || activeTab !== 'tasks' || !canWriteMemberTasks(can)) {
       return;
     }
     let cancelled = false;
@@ -963,6 +967,7 @@ export default function MemberDetailPanel({
       return;
     }
     if (!member || !token || !isMemberDbId(member.id)) return;
+    if (!window.confirm('Delete this important date? Reminders for it will not apply after removal.')) return;
     try {
       const res = await fetch(
         `/api/members/${encodeURIComponent(String(member.id).trim())}/important-dates/${encodeURIComponent(id)}`,
@@ -1068,7 +1073,10 @@ export default function MemberDetailPanel({
   };
 
   const handleDeleteMemberTask = async (taskId: string) => {
-    if (!token || !can('manage_member_tasks')) return;
+    if (!token) return;
+    const row = memberTasks.find((t) => t.id === taskId);
+    const isCreator = row && user?.id && String(row.created_by_profile_id) === String(user.id);
+    if (!can('delete_member_tasks') && !isCreator) return;
     if (
       !window.confirm(
         'Delete this task permanently? Checklist progress will be lost. This cannot be undone.',
@@ -1099,8 +1107,9 @@ export default function MemberDetailPanel({
       user?.id &&
         t.status !== 'cancelled' &&
         (leaderIdsFromMemberTask(t).includes(user.id) ||
-          can('manage_member_tasks') ||
-          can('manage_member_task_checklist')),
+          canWriteMemberTasks(can) ||
+          can('edit_member_task_checklist') ||
+          can('complete_member_task_checklist')),
     );
 
   const beginEditTask = (t: MemberTaskRow) => {
@@ -1139,7 +1148,7 @@ export default function MemberDetailPanel({
   };
 
   const handleSaveEditedTask = async () => {
-    if (!token || !taskBeingEditedId || !member || !can('manage_member_tasks')) return;
+    if (!token || !taskBeingEditedId || !member || !can('edit_member_tasks')) return;
     const title = editTitle.trim();
     if (!title) {
       toast.error('Enter a title');
@@ -1190,7 +1199,7 @@ export default function MemberDetailPanel({
   };
 
   const handleSaveChecklistOnlyEdit = async () => {
-    if (!token || !taskBeingEditedId || !can('manage_member_task_checklist')) return;
+    if (!token || !taskBeingEditedId || !can('edit_member_task_checklist')) return;
     const row = memberTasks.find((x) => x.id === taskBeingEditedId);
     if (
       row &&
@@ -1239,7 +1248,7 @@ export default function MemberDetailPanel({
 
   const handleToggleTaskChecklist = async (t: MemberTaskRow, itemId: string, done: boolean) => {
     if (!token || !canToggleChecklist(t)) return;
-    const canEditStructure = can('manage_member_tasks') || can('manage_member_task_checklist');
+    const canEditStructure = canReshapeMemberTaskChecklist(can);
     if (!canEditStructure && user?.id && leaderIdsFromMemberTask(t).includes(user.id)) {
       try {
         const res = await fetch(`/api/member-tasks/${encodeURIComponent(t.id)}`, {
@@ -2194,7 +2203,7 @@ export default function MemberDetailPanel({
               {/* Tasks Tab */}
               {activeTab === 'tasks' && can('view_member_tasks') && (
                 <div className="space-y-4">
-                  {can('manage_member_tasks') && member && isMemberDbId(member.id) && (
+                  {can('add_member_tasks') && member && isMemberDbId(member.id) && (
                     <button
                       type="button"
                       onClick={() => setAssignTaskModalOpen(true)}
@@ -2341,7 +2350,7 @@ export default function MemberDetailPanel({
                                     </button>
                                   </div>
                                 </div>
-                              ) : taskBeingEditedId === t.id && isTaskCreator && can('manage_member_tasks') ? (
+                              ) : taskBeingEditedId === t.id && isTaskCreator && can('edit_member_tasks') ? (
                                 <div
                                   className="space-y-3 p-3 rounded-lg border border-blue-200 bg-blue-50/40"
                                   onClick={(e) => e.stopPropagation()}
@@ -2541,7 +2550,7 @@ export default function MemberDetailPanel({
                                       className="flex flex-wrap gap-1 shrink-0 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
                                       onClick={(e) => e.stopPropagation()}
                                     >
-                                      {isTaskCreator && can('manage_member_tasks') && (
+                                      {isTaskCreator && can('edit_member_tasks') && (
                                         <button
                                           type="button"
                                           title="Edit task"
@@ -2551,8 +2560,8 @@ export default function MemberDetailPanel({
                                           <Pencil className="w-4 h-4" />
                                         </button>
                                       )}
-                                      {can('manage_member_task_checklist') &&
-                                        !(isTaskCreator && can('manage_member_tasks')) &&
+                                      {can('edit_member_task_checklist') &&
+                                        !(isTaskCreator && can('edit_member_tasks')) &&
                                         (!tLeaderIds.includes(selfId ?? '') || isTaskCreator) && (
                                         <button
                                           type="button"
@@ -2596,7 +2605,7 @@ export default function MemberDetailPanel({
                                           ))}
                                         </ul>
                                       )}
-                                      {isTaskCreator && can('manage_member_tasks') && (
+                                      {isTaskCreator && can('edit_member_tasks') && (
                                         <div className="ml-5 mt-2 flex justify-end">
                                           <button
                                             type="button"

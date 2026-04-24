@@ -4,8 +4,10 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@sheepmug/permissions-catalog": ["../../src/permissions/catalog.ts"],
+      "@sheepmug/permissions-helpers": ["../../src/permissions/atomicCanHelpers.ts"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "../../src/permissions/catalog.ts"]
 }

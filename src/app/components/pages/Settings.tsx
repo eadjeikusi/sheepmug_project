@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { User, Bell, Database, Users, CheckSquare, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe } from 'lucide-react';
+import { User, Bell, Database, Users, CheckSquare, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe, Copy } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useBranch } from '../../contexts/BranchContext';
@@ -9,7 +9,18 @@ import DatabaseConnectionTest from '../DatabaseConnectionTest';
 import BranchModal from '../modals/BranchModal';
 import { useApp } from '../../contexts/AppContext';
 import { withBranchScope } from '../../utils/branchScopeHeaders';
-import { PERMISSION_CATALOG, resolveImpliedPermissions } from '../../../permissions/catalog';
+import { ALL_PERMISSION_IDS, resolveImpliedPermissions, validatePermissionIds } from '../../../permissions/catalog';
+import { PermissionRoleMatrix } from '../permissions/PermissionRoleMatrix';
+import {
+  canAccessStaffOrRoleAdmin,
+  canAnyRoleAdmin,
+  canConfigureCustomFieldsUi,
+  canConfigureGroupTypeOptions,
+  canConfigureMemberStatusOptions,
+  canUseNotificationQa as canAccessNotificationQa,
+  canViewOrEditEventTypesUi,
+  canViewOrEditProgramTemplatesUi,
+} from '../../../permissions/atomicCanHelpers';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
 import { useGroupTypeOptions } from '../../hooks/useGroupTypeOptions';
@@ -314,26 +325,15 @@ export default function Settings() {
   const [newRoleName, setNewRoleName] = useState('');
   const [permDraft, setPermDraft] = useState<Set<string>>(new Set());
   const [savingRole, setSavingRole] = useState(false);
-  const [expandedPermCats, setExpandedPermCats] = useState<Set<string>>(
-    () => new Set(PERMISSION_CATALOG.map((c) => c.id)),
-  );
   const [staffRoleUpdating, setStaffRoleUpdating] = useState<string | null>(null);
-  const canUseNotificationQa = can('manage_permissions');
+  const canUseNotificationQa = canAccessNotificationQa(can);
 
   const selectedRole = apiRoles.find((r) => r.id === selectedRoleId) ?? null;
 
   /** Match server MEMBER_STATUS_OPTION_WRITE_PERMS and who can open /settings (Root.tsx). */
-  const canConfigureMemberStatuses =
-    can('manage_member_statuses') ||
-    can('system_settings') ||
-    can('manage_permissions') ||
-    can('manage_staff');
+  const canConfigureMemberStatuses = canConfigureMemberStatusOptions(can);
 
-  const canConfigureGroupTypes =
-    can('manage_groups') ||
-    can('system_settings') ||
-    can('manage_permissions') ||
-    can('manage_staff');
+  const canConfigureGroupTypes = canConfigureGroupTypeOptions(can);
 
   const memberStatusesTabActive = activeTab === 'memberStatuses';
   const groupTypesTabActive = activeTab === 'groupTypes';
@@ -349,8 +349,7 @@ export default function Settings() {
     refresh: refreshGroupTypeOptions,
     tableMissing: groupTypeTableMissing,
   } = useGroupTypeOptions(groupTypesTabActive);
-  const canConfigureCustomFields =
-    can('system_settings') || can('manage_permissions') || can('manage_staff');
+  const canConfigureCustomFields = canConfigureCustomFieldsUi(can);
 
   const [customFieldsSchemaHint, setCustomFieldsSchemaHint] = useState<string | null>(null);
 
@@ -499,6 +498,9 @@ export default function Settings() {
 
   const deleteMemberStatusOption = async (id: string) => {
     if (!token || !canConfigureMemberStatuses) return;
+    const opt = sortedMemberStatusOptions.find((x) => x.id === id);
+    const name = (opt?.label ?? '').trim() || 'this option';
+    if (!window.confirm(`Remove member status “${name}”? It will no longer be available for new assignments.`)) return;
     setMemberStatusBusy(true);
     try {
       const res = await fetch(`/api/member-status-options/${id}`, {
@@ -641,6 +643,9 @@ export default function Settings() {
 
   const deleteGroupTypeOption = async (id: string) => {
     if (!token || !canConfigureGroupTypes) return;
+    const opt = sortedGroupTypeOptions.find((x) => x.id === id);
+    const name = (opt?.label ?? '').trim() || 'this option';
+    if (!window.confirm(`Remove group type “${name}”? It will no longer be available when creating or editing groups.`)) return;
     setGroupTypeBusy(true);
     try {
       const res = await fetch(`/api/group-type-options/${id}`, {
@@ -735,7 +740,7 @@ export default function Settings() {
   }, [selectedRoleId, apiRoles]);
 
   useEffect(() => {
-    if (activeTab === 'permissions' && token && can('manage_permissions')) void fetchOrgRoles();
+    if (activeTab === 'permissions' && token && canAnyRoleAdmin(can)) void fetchOrgRoles();
   }, [activeTab, token, fetchOrgRoles, can]);
 
   const persistRolePermissions = async () => {
@@ -756,6 +761,50 @@ export default function Settings() {
       void fetchOrgRoles();
     } catch (e: any) {
       toast.error(e?.message || 'Save failed');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const applyAllPermissionsToDraft = () => {
+    const full = new Set(validatePermissionIds(ALL_PERMISSION_IDS));
+    setPermDraft(new Set(resolveImpliedPermissions(full)));
+  };
+
+  const nextDuplicateRoleName = (sourceName: string, existing: ApiRoleRow[]) => {
+    const base = sourceName.trim() || 'Role';
+    const used = new Set(existing.map((r) => r.name.trim()));
+    let n = 2;
+    for (; n < 9999; n += 1) {
+      const candidate = `${base} ${n}`;
+      if (!used.has(candidate)) return candidate;
+    }
+    return `${base} ${Date.now()}`;
+  };
+
+  const duplicateOrgRole = async (source: ApiRoleRow) => {
+    if (!token) return;
+    const name = nextDuplicateRoleName(source.name, apiRoles);
+    setSavingRole(true);
+    try {
+      const res = await fetch('/api/org/roles', {
+        method: 'POST',
+        headers: withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify({
+          name,
+          permission_ids: validatePermissionIds([...source.permissions]),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Duplicate failed');
+      toast.success(`Role created: ${name}`);
+      await fetchOrgRoles();
+      if (data.role?.id) setSelectedRoleId(data.role.id);
+    } catch (e: any) {
+      toast.error(e?.message || 'Duplicate failed');
     } finally {
       setSavingRole(false);
     }
@@ -1029,21 +1078,6 @@ export default function Settings() {
   const impliedByOther = useMemo(() => {
     return resolveImpliedPermissions(permDraft);
   }, [permDraft]);
-
-  const toggleCategoryAll = (_catId: string, ids: string[]) => {
-    const allOn = ids.every((id) => permDraft.has(id));
-    setPermDraft((prev) => {
-      const next = new Set(prev);
-      if (allOn) {
-        for (const id of ids) next.delete(id);
-      } else {
-        for (const id of ids) next.add(id);
-        const expanded = resolveImpliedPermissions(next);
-        for (const imp of expanded) next.add(imp);
-      }
-      return next;
-    });
-  };
 
   const [staffList, setStaffList] = useState<
     {
@@ -1396,7 +1430,7 @@ export default function Settings() {
     if (
       activeTab === 'staff' &&
       token &&
-      (can('manage_staff') || can('manage_permissions'))
+      canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchStaffList();
     }
@@ -1406,7 +1440,7 @@ export default function Settings() {
     if (
       activeTab === 'staff' &&
       token &&
-      (can('manage_staff') || can('manage_permissions'))
+      canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchOrgRoles();
     }
@@ -1416,7 +1450,7 @@ export default function Settings() {
     if (
       activeTab === 'staff' &&
       token &&
-      (can('manage_staff') || can('manage_permissions'))
+      canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchStaffProfileGroups();
     }
@@ -1816,7 +1850,7 @@ export default function Settings() {
           <Type className="w-4 h-4 inline mr-2" />
           Custom Fields
         </button>
-        {can('manage_event_types') && (
+        {canViewOrEditEventTypesUi(can) && (
         <button
             type="button"
             onClick={() => goSettingsTab('eventTypes')}
@@ -1830,7 +1864,7 @@ export default function Settings() {
           Event Types
         </button>
         )}
-        {can('manage_program_templates') && (
+        {canViewOrEditProgramTemplatesUi(can) && (
         <button
             type="button"
             onClick={() => goSettingsTab('programTemplates')}
@@ -2294,7 +2328,7 @@ export default function Settings() {
 
       {activeTab === 'staff' && (
         <div className="space-y-8 max-w-3xl">
-          {!(can('manage_staff') || can('manage_permissions')) ? (
+          {!canAccessStaffOrRoleAdmin(can) ? (
             <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
               You do not have permission to view staff accounts. Ask an administrator.
             </div>
@@ -2624,7 +2658,7 @@ export default function Settings() {
                                 : '—'}{' '}
                               <span className="text-xs font-normal text-gray-500">(owner — full access)</span>
                       </span>
-                          ) : can('manage_permissions') ? (
+                          ) : canAnyRoleAdmin(can) ? (
                             <select
                               className="text-sm border border-gray-200 rounded-lg px-2 py-1 max-w-[220px]"
                               value={row.role_id || ''}
@@ -2657,7 +2691,7 @@ export default function Settings() {
                                       .map((id) => ministryGroupNameById.get(id) || id.slice(0, 8))
                                       .join(', ')}
                               </span>
-                              {(can('manage_staff') || can('manage_permissions')) && (
+                              {canAccessStaffOrRoleAdmin(can) && (
                                 <button
                                   type="button"
                                   onClick={() => void openMinistryScopeModal(row.id)}
@@ -2672,7 +2706,7 @@ export default function Settings() {
                         <td className="px-4 py-2">
                           {row.is_org_owner === true ? (
                             <span className="text-xs text-gray-500">—</span>
-                          ) : can('manage_staff') || can('manage_permissions') ? (
+                          ) : canAccessStaffOrRoleAdmin(can) ? (
                             <select
                               className="text-sm border border-gray-200 rounded-lg px-2 py-1"
                               value={row.is_active === false ? 'suspended' : 'active'}
@@ -2928,7 +2962,7 @@ export default function Settings() {
       {/* Permissions Tab */}
       {activeTab === 'permissions' && (
         <div className="space-y-6">
-          {!can('manage_permissions') ? (
+          {!canAnyRoleAdmin(can) ? (
             <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
               You do not have permission to manage roles. Ask an organization administrator.
                 </div>
@@ -2966,18 +3000,31 @@ export default function Settings() {
                   <p className="text-xs font-semibold text-gray-500">Roles</p>
                   <ul className="rounded-2xl border border-gray-200 bg-white divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
                     {apiRoles.map((r) => (
-                      <li key={r.id}>
+                      <li key={r.id} className="flex items-stretch">
                         <button
                           type="button"
                           onClick={() => setSelectedRoleId(r.id)}
                           className={
                             selectedRoleId === r.id
-                              ? 'w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-gray-50 bg-blue-50 text-blue-900'
-                              : 'w-full text-left px-4 py-3 text-sm flex justify-between items-center hover:bg-gray-50'
+                              ? 'flex-1 min-w-0 text-left px-4 py-3 text-sm flex justify-between items-center gap-2 hover:bg-gray-50 bg-blue-50 text-blue-900'
+                              : 'flex-1 min-w-0 text-left px-4 py-3 text-sm flex justify-between items-center gap-2 hover:bg-gray-50'
                           }
                         >
-                          <span className="font-medium">{r.name}</span>
-                          <span className="text-xs text-gray-400">{r.permissions.length} perms</span>
+                          <span className="font-medium truncate">{r.name}</span>
+                          <span className="text-xs text-gray-400 shrink-0">{r.permissions.length} perms</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Duplicate role"
+                          aria-label={`Duplicate role ${r.name}`}
+                          disabled={savingRole || !token}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void duplicateOrgRole(r);
+                          }}
+                          className="shrink-0 px-3 border-l border-gray-100 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50"
+                        >
+                          <Copy className="w-4 h-4" />
                         </button>
                       </li>
                     ))}
@@ -2989,7 +3036,15 @@ export default function Settings() {
                     <>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <h3 className="font-medium text-gray-900">{selectedRole.name}</h3>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={savingRole}
+                            onClick={applyAllPermissionsToDraft}
+                            className="px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 text-gray-800 disabled:opacity-50"
+                          >
+                            Apply all permissions
+                          </button>
                           <button
                             type="button"
                             disabled={savingRole}
@@ -3012,72 +3067,14 @@ export default function Settings() {
                         Assign staff to roles from the <strong>Staff / Leaders</strong> tab.
                       </p>
 
-                      <div className="space-y-3">
-                        {PERMISSION_CATALOG.map((cat) => {
-                          const ids = cat.permissions.map((p) => p.id);
-                          const expanded = expandedPermCats.has(cat.id);
-                          return (
-                            <div key={cat.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                              <button
-                                type="button"
-                                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 text-left"
-                                onClick={() => {
-                                  setExpandedPermCats((prev) => {
-                                    const n = new Set(prev);
-                                    if (n.has(cat.id)) n.delete(cat.id);
-                                    else n.add(cat.id);
-                                    return n;
-                                  });
-                                }}
-                              >
-                                <span className="font-medium text-gray-900 text-sm">{cat.label}</span>
-                                <span className="text-xs text-gray-500 flex items-center">
-                                  {ids.filter((id) => permDraft.has(id)).length}/{ids.length}
-                                  <ChevronDown
-                                    className={'w-4 h-4 ml-1 transition ' + (expanded ? 'rotate-180' : '')}
-                                  />
-                                </span>
-                              </button>
-                              {expanded && (
-                                <div className="p-3 border-t border-gray-100 space-y-2">
-                                  <button
-                                    type="button"
-                                    className="text-xs text-blue-600 mb-2"
-                                    onClick={() => toggleCategoryAll(cat.id, ids)}
-                                  >
-                                    Toggle all in this category
-                                  </button>
-                                  {cat.permissions.map((p) => {
-                                    const isImplied = !permDraft.has(p.id) && impliedByOther.has(p.id);
-                                    return (
-                                    <label
-                                      key={p.id}
-                                      className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={permDraft.has(p.id)}
-                                        onChange={() => togglePermDraft(p.id)}
-                                        className="mt-1 rounded border-gray-300"
-                                      />
-                                      <div>
-                                        <p className="text-sm font-medium text-gray-900">
-                                          {p.name}
-                                          {isImplied && (
-                                            <span className="ml-2 text-xs font-normal text-blue-500">(included)</span>
-                                          )}
-                                        </p>
-                                        <p className="text-xs text-gray-500">{p.description}</p>
-                                      </div>
-                                    </label>
-                                    );
-                                  })}
-              </div>
-                              )}
-            </div>
-                          );
-                        })}
-          </div>
+                      <div className="max-h-[min(70vh,720px)] overflow-y-auto pr-1">
+                        <PermissionRoleMatrix
+                          permDraft={permDraft}
+                          impliedByOther={impliedByOther}
+                          onToggle={togglePermDraft}
+                          disabled={savingRole}
+                        />
+                      </div>
                     </>
                   ) : (
                     <p className="text-sm text-gray-500">Select or create a role.</p>
@@ -3431,7 +3428,7 @@ export default function Settings() {
 
       {/* Event Types Tab */}
       {activeTab === 'eventTypes' &&
-        (can('manage_event_types') ? (
+        (canViewOrEditEventTypesUi(can) ? (
           <EventTypes embedded />
         ) : (
           <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
@@ -3441,7 +3438,7 @@ export default function Settings() {
 
       {/* Program templates Tab */}
       {activeTab === 'programTemplates' &&
-        (can('manage_program_templates') ? (
+        (canViewOrEditProgramTemplatesUi(can) ? (
           <EventOutlineTemplates embedded />
         ) : (
           <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">

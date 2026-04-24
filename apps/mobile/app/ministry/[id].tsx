@@ -42,6 +42,7 @@ import {
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
+import { canSeeAnyTaskPermission } from "@sheepmug/permissions-helpers";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
 import { colors, radius, sizes, type } from "../../theme";
@@ -344,22 +345,11 @@ export default function MinistryDetailScreen() {
   const { can } = usePermissions();
   const canApproveGroupRequests = can("approve_group_requests");
   const canViewGroupRequests = can("view_group_requests") || can("approve_group_requests");
-  const canManageGroups = can("manage_groups");
+  const canManageGroups = can("add_groups") || can("edit_groups");
 
   const canSeeMinistryTasksTab = useMemo(() => {
     if (user?.is_org_owner === true || user?.is_super_admin === true) return true;
-    return (
-      can("view_group_tasks") ||
-      can("view_member_tasks") ||
-      can("monitor_group_tasks") ||
-      can("manage_group_tasks") ||
-      can("manage_group_task_checklist") ||
-      can("complete_group_task_checklist") ||
-      can("monitor_member_tasks") ||
-      can("manage_member_tasks") ||
-      can("manage_member_task_checklist") ||
-      can("complete_member_task_checklist")
-    );
+    return canSeeAnyTaskPermission(can);
   }, [can, user?.is_org_owner]);
 
   /** Keep Tasks in the strip (parity with web ministry tabs); panel body gates fetch + actions via `canSeeMinistryTasksTab`. */

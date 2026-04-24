@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { EventItem, EventTypeRow, Group } from "@sheepmug/shared-api";
 import { useRouter } from "expo-router";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { FilterResultsChips, HeaderCountTile, type FilterResultChip } from "../../components/FilterResultsSection";
 import { FormModalShell } from "../../components/FormModalShell";
 import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
@@ -167,6 +168,7 @@ function eventMatchesWhenFilters(e: EventItem, whenModes: Set<WhenMode>): boolea
 
 export default function EventScreen() {
   const router = useRouter();
+  const { can } = usePermissions();
   const { isOnline } = useOfflineSync();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -190,6 +192,10 @@ export default function EventScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!can("view_events")) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         const cached = await getOfflineResourceCache<{
@@ -238,7 +244,7 @@ export default function EventScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [can]);
 
   async function reloadEvents() {
     setLoading(true);
@@ -502,6 +508,25 @@ export default function EventScreen() {
     }
   }
 
+  if (!can("view_events")) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerTitleWrap}>
+              <Text style={styles.title}>Events</Text>
+            </View>
+          </View>
+        </View>
+        <View style={{ padding: 24 }}>
+          <Text style={{ fontSize: type.body.size, color: colors.textSecondary, textAlign: "center" }}>
+            You do not have permission to view events. Ask an administrator if you need access.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -513,6 +538,7 @@ export default function EventScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
+            {can("add_events") ? (
             <HeaderIconCircleButton
               accessibilityLabel="Create event"
               onPress={() => {
@@ -525,6 +551,7 @@ export default function EventScreen() {
             >
               <Ionicons name="add-outline" size={sizes.headerIcon} color={colors.textPrimary} />
             </HeaderIconCircleButton>
+            ) : null}
             <HeaderIconCircleButton
               accessibilityLabel={hasAppliedFilters ? "Edit filters" : "Open filters"}
               accessibilityState={{ selected: hasAppliedFilters }}

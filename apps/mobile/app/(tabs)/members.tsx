@@ -1030,7 +1030,7 @@ export default function MembersScreen() {
       }
 
       if (assignType === "tasks") {
-        if (!can("manage_member_tasks")) {
+        if (!can("add_member_tasks")) {
           Alert.alert("Permission denied", "You do not have permission to assign member tasks.");
           return;
         }
@@ -1383,7 +1383,7 @@ export default function MembersScreen() {
                 <Text style={styles.assignTitle}>Assign {selectedCount} members</Text>
                 <View style={styles.assignTypeRow}>
                   {(["ministries", "families", "tasks"] as const)
-                    .filter((typeItem) => typeItem !== "tasks" || can("manage_member_tasks"))
+                    .filter((typeItem) => typeItem !== "tasks" || can("add_member_tasks"))
                     .map((typeItem) => {
                     const label =
                       typeItem === "ministries" ? "Ministries" : typeItem === "families" ? "Family" : "Tasks";

@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { useBranch } from '../../contexts/BranchContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import CreateEventModal from '../modals/CreateEventModal';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
@@ -160,6 +161,7 @@ interface EventTypeRow {
 
 export default function Events() {
   const { token } = useAuth();
+  const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const location = useLocation();
   const navigate = useNavigate();
@@ -181,7 +183,7 @@ export default function Events() {
   }, [events.length]);
 
   const fetchEvents = useCallback(async (reset = true) => {
-    if (!token) {
+    if (!token || !can('view_events')) {
       setEvents([]);
       setLoading(false);
       setLoadingMore(false);
@@ -218,7 +220,7 @@ export default function Events() {
         setLoadingMore(false);
       }
     }
-  }, [token, selectedBranch?.id]);
+  }, [token, selectedBranch?.id, can]);
 
   useEffect(() => {
     void fetchEvents();
@@ -252,7 +254,7 @@ export default function Events() {
   }, [location.state, location.pathname, events, navigate]);
 
   useEffect(() => {
-    if (!token) {
+    if (!token || !can('view_events')) {
       setEventTypesList([]);
       return;
     }
@@ -284,7 +286,7 @@ export default function Events() {
     return () => {
       cancelled = true;
     };
-  }, [token, selectedBranch?.id]);
+  }, [token, selectedBranch?.id, can]);
 
   const typeMetaBySlug = useMemo(() => {
     const m = new Map<string, { name: string; color: string | null }>();
@@ -368,7 +370,7 @@ export default function Events() {
   }, []);
 
   const handleDelete = async (id: string, title: string) => {
-    if (!token) return;
+    if (!token || !can('delete_events')) return;
     if (!window.confirm(`Delete “${title}”? This cannot be undone.`)) return;
     try {
       const res = await fetch(`/api/events/${encodeURIComponent(id)}`, {
@@ -386,6 +388,17 @@ export default function Events() {
     }
   };
 
+  if (!can('view_events')) {
+    return (
+      <div className="flex flex-col flex-1 bg-gray-50/80 min-h-0">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+          <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Events</h1>
+          <p className="mt-2 text-sm text-gray-600">You do not have permission to view events.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 bg-gray-50/80 min-h-0">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
@@ -394,6 +407,7 @@ export default function Events() {
             <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Events</h1>
             <p className="mt-1 text-sm text-gray-500">Create, filter, and manage church events</p>
           </div>
+          {can('add_events') ? (
           <button
             type="button"
             onClick={() => {
@@ -405,6 +419,7 @@ export default function Events() {
             <Plus className="h-4 w-4" />
             New Event
           </button>
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm md:p-8">
@@ -607,6 +622,7 @@ export default function Events() {
                             >
                               <Eye className="h-4 w-4" />
                             </Link>
+                            {can('edit_events') ? (
                             <button
                               type="button"
                               onClick={() => {
@@ -619,6 +635,8 @@ export default function Events() {
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
+                            ) : null}
+                            {can('delete_events') ? (
                             <button
                               type="button"
                               onClick={() => void handleDelete(ev.id, ev.title)}
@@ -628,6 +646,7 @@ export default function Events() {
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

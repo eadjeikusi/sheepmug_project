@@ -12,6 +12,7 @@ import {
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMyOpenTaskCount } from '@/hooks/useMyOpenTaskCount';
+import { canOpenSettings } from '../../../permissions/atomicCanHelpers';
 
 const navItems: {
   id: string;
@@ -32,13 +33,17 @@ const navItems: {
     anyPermissions: [
       'view_member_tasks',
       'monitor_member_tasks',
-      'manage_member_tasks',
-      'manage_member_task_checklist',
+      'add_member_tasks',
+      'edit_member_tasks',
+      'delete_member_tasks',
+      'edit_member_task_checklist',
       'complete_member_task_checklist',
       'view_group_tasks',
       'monitor_group_tasks',
-      'manage_group_tasks',
-      'manage_group_task_checklist',
+      'add_group_tasks',
+      'edit_group_tasks',
+      'delete_group_tasks',
+      'edit_group_task_checklist',
       'complete_group_task_checklist',
     ],
     showOpenTaskBadge: true,
@@ -72,13 +77,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   });
   const visibleShortcuts = shortcutItems.filter((item) => {
     if (item.id === 'settings') {
-      return (
-        can('system_settings') ||
-        can('manage_permissions') ||
-        can('manage_staff') ||
-        can('manage_event_types') ||
-        can('manage_program_templates')
-      );
+      return canOpenSettings(can);
     }
     return item.permission == null || can(item.permission);
   });

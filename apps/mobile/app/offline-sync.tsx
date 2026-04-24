@@ -48,25 +48,56 @@ function formatBytes(bytes: number): string {
   return `${rounded} ${units[unitIndex]}`;
 }
 
-type CachedMemberRow = {
-  id?: string;
-  first_name?: string | null;
-  last_name?: string | null;
-};
-
 type CachedMembersPayload = {
-  members?: CachedMemberRow[];
+  members?: unknown[];
 };
 
-function memberNameByIdFromCacheRows(rows: CachedMemberRow[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const row of rows) {
-    const id = String(row.id || "").trim();
+type OfflineDisplayLookup = {
+  memberNameById: Record<string, string>;
+  taskTitleById: Record<string, string>;
+  eventTitleByEventId: Record<string, string>;
+};
+
+const EMPTY_DISPLAY_LOOKUP: OfflineDisplayLookup = {
+  memberNameById: {},
+  taskTitleById: {},
+  eventTitleByEventId: {},
+};
+
+function mergeMemberRowsIntoMap(rows: unknown, into: Record<string, string>): void {
+  if (!Array.isArray(rows)) return;
+  for (const r of rows) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    const id = String(o.id ?? o.member_id ?? "").trim();
     if (!id) continue;
-    const full = `${String(row.first_name || "").trim()} ${String(row.last_name || "").trim()}`.trim();
-    if (full) out[id] = displayMemberWords(full);
+    const first = String(o.first_name ?? "").trim();
+    const last = String(o.last_name ?? "").trim();
+    const full = `${first} ${last}`.trim();
+    if (full) into[id] = displayMemberWords(full);
   }
-  return out;
+}
+
+function eventTitleFromCacheEvent(ev: unknown): string {
+  if (!ev || typeof ev !== "object") return "";
+  const o = ev as { name?: unknown; title?: unknown };
+  const raw = String(o.name ?? o.title ?? "").trim();
+  return raw ? displayMemberWords(raw) : "";
+}
+
+function attendanceOutcomePhrase(statusRaw: unknown): string {
+  const s = String(statusRaw || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("_", "");
+  if (s === "present") return "present";
+  if (s === "absent") return "absent";
+  if (s === "unsure") return "not sure";
+  if (s === "notmarked" || s === "") return "not marked";
+  return String(statusRaw || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("_", " ");
 }
 
 function memberNameFromLookup(memberId: string, memberNameById: Record<string, string>): string {
@@ -75,7 +106,25 @@ function memberNameFromLookup(memberId: string, memberNameById: Record<string, s
   return memberNameById[id] || "a member";
 }
 
-function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<string, string>): string {
+function formatAttendanceMemberList(names: string[], total: number): string {
+  const known = names.filter((n) => n && n !== "a member");
+  if (known.length === 0) {
+    return `${total} member${total === 1 ? "" : "s"}`;
+  }
+  if (known.length === total) {
+    if (total === 1) return known[0];
+    if (total === 2) return `${known[0]} and ${known[1]}`;
+    if (total === 3) return `${known[0]}, ${known[1]}, and ${known[2]}`;
+    return `${known[0]}, ${known[1]}, and ${total - 2} others`;
+  }
+  if (known.length === 1) {
+    return `${known[0]} and ${total - 1} other${total === 2 ? "" : "s"}`;
+  }
+  return `${known[0]}, ${known[1]}, and ${total - 2} other${total === 2 ? "" : "s"}`;
+}
+
+function summarizeOfflineAction(item: OfflineQueueItem, lookup: OfflineDisplayLookup): string {
+  const { memberNameById, taskTitleById } = lookup;
   if (item.operation === "member_create") {
     const first = String(item.payload.first_name || "").trim();
     const last = String(item.payload.last_name || "").trim();
@@ -90,13 +139,16 @@ function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<s
     if (updates.length === 1) {
       const row = updates[0];
       const memberName = memberNameFromLookup(String(row.member_id || ""), memberNameById);
-      const status = String(row.status || "not marked").replaceAll("_", " ").toLowerCase();
-      return `You marked ${memberName} ${status}`;
+      const phrase = attendanceOutcomePhrase(row.status);
+      return `You marked ${memberName} ${phrase}`;
     }
     if (updates.length > 1) {
       const statuses = [...new Set(updates.map((u) => String(u.status || "").trim().toLowerCase()).filter(Boolean))];
       if (statuses.length === 1) {
-        return `You marked ${updates.length} members ${statuses[0].replaceAll("_", " ")}`;
+        const phrase = attendanceOutcomePhrase(statuses[0]);
+        const names = updates.map((u) => memberNameFromLookup(String(u.member_id || ""), memberNameById));
+        const label = formatAttendanceMemberList(names, updates.length);
+        return `You marked ${label} ${phrase}`;
       }
       return `You updated attendance for ${updates.length} members`;
     }
@@ -104,7 +156,13 @@ function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<s
   }
 
   if (item.operation === "task_patch") {
+    const taskId = String(item.payload.task_id || "").trim();
+    const title = taskId ? taskTitleById[taskId] : "";
     const taskType = String(item.payload.task_type || "task").trim().toLowerCase();
+    const kind = taskType === "group" ? "group to-do" : "member to-do";
+    if (title) {
+      return `You updated ${kind}: ${title}`;
+    }
     return taskType === "group" ? "You updated a group to-do list" : "You updated a member to-do list";
   }
 
@@ -121,7 +179,82 @@ function summarizeOfflineAction(item: OfflineQueueItem, memberNameById: Record<s
     return `You deleted a note for ${memberName}`;
   }
 
-  return item.operation.replace(/_/g, " ");
+  return String(item.operation).replace(/_/g, " ");
+}
+
+function offlineActionSubtitle(item: OfflineQueueItem, lookup: OfflineDisplayLookup): string | null {
+  if (item.operation === "attendance_update") {
+    const eventId = String(item.payload.event_id || "").trim();
+    if (!eventId) return null;
+    const t = lookup.eventTitleByEventId[eventId];
+    return t ? `Event: ${t}` : null;
+  }
+  return null;
+}
+
+async function buildOfflineDisplayLookup(queueItems: OfflineQueueItem[]): Promise<OfflineDisplayLookup> {
+  const memberNameById: Record<string, string> = {};
+  const taskTitleById: Record<string, string> = {};
+  const eventTitleByEventId: Record<string, string> = {};
+
+  const cachedMembers = await getOfflineResourceCache<CachedMembersPayload>("members:list");
+  const listRows = Array.isArray(cachedMembers?.data?.members) ? cachedMembers.data.members : [];
+  mergeMemberRowsIntoMap(listRows, memberNameById);
+
+  const eventIds = new Set<string>();
+  const memberIdsToBackfill = new Set<string>();
+
+  for (const it of queueItems) {
+    if (it.operation === "attendance_update") {
+      const eid = String(it.payload.event_id || "").trim();
+      if (eid) eventIds.add(eid);
+      const updates = Array.isArray(it.payload.updates) ? it.payload.updates : [];
+      for (const u of updates) {
+        const mid = String((u as { member_id?: unknown }).member_id || "").trim();
+        if (mid) memberIdsToBackfill.add(mid);
+      }
+    }
+    if (
+      it.operation === "member_note_create" ||
+      it.operation === "member_note_update" ||
+      it.operation === "member_note_delete"
+    ) {
+      const mid = String(it.payload.member_id || "").trim();
+      if (mid) memberIdsToBackfill.add(mid);
+    }
+  }
+
+  await Promise.all(
+    [...eventIds].map(async (eid) => {
+      const cached = await getOfflineResourceCache<{
+        event?: unknown;
+        members?: unknown;
+      }>(`event:detail:${eid}`);
+      if (cached?.data?.members) mergeMemberRowsIntoMap(cached.data.members, memberNameById);
+      const title = eventTitleFromCacheEvent(cached?.data?.event);
+      if (title) eventTitleByEventId[eid] = title;
+    })
+  );
+
+  const tasksCached = await getOfflineResourceCache<{ tasks?: Array<{ id?: string; title?: string }> }>("tasks:list");
+  const taskRows = Array.isArray(tasksCached?.data?.tasks) ? tasksCached.data.tasks : [];
+  for (const t of taskRows) {
+    const id = String(t?.id || "").trim();
+    if (!id) continue;
+    const raw = String(t?.title || "").trim();
+    if (raw) taskTitleById[id] = displayMemberWords(raw);
+  }
+
+  for (const mid of memberIdsToBackfill) {
+    if (memberNameById[mid]) continue;
+    const d = await getOfflineResourceCache<{
+      member?: { id?: string; member_id?: string; first_name?: string | null; last_name?: string | null };
+    }>(`member:detail:${mid}`);
+    const m = d?.data?.member;
+    mergeMemberRowsIntoMap(m ? [m] : [], memberNameById);
+  }
+
+  return { memberNameById, taskTitleById, eventTitleByEventId };
 }
 
 export default function OfflineSyncScreen() {
@@ -156,7 +289,7 @@ export default function OfflineSyncScreen() {
   const [cacheBytes, setCacheBytes] = useState(0);
   const [imageBytes, setImageBytes] = useState(0);
   const [cacheLoading, setCacheLoading] = useState(true);
-  const [memberNameById, setMemberNameById] = useState<Record<string, string>>({});
+  const [displayLookup, setDisplayLookup] = useState<OfflineDisplayLookup>(EMPTY_DISPLAY_LOOKUP);
 
   const refreshCacheSize = useCallback(async () => {
     setCacheLoading(true);
@@ -185,15 +318,14 @@ export default function OfflineSyncScreen() {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const cached = await getOfflineResourceCache<CachedMembersPayload>("members:list");
-      const rows = Array.isArray(cached?.data?.members) ? cached?.data?.members : [];
+      const lookup = await buildOfflineDisplayLookup(queueItems);
       if (!mounted) return;
-      setMemberNameById(memberNameByIdFromCacheRows(rows));
+      setDisplayLookup(lookup);
     })();
     return () => {
       mounted = false;
     };
-  }, [lastSyncAt, queueItems.length]);
+  }, [lastSyncAt, queueItems]);
 
   const handleDownloadPress = useCallback(() => {
     void (async () => {
@@ -320,16 +452,20 @@ export default function OfflineSyncScreen() {
           {savedMembers.length === 0 ? (
             <Text style={styles.emptyText}>No offline-saved members pending sync.</Text>
           ) : (
-            savedMembers.map((item) => (
-              <View key={item.id} style={styles.itemRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>
-                    {String(item.payload.first_name || "")} {String(item.payload.last_name || "")}
-                  </Text>
-                  <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
+            savedMembers.map((item) => {
+              const first = String(item.payload.first_name || "").trim();
+              const last = String(item.payload.last_name || "").trim();
+              const full = `${first} ${last}`.trim();
+              const title = full ? `You added ${displayMemberWords(full)}` : "You added a member";
+              return (
+                <View key={item.id} style={styles.itemRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemTitle}>{title}</Text>
+                    <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
+                  </View>
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -338,15 +474,19 @@ export default function OfflineSyncScreen() {
           {pendingItems.length === 0 ? (
             <Text style={styles.emptyText}>No pending actions.</Text>
           ) : (
-            pendingItems.map((item) => (
-              <View key={item.id} style={styles.itemRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
-                  <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
+            pendingItems.map((item) => {
+              const sub = offlineActionSubtitle(item, displayLookup);
+              return (
+                <View key={item.id} style={styles.itemRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemTitle}>{summarizeOfflineAction(item, displayLookup)}</Text>
+                    {sub ? <Text style={styles.itemMeta}>{sub}</Text> : null}
+                    <Text style={styles.itemMeta}>Queued: {formatTimeAgo(item.created_at)}</Text>
+                  </View>
+                  <Text style={styles.pendingPill}>{item.status}</Text>
                 </View>
-                <Text style={styles.pendingPill}>{item.status}</Text>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -355,10 +495,13 @@ export default function OfflineSyncScreen() {
           {failedItems.length === 0 ? (
             <Text style={styles.emptyText}>No failed actions.</Text>
           ) : (
-            failedItems.map((item) => (
+            failedItems.map((item) => {
+              const sub = offlineActionSubtitle(item, displayLookup);
+              return (
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
+                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, displayLookup)}</Text>
+                  {sub ? <Text style={styles.itemMeta}>{sub}</Text> : null}
                   <Text style={styles.itemMeta}>{item.last_error || "Failed to sync."}</Text>
                 </View>
                 <View style={styles.failedActions}>
@@ -378,7 +521,8 @@ export default function OfflineSyncScreen() {
                   </Pressable>
                 </View>
               </View>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -387,15 +531,19 @@ export default function OfflineSyncScreen() {
           {syncedItems.length === 0 ? (
             <Text style={styles.emptyText}>No synced actions yet.</Text>
           ) : (
-            syncedItems.map((item) => (
+            syncedItems.map((item) => {
+              const sub = offlineActionSubtitle(item, displayLookup);
+              return (
               <View key={item.id} style={styles.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, memberNameById)}</Text>
+                  <Text style={styles.itemTitle}>{summarizeOfflineAction(item, displayLookup)}</Text>
+                  {sub ? <Text style={styles.itemMeta}>{sub}</Text> : null}
                   <Text style={styles.itemMeta}>Synced: {formatTimeAgo(item.synced_at)}</Text>
                 </View>
                 <Text style={styles.syncedPill}>synced</Text>
               </View>
-            ))
+              );
+            })
           )}
         </View>
       </ScrollView>

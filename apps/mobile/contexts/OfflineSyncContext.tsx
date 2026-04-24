@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Alert, AppState } from "react-native";
 import { useAuth } from "./AuthContext";
+import { usePermissions } from "../hooks/usePermissions";
 import { useBranch } from "./BranchContext";
 import {
   enqueueOutboxItem,
@@ -62,6 +63,7 @@ const OfflineSyncContext = createContext<OfflineSyncState | undefined>(undefined
 
 export function OfflineSyncProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { can } = usePermissions();
   const { selectedBranch } = useBranch();
 
   const [isOnline, setIsOnline] = useState(true);
@@ -81,6 +83,15 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
     const items = await getOutboxItems();
     setQueueItems(items);
   }, []);
+
+  const pendingCount = useMemo(
+    () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing").length,
+    [queueItems]
+  );
+  const failedCount = useMemo(
+    () => queueItems.filter((x) => x.status === "failed").length,
+    [queueItems]
+  );
 
   const checkConnectivity = useCallback(async () => {
     setChecking(true);
@@ -162,6 +173,10 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
 
   const queueMemberCreate = useCallback(
     async (payload: Record<string, unknown>) => {
+      if (!can("add_members")) {
+        Alert.alert("Permission required", "You do not have permission to add members.");
+        throw new Error("Missing permission: add_members");
+      }
       const item = await enqueueOutboxItem({
         operation: "member_create",
         payload,
@@ -171,11 +186,15 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       await refreshQueue();
       return item;
     },
-    [selectedBranch?.id, user?.id, refreshQueue]
+    [selectedBranch?.id, user?.id, refreshQueue, can]
   );
 
   const queueAttendanceUpdate = useCallback(
     async (eventId: string, updates: Array<{ member_id: string; status: string }>) => {
+      if (!can("record_event_attendance")) {
+        Alert.alert("Permission required", "You do not have permission to record attendance.");
+        throw new Error("Missing permission: record_event_attendance");
+      }
       const item = await enqueueOutboxItem({
         operation: "attendance_update",
         payload: {
@@ -188,7 +207,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       await refreshQueue();
       return item;
     },
-    [selectedBranch?.id, user?.id, refreshQueue]
+    [selectedBranch?.id, user?.id, refreshQueue, can]
   );
 
   const queueTaskPatch = useCallback(
@@ -197,6 +216,14 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       taskId: string,
       body: Record<string, unknown>
     ) => {
+      const okChecklist =
+        taskType === "group"
+          ? can("complete_group_task_checklist")
+          : can("complete_member_task_checklist");
+      if (!okChecklist) {
+        Alert.alert("Permission required", "You do not have permission to update task checklists.");
+        throw new Error("Missing permission: complete task checklist");
+      }
       const item = await enqueueOutboxItem({
         operation: "task_patch",
         payload: {
@@ -227,11 +254,15 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       await refreshQueue();
       return item;
     },
-    [selectedBranch?.id, user?.id, refreshQueue]
+    [selectedBranch?.id, user?.id, refreshQueue, can]
   );
 
   const queueMemberNoteUpdate = useCallback(
     async (memberId: string, noteId: string, content: string) => {
+      if (!can("edit_member_notes")) {
+        Alert.alert("Permission required", "You do not have permission to edit member notes.");
+        throw new Error("Missing permission: edit_member_notes");
+      }
       const item = await enqueueOutboxItem({
         operation: "member_note_update",
         payload: {
@@ -245,11 +276,15 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       await refreshQueue();
       return item;
     },
-    [selectedBranch?.id, user?.id, refreshQueue]
+    [selectedBranch?.id, user?.id, refreshQueue, can]
   );
 
   const queueMemberNoteDelete = useCallback(
     async (memberId: string, noteId: string) => {
+      if (!can("delete_member_notes")) {
+        Alert.alert("Permission required", "You do not have permission to delete member notes.");
+        throw new Error("Missing permission: delete_member_notes");
+      }
       const item = await enqueueOutboxItem({
         operation: "member_note_delete",
         payload: {
@@ -262,7 +297,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       await refreshQueue();
       return item;
     },
-    [selectedBranch?.id, user?.id, refreshQueue]
+    [selectedBranch?.id, user?.id, refreshQueue, can]
   );
 
   const retryItem = useCallback(async (id: string) => {
@@ -307,15 +342,6 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
       setDownloadRunning(false);
     }
   }, [downloadRunning, isOnline, refreshLocalTaskReminders, user?.id, user?.organization_id]);
-
-  const pendingCount = useMemo(
-    () => queueItems.filter((x) => x.status === "pending" || x.status === "syncing").length,
-    [queueItems]
-  );
-  const failedCount = useMemo(
-    () => queueItems.filter((x) => x.status === "failed").length,
-    [queueItems]
-  );
 
   const value = useMemo<OfflineSyncState>(
     () => ({

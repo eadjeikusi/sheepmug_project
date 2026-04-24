@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { familyApi } from '../../utils/api';
 import FamilyGroupModal from '../modals/FamilyGroupModal';
 import { useBranch } from '../../contexts/BranchContext';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface Family {
   id: string;
@@ -14,6 +15,7 @@ interface Family {
 const PAGE_SIZE = 10;
 
 const Families = () => {
+  const { can } = usePermissions();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [families, setFamilies] = useState<Family[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,17 +54,17 @@ const Families = () => {
         setLoadingMore(false);
       }
     }
-  }, [selectedBranch]);
+  }, [selectedBranch, can]);
 
   useEffect(() => {
-    if (selectedBranch) {
+    if (selectedBranch && can('view_families')) {
       void fetchFamilies(true);
     } else {
       setFamilies([]);
       setHasMore(true);
       setLoading(false);
     }
-  }, [selectedBranch, fetchFamilies]);
+  }, [selectedBranch, fetchFamilies, can]);
 
   useEffect(() => {
     if (loading || loadingMore || !hasMore) return;
@@ -81,7 +83,7 @@ const Families = () => {
   }, [fetchFamilies, loading, loadingMore, hasMore]);
 
   const handleFamilyCreated = async (familyData: any) => {
-    if (!selectedBranch) return;
+    if (!selectedBranch || !can('add_families')) return;
     try {
       await familyApi.create({
         familyName: familyData.familyName,
@@ -93,10 +95,20 @@ const Families = () => {
     }
   };
 
+  if (!can('view_families')) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">Families</h1>
+        <p className="text-gray-600">You do not have permission to view families.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Families</h1>
+        {can('add_families') ? (
         <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -104,6 +116,7 @@ const Families = () => {
           <Plus className="w-5 h-5" />
           Add Family
         </button>
+        ) : null}
       </div>
 
       {loading ? (

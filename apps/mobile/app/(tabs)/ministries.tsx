@@ -23,6 +23,7 @@ import { api } from "../../lib/api";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { useGroupTypeOptions } from "../../hooks/useGroupTypeOptions";
 import { usePermissions } from "../../hooks/usePermissions";
+import { canCreateGroup } from "@sheepmug/permissions-helpers";
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { colors, radius, sizes, type } from "../../theme";
 
@@ -32,7 +33,7 @@ const MINISTRIES_CACHE_KEY = "ministries:list";
 export default function MinistriesScreen() {
   const router = useRouter();
   const { can } = usePermissions();
-  const canManageGroups = can("manage_groups");
+  const canManageGroups = canCreateGroup(can);
   const { options: groupTypeOpts } = useGroupTypeOptions(true);
   const sortedGt = useMemo(
     () =>

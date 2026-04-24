@@ -15,6 +15,7 @@ import type { Family } from "@sheepmug/shared-api";
 import { api } from "../lib/api";
 import { HeaderIconCircleButton } from "../components/HeaderIconCircle";
 import { useBranch } from "../contexts/BranchContext";
+import { usePermissions } from "../hooks/usePermissions";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../lib/storage";
 import { colors, radius, sizes, type } from "../theme";
@@ -39,6 +40,7 @@ async function fetchAllFamilies(branchId?: string): Promise<Family[]> {
 
 export default function FamiliesListScreen() {
   const router = useRouter();
+  const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const [families, setFamilies] = useState<Family[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,11 @@ export default function FamiliesListScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
+    if (!can("view_families")) {
+      setFamilies([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const bid = selectedBranch?.id?.trim() || undefined;
@@ -72,7 +79,7 @@ export default function FamiliesListScreen() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBranch?.id]);
+  }, [selectedBranch?.id, can]);
 
   useEffect(() => {
     void load();
@@ -114,6 +121,23 @@ export default function FamiliesListScreen() {
       })
     );
   }, [families]);
+
+  if (!can("view_families")) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
+            <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
+          </HeaderIconCircleButton>
+          <Text style={styles.headerTitle}>Families</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <Text style={styles.muted}>
+          You do not have permission to view families. Ask an administrator if you need access.
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>

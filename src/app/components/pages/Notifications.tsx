@@ -74,6 +74,8 @@ export default function Notifications() {
   };
 
   const handleClearAll = async () => {
+    if (notifications.length === 0) return;
+    if (!window.confirm('Delete all notifications? This cannot be undone.')) return;
     await clearAll();
     toast.success('All notifications cleared');
   };
@@ -84,6 +86,7 @@ export default function Notifications() {
   };
 
   const handleDelete = (id: string) => {
+    if (!window.confirm('Delete this notification?')) return;
     void deleteOne(id);
     toast.success('Notification deleted');
   };

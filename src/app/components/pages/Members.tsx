@@ -2089,7 +2089,7 @@ export default function Members() {
                       <Home className="w-4 h-4 mr-2" />
                       Assign to Family
                     </button>
-                    {can('manage_member_tasks') && (
+                    {can('add_member_tasks') && (
                       <button
                         type="button"
                         onClick={() => {
@@ -2384,7 +2384,7 @@ export default function Members() {
                                         <GitFork className="w-4 h-4 mr-3" />
                                         Assign to Group
                                       </button>
-                                      {can('manage_member_tasks') && (
+                                      {can('add_member_tasks') && (
                                         <button
                                           onClick={() => {
                                             openAssignTaskModal([member]);

@@ -8,6 +8,7 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { permissionsForPath } from '@/utils/routePermissions';
+import { canOpenSettings } from '../../permissions/atomicCanHelpers';
 
 export default function Root() {
   const location = useLocation();
@@ -25,14 +26,7 @@ export default function Root() {
       return;
     }
     if (seg === 'settings') {
-      const ok =
-        can('system_settings') ||
-        can('manage_permissions') ||
-        can('manage_staff') ||
-        can('manage_event_types') ||
-        can('manage_program_templates') ||
-        can('edit_organization_name');
-      if (!ok) navigate('/', { replace: true });
+      if (!canOpenSettings(can)) navigate('/', { replace: true });
       return;
     }
     const req = permissionsForPath(location.pathname);

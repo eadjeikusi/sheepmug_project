@@ -57,7 +57,7 @@ export default function Dashboard() {
   const canViewMemberRequests = can('view_member_requests') || can('approve_member_requests');
   const canViewGroupRequests = can('view_group_requests') || can('approve_group_requests');
   const canViewEvents = can('view_events');
-  const canTrackAttendance = can('track_attendance');
+  const canTrackAttendance = can('view_event_attendance') || can('record_event_attendance');
   const canViewTasks = can('view_member_tasks') || can('view_group_tasks');
 
   const [loading, setLoading] = useState(false);

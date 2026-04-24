@@ -491,24 +491,13 @@ export default function DashboardScreen() {
     };
   }, [selectedBranch?.id]);
 
-  const dashboardFocusSkipRefresh = useRef(true);
-  useFocusEffect(
-    useCallback(() => {
-      void getDashboardLastSeenCounts().then(setLastSeen);
-      if (dashboardFocusSkipRefresh.current) {
-        dashboardFocusSkipRefresh.current = false;
-        return;
-      }
-      void refreshDashboardData().catch(() => {
-        // keep existing dashboard state when refresh fails
-      });
-    }, [refreshDashboardData])
-  );
-
   const canViewMemberRequests = can("view_member_requests") || can("approve_member_requests");
   const canAddMembers = can("add_members");
   const canViewGroupRequests = can("view_group_requests") || can("approve_group_requests");
   const canViewTasks = can("view_member_tasks") || can("view_group_tasks");
+  const canViewFamilies = can("view_families");
+  const canViewMinistries = can("view_groups");
+  const canViewEventsTab = can("view_events");
 
   const userAvatarUri = useMemo(() => {
     const raw = user?.profile_image;
@@ -562,6 +551,20 @@ export default function DashboardScreen() {
       setSpotlightLoading(false);
     }
   }, [canViewGroupRequests, canViewMemberRequests, canViewTasks, selectedBranch?.id, homeMembers]);
+
+  const dashboardFocusSkipRefresh = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      void getDashboardLastSeenCounts().then(setLastSeen);
+      if (dashboardFocusSkipRefresh.current) {
+        dashboardFocusSkipRefresh.current = false;
+        return;
+      }
+      void refreshDashboardData().catch(() => {
+        // keep existing dashboard state when refresh fails
+      });
+    }, [refreshDashboardData])
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -804,9 +807,22 @@ export default function DashboardScreen() {
           {(
             [
               { id: "members" as const, label: "Members", icon: "people-outline" as const, href: "/(tabs)/members" as const },
-              { id: "families" as const, label: "Families", icon: "home-outline" as const, href: "/families" as const },
-              { id: "ministries" as const, label: "Ministries", icon: "layers-outline" as const, href: "/(tabs)/ministries" as const },
-              { id: "event" as const, label: "Event", icon: "calendar-outline" as const, href: "/(tabs)/event" as const },
+              ...(canViewFamilies
+                ? [{ id: "families" as const, label: "Families", icon: "home-outline" as const, href: "/families" as const }]
+                : []),
+              ...(canViewMinistries
+                ? [
+                    {
+                      id: "ministries" as const,
+                      label: "Ministries",
+                      icon: "layers-outline" as const,
+                      href: "/(tabs)/ministries" as const,
+                    },
+                  ]
+                : []),
+              ...(canViewEventsTab
+                ? [{ id: "event" as const, label: "Event", icon: "calendar-outline" as const, href: "/(tabs)/event" as const }]
+                : []),
             ] as const
           ).map((tag) => {
             const selected = activeTag === tag.id;

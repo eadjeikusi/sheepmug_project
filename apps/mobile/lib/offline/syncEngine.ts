@@ -1,3 +1,4 @@
+import { ApiError } from "@sheepmug/shared-api";
 import { api } from "../api";
 import { devLog, devWarn } from "../devLog";
 import { runOfflineBootstrap } from "./bootstrap";
@@ -14,6 +15,10 @@ function isLikelyOfflineError(error: unknown): boolean {
   if (error instanceof TypeError) return true;
   const msg = error instanceof Error ? error.message : String(error || "");
   return /network|fetch|timed out|failed to connect|ECONNREFUSED|ENOTFOUND|aborted/i.test(msg);
+}
+
+function isForbiddenError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403;
 }
 
 function isChecklistOnlyTaskPatch(body: Record<string, unknown>): boolean {
@@ -36,7 +41,10 @@ async function runOne(item: OfflineQueueItem): Promise<Record<string, unknown>> 
   if (item.operation === "attendance_update") {
     const eventId = String(item.payload.event_id || "").trim();
     const updates = Array.isArray(item.payload.updates)
-      ? (item.payload.updates as Array<{ member_id: string; status: string }>)
+      ? (item.payload.updates as Array<{
+          member_id: string;
+          status: "not_marked" | "present" | "absent" | "unsure";
+        }>)
       : [];
     if (!eventId || updates.length === 0) throw new Error("Invalid attendance payload.");
     const res = await api.events.attendance.update(eventId, updates);
@@ -151,6 +159,17 @@ export async function runOfflineSync(
         stats.stopped_offline = true;
         devWarn("offline sync: stop, network unavailable", msg);
         break;
+      }
+      if (isForbiddenError(error)) {
+        const detail = msg.trim() || "Permission denied (403)";
+        await updateOutboxItem(item.id, {
+          status: "failed",
+          retry_count: item.retry_count + 1,
+          last_error: detail,
+        });
+        stats.failed += 1;
+        devWarn("offline sync: item failed (forbidden)", { id: item.id, operation: item.operation, msg: detail });
+        continue;
       }
       await updateOutboxItem(item.id, {
         status: "failed",

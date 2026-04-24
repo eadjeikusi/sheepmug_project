@@ -181,10 +181,20 @@ export default function Tasks() {
     user.permissions !== undefined ||
     !authLoading;
   const canViewMine = can('view_member_tasks') || can('view_group_tasks');
-  const canManageMember = can('manage_member_tasks');
-  const canManageGroup = can('manage_group_tasks');
-  const canEditChecklistMember = can('manage_member_tasks') || can('manage_member_task_checklist');
-  const canEditChecklistGroup = can('manage_group_tasks') || can('manage_group_task_checklist');
+  const canManageMember =
+    can('add_member_tasks') ||
+    can('edit_member_tasks') ||
+    can('delete_member_tasks') ||
+    can('edit_member_task_checklist') ||
+    can('complete_member_task_checklist');
+  const canManageGroup =
+    can('add_group_tasks') ||
+    can('edit_group_tasks') ||
+    can('delete_group_tasks') ||
+    can('edit_group_task_checklist') ||
+    can('complete_group_task_checklist');
+  const canEditChecklistMember = canManageMember;
+  const canEditChecklistGroup = canManageGroup;
   const isElevatedTaskViewer = user?.is_org_owner === true || user?.is_super_admin === true;
   const canBranch = isElevatedTaskViewer;
   const canManageBranchTask = (t: TaskRow | BranchTaskRow | MineTaskRow) =>

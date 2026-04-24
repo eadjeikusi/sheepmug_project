@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import multer from "multer";
 import {
   ALL_PERMISSION_IDS,
+  expandStoredPermissionIds,
   resolveImpliedPermissions,
   validatePermissionIds,
 } from "./src/permissions/catalog";
@@ -808,7 +809,7 @@ async function permissionSetForProfileRow(profile: {
       }
     }
   }
-  return { permissionSet: resolveImpliedPermissions(permissionSet), isOrgOwner: false, orgId, branchId, roleId };
+  return { permissionSet: expandStoredPermissionIds(permissionSet), isOrgOwner: false, orgId, branchId, roleId };
 }
 
 async function getActorAuthContextFromToken(token: string | undefined): Promise<ActorAuthContext | null> {
@@ -1530,7 +1531,7 @@ async function profileIdsWithPermission(
       if (Array.isArray(rr.permissions)) {
         for (const p of rr.permissions) if (typeof p === "string") ps.add(p);
       }
-      rolePerms.set(rr.id, ps);
+      rolePerms.set(rr.id, expandStoredPermissionIds(ps));
     }
   }
   const out: string[] = [];
@@ -1541,6 +1542,51 @@ async function profileIdsWithPermission(
     }
     if (!r.role_id) continue;
     if (rolePerms.get(r.role_id)?.has(permissionId)) out.push(r.id);
+  }
+  return out;
+}
+
+async function profileIdsWithAnyPermission(
+  orgId: string,
+  branchId: string | null,
+  permissionIds: string[],
+): Promise<string[]> {
+  if (permissionIds.length === 0) return [];
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("id, role_id, is_org_owner")
+    .eq("organization_id", orgId)
+    .eq("branch_id", branchId)
+    .limit(3000);
+  const rows = (profiles || []) as Array<{ id: string; role_id?: string | null; is_org_owner?: boolean | null }>;
+  const roleIds = [...new Set(rows.map((r) => (typeof r.role_id === "string" ? r.role_id : "")).filter(isUuidString))];
+  const rolePerms = new Map<string, Set<string>>();
+  if (roleIds.length > 0) {
+    const { data: roleRows } = await supabaseAdmin.from("roles").select("id, permissions").in("id", roleIds);
+    for (const rr of (roleRows || []) as Array<{ id: string; permissions?: unknown }>) {
+      const ps = new Set<string>();
+      if (Array.isArray(rr.permissions)) {
+        for (const p of rr.permissions) if (typeof p === "string") ps.add(p);
+      }
+      rolePerms.set(rr.id, expandStoredPermissionIds(ps));
+    }
+  }
+  const out: string[] = [];
+  const need = new Set(permissionIds);
+  for (const r of rows) {
+    if (r.is_org_owner) {
+      out.push(r.id);
+      continue;
+    }
+    if (!r.role_id) continue;
+    const exp = rolePerms.get(r.role_id);
+    if (!exp) continue;
+    for (const p of need) {
+      if (exp.has(p)) {
+        out.push(r.id);
+        break;
+      }
+    }
   }
   return out;
 }
@@ -1636,17 +1682,65 @@ function actorCanSeeGroupBranchTasks(ctx: ActorAuthContext): boolean {
   return ctx.isOrgOwner;
 }
 function actorCanManageGroupTasks(ctx: ActorAuthContext): boolean {
-  return ctx.isOrgOwner || ctx.permissionSet.has("manage_group_tasks") || ctx.permissionSet.has("manage_member_tasks");
+  return (
+    ctx.isOrgOwner ||
+    ctx.permissionSet.has("add_group_tasks") ||
+    ctx.permissionSet.has("edit_group_tasks") ||
+    ctx.permissionSet.has("delete_group_tasks") ||
+    ctx.permissionSet.has("add_member_tasks") ||
+    ctx.permissionSet.has("edit_member_tasks") ||
+    ctx.permissionSet.has("delete_member_tasks")
+  );
 }
 function actorCanManageGroupTaskChecklistStructure(ctx: ActorAuthContext): boolean {
   return (
     ctx.isOrgOwner ||
-    ctx.permissionSet.has("manage_group_tasks") ||
-    ctx.permissionSet.has("manage_member_tasks") ||
-    ctx.permissionSet.has("manage_group_task_checklist") ||
-    ctx.permissionSet.has("manage_member_task_checklist")
+    ctx.permissionSet.has("edit_group_tasks") ||
+    ctx.permissionSet.has("edit_member_tasks") ||
+    ctx.permissionSet.has("edit_group_task_checklist") ||
+    ctx.permissionSet.has("edit_member_task_checklist")
   );
 }
+
+/** Legacy `manage_permissions` + `manage_staff` settings surfaces (atomic). */
+const SETTINGS_ELEVATED_STAFF_PERMS: string[] = [
+  "view_roles",
+  "add_roles",
+  "edit_roles",
+  "delete_roles",
+  "assign_staff_roles",
+  "view_staff",
+  "edit_staff_access",
+  "view_staff_profile_groups",
+  "add_staff_profile_groups",
+  "edit_staff_profile_groups",
+  "delete_staff_profile_groups",
+  "assign_staff_profile_groups",
+  "view_staff_ministry_scope",
+  "edit_staff_ministry_scope",
+];
+
+const MEMBER_TASK_RELATED_PERMS: string[] = [
+  "view_member_tasks",
+  "monitor_member_tasks",
+  "add_member_tasks",
+  "edit_member_tasks",
+  "delete_member_tasks",
+  "edit_member_task_checklist",
+  "complete_member_task_checklist",
+];
+
+const GROUP_TASK_RELATED_PERMS: string[] = [
+  "view_group_tasks",
+  "monitor_group_tasks",
+  "add_group_tasks",
+  "edit_group_tasks",
+  "delete_group_tasks",
+  "edit_group_task_checklist",
+  "complete_group_task_checklist",
+];
+
+const ANY_MEMBER_OR_GROUP_TASK_PERM: string[] = [...MEMBER_TASK_RELATED_PERMS, ...GROUP_TASK_RELATED_PERMS];
 
 /** Photo URL from a members or profiles row (supports common column names). */
 function pickMemberAvatarUrl(row: Record<string, unknown> | null | undefined): string | null {
@@ -2070,11 +2164,7 @@ app.post("/api/upload-note-audio", uploadNoteAudio.single("file"), async (req, r
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
 
-    const permCtx = await requireAnyPermission(req, res, [
-      "add_member_notes",
-      "edit_member_notes",
-      "manage_member_notes",
-    ]);
+    const permCtx = await requireAnyPermission(req, res, ["add_member_notes", "edit_member_notes"]);
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -3487,7 +3577,7 @@ app.get("/api/notifications/test-types", async (req, res) => {
   try {
     const ctx = await getActorAuthContextFromToken(token);
     if (!ctx) return res.status(401).json({ error: "Unauthorized" });
-    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("manage_permissions");
+    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("configure_notifications");
     if (!allowed) return res.status(403).json({ error: "Missing permission to access notification QA." });
     const types = Object.entries(NOTIFICATION_TEST_TYPE_META).map(([type, meta]) => ({
       type,
@@ -3511,7 +3601,10 @@ app.post("/api/notifications/test-send", async (req, res) => {
   try {
     const ctx = await getActorAuthContextFromToken(token);
     if (!ctx) return res.status(401).json({ error: "Unauthorized" });
-    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("manage_permissions");
+    const allowed =
+      ctx.isOrgOwner ||
+      ctx.permissionSet.has("send_notifications") ||
+      ctx.permissionSet.has("configure_notifications");
     if (!allowed) return res.status(403).json({ error: "Missing permission to send notification tests." });
 
     const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
@@ -3641,7 +3734,7 @@ app.get("/api/notifications/test-preview", async (req, res) => {
   try {
     const ctx = await getActorAuthContextFromToken(token);
     if (!ctx) return res.status(401).json({ error: "Unauthorized" });
-    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("manage_permissions");
+    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("configure_notifications");
     if (!allowed) return res.status(403).json({ error: "Missing permission to access notification QA." });
     const recipientProfileId = String(req.query.recipient_profile_id || "").trim();
     if (!isUuidString(recipientProfileId)) return res.status(400).json({ error: "Invalid recipient_profile_id" });
@@ -3679,7 +3772,7 @@ app.get("/api/notifications/test-preview/unread-count", async (req, res) => {
   try {
     const ctx = await getActorAuthContextFromToken(token);
     if (!ctx) return res.status(401).json({ error: "Unauthorized" });
-    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("manage_permissions");
+    const allowed = ctx.isOrgOwner || ctx.permissionSet.has("configure_notifications");
     if (!allowed) return res.status(403).json({ error: "Missing permission to access notification QA." });
     const recipientProfileId = String(req.query.recipient_profile_id || "").trim();
     if (!isUuidString(recipientProfileId)) return res.status(400).json({ error: "Invalid recipient_profile_id" });
@@ -3942,7 +4035,7 @@ app.get("/api/org/roles", async (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   const token = authHeader.split(" ")[1];
   try {
-    const ctx = await requirePermission(req, res, "manage_permissions");
+    const ctx = await requirePermission(req, res, "view_roles");
     if (!ctx) return;
 
     await bootstrapAdministratorRoleIfEmpty(ctx.orgId);
@@ -3982,7 +4075,7 @@ app.post("/api/org/roles", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ctx = await requirePermission(req, res, "manage_permissions");
+    const ctx = await requirePermission(req, res, "add_roles");
     if (!ctx) return;
 
     const body = req.body || {};
@@ -4027,7 +4120,7 @@ app.patch("/api/org/roles/:roleId", async (req, res) => {
   const { roleId } = req.params;
   if (!isUuidString(roleId)) return res.status(400).json({ error: "Invalid role id" });
   try {
-    const ctx = await requirePermission(req, res, "manage_permissions");
+    const ctx = await requirePermission(req, res, "edit_roles");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4080,7 +4173,7 @@ app.delete("/api/org/roles/:roleId", async (req, res) => {
   const { roleId } = req.params;
   if (!isUuidString(roleId)) return res.status(400).json({ error: "Invalid role id" });
   try {
-    const ctx = await requirePermission(req, res, "manage_permissions");
+    const ctx = await requirePermission(req, res, "delete_roles");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4142,7 +4235,7 @@ app.patch("/api/org/staff/:profileId/role", async (req, res) => {
   const { profileId } = req.params;
   if (!isUuidString(profileId)) return res.status(400).json({ error: "Invalid profile id" });
   try {
-    const ctx = await requirePermission(req, res, "manage_permissions");
+    const ctx = await requirePermission(req, res, "assign_staff_roles");
     if (!ctx) return;
 
     const body = req.body || {};
@@ -4208,7 +4301,7 @@ app.patch("/api/org/staff/:profileId/access", async (req, res) => {
   const { profileId } = req.params;
   if (!isUuidString(profileId)) return res.status(400).json({ error: "Invalid profile id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "edit_staff_access");
     if (!ctx) return;
 
     const body = req.body || {};
@@ -4271,7 +4364,7 @@ app.get("/api/org/staff-profile-groups", async (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   const token = authHeader.split(" ")[1];
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "view_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4368,7 +4461,7 @@ app.post("/api/org/staff-profile-groups", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "add_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4433,7 +4526,7 @@ app.patch("/api/org/staff-profile-groups/:groupId", async (req, res) => {
   const { groupId } = req.params;
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "edit_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4531,7 +4624,7 @@ app.delete("/api/org/staff-profile-groups/:groupId", async (req, res) => {
   const { groupId } = req.params;
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "delete_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4579,7 +4672,7 @@ app.post("/api/org/staff-profile-groups/:groupId/members", async (req, res) => {
   const { groupId } = req.params;
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "assign_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4675,7 +4768,7 @@ app.post("/api/org/staff-profile-groups/:groupId/members/bulk", async (req, res)
   const { groupId } = req.params;
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "assign_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4798,7 +4891,7 @@ app.delete("/api/org/staff-profile-groups/:groupId/members/:profileId", async (r
   const { groupId, profileId } = req.params;
   if (!isUuidString(groupId) || !isUuidString(profileId)) return res.status(400).json({ error: "Invalid id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "assign_staff_profile_groups");
     if (!ctx) return;
 
     const { data: userProfile } = await supabaseAdmin
@@ -4953,7 +5046,7 @@ async function recipientProfilesForNewGroupJoinRequest(
   groupId: string,
 ): Promise<string[]> {
   const [approve, view, ministry] = await Promise.all([
-    profileIdsWithPermission(organizationId, branchId, "approve_group_requests"),
+    profileIdsWithAnyPermission(organizationId, branchId, ["approve_group_requests", "reject_group_requests"]),
     profileIdsWithPermission(organizationId, branchId, "view_group_requests"),
     profileIdsStaffWhoSeeMinistryGroup(organizationId, branchId, groupId),
   ]);
@@ -4965,7 +5058,7 @@ async function recipientProfilesForNewMemberJoinRequest(
   branchId: string,
 ): Promise<string[]> {
   const [approve, view] = await Promise.all([
-    profileIdsWithPermission(organizationId, branchId, "approve_member_requests"),
+    profileIdsWithAnyPermission(organizationId, branchId, ["approve_member_requests", "reject_member_requests"]),
     profileIdsWithPermission(organizationId, branchId, "view_member_requests"),
   ]);
   return [...new Set([...approve, ...view])];
@@ -5312,18 +5405,23 @@ app.get("/api/org/staff", async (req, res) => {
   const token = authHeader.split(" ")[1];
   try {
     const ctx = await requireAnyPermission(req, res, [
-      "manage_staff",
-      "manage_permissions",
-      "manage_groups",
+      "view_staff",
+      "view_roles",
+      "add_groups",
+      "edit_groups",
       "view_member_tasks",
       "view_group_tasks",
-      "manage_member_tasks",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "delete_member_tasks",
       "monitor_member_tasks",
-      "manage_member_task_checklist",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
-      "manage_group_tasks",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "delete_group_tasks",
       "monitor_group_tasks",
-      "manage_group_task_checklist",
+      "edit_group_task_checklist",
       "complete_group_task_checklist",
     ]);
     if (!ctx) return;
@@ -5484,7 +5582,7 @@ app.get("/api/org/staff/:profileId/ministry-scope", async (req, res) => {
   const { profileId } = req.params;
   if (!isUuidString(profileId)) return res.status(400).json({ error: "Invalid profile id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "view_staff_ministry_scope");
     if (!ctx) return;
 
     const supabase = getSupabaseClient(token);
@@ -5536,7 +5634,7 @@ app.put("/api/org/staff/:profileId/ministry-scope", async (req, res) => {
   const { profileId } = req.params;
   if (!isUuidString(profileId)) return res.status(400).json({ error: "Invalid profile id" });
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "edit_staff_ministry_scope");
     if (!ctx) return;
 
     const supabase = getSupabaseClient(token);
@@ -5672,7 +5770,7 @@ app.post("/api/org/group-leaders", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
-    const ctx = await requireAnyPermission(req, res, ["manage_staff", "manage_permissions"]);
+    const ctx = await requirePermission(req, res, "assign_staff_roles");
     if (!ctx) return;
 
     const { data: inviterProfile, error: inviterErr } = await supabaseAdmin
@@ -5725,11 +5823,16 @@ app.post("/api/org/group-leaders", async (req, res) => {
         "view_members",
         "view_member_tasks",
         "view_group_tasks",
-        "manage_group_tasks",
+        "add_group_tasks",
+        "edit_group_tasks",
+        "delete_group_tasks",
+        "edit_group_task_checklist",
+        "complete_group_task_checklist",
         "view_groups",
         "assign_groups",
         "view_events",
-        "track_attendance",
+        "view_event_attendance",
+        "record_event_attendance",
         "send_messages",
       ]);
       const { data: insertedGl, error: glErr } = await supabaseAdmin
@@ -6007,7 +6110,15 @@ app.get("/api/members", async (req, res) => {
 
     const permCtx = deletedOnly
       ? await requireAnyPermission(req, res, ["view_deleted_members", "delete_members"])
-      : await requireAnyPermission(req, res, ["view_members", "manage_member_tasks", "manage_group_tasks"]);
+      : await requireAnyPermission(req, res, [
+          "view_members",
+          "add_member_tasks",
+          "edit_member_tasks",
+          "delete_member_tasks",
+          "add_group_tasks",
+          "edit_group_tasks",
+          "delete_group_tasks",
+        ]);
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -6159,11 +6270,7 @@ app.get("/api/dashboard/recent-members", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
-    const permCtx = await requireAnyPermission(req, res, [
-      "view_members",
-      "manage_member_tasks",
-      "manage_group_tasks",
-    ]);
+    const permCtx = await requireAnyPermission(req, res, ["view_members", ...ANY_MEMBER_OR_GROUP_TASK_PERM]);
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -6576,7 +6683,7 @@ app.get("/api/members/:memberId", async (req, res) => {
   if (!isUuidString(memberId)) return res.status(400).json({ error: "Invalid member id" });
 
   try {
-    const permCtx = await requireAnyPermission(req, res, ["view_members", "manage_member_tasks", "manage_group_tasks"]);
+    const permCtx = await requireAnyPermission(req, res, ["view_members", ...ANY_MEMBER_OR_GROUP_TASK_PERM]);
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -8911,7 +9018,6 @@ app.get("/api/members/:memberId/notes", async (req, res) => {
       "add_member_notes",
       "edit_member_notes",
       "delete_member_notes",
-      "manage_member_notes",
     ]);
     if (!permCtx) return;
 
@@ -9019,7 +9125,7 @@ app.post("/api/members/:memberId/notes", async (req, res) => {
   if (!isUuidString(memberId)) return res.status(400).json({ error: "Invalid member id" });
 
   try {
-    const permCtx = await requireAnyPermission(req, res, ["add_member_notes", "manage_member_notes"]);
+    const permCtx = await requirePermission(req, res, "add_member_notes");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -9126,7 +9232,7 @@ app.put("/api/members/:memberId/notes/:noteId", async (req, res) => {
   }
 
   try {
-    const permCtx = await requireAnyPermission(req, res, ["edit_member_notes", "manage_member_notes"]);
+    const permCtx = await requirePermission(req, res, "edit_member_notes");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -9223,7 +9329,7 @@ app.delete("/api/members/:memberId/notes/:noteId", async (req, res) => {
   }
 
   try {
-    const permCtx = await requireAnyPermission(req, res, ["delete_member_notes", "manage_member_notes"]);
+    const permCtx = await requirePermission(req, res, "delete_member_notes");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -10133,12 +10239,16 @@ app.get("/api/tasks/my-open-count", async (req, res) => {
       "view_member_tasks",
       "view_group_tasks",
       "monitor_member_tasks",
-      "manage_member_tasks",
-      "manage_member_task_checklist",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "delete_member_tasks",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
       "monitor_group_tasks",
-      "manage_group_tasks",
-      "manage_group_task_checklist",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "delete_group_tasks",
+      "edit_group_task_checklist",
       "complete_group_task_checklist",
     ]);
     if (!permCtx) return;
@@ -10212,12 +10322,16 @@ app.get("/api/tasks/mine", async (req, res) => {
       "view_member_tasks",
       "view_group_tasks",
       "monitor_member_tasks",
-      "manage_member_tasks",
-      "manage_member_task_checklist",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "delete_member_tasks",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
       "monitor_group_tasks",
-      "manage_group_tasks",
-      "manage_group_task_checklist",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "delete_group_tasks",
+      "edit_group_task_checklist",
       "complete_group_task_checklist",
     ]);
     if (!permCtx) return;
@@ -10443,12 +10557,16 @@ app.get("/api/tasks/branch", async (req, res) => {
       "view_member_tasks",
       "view_group_tasks",
       "monitor_member_tasks",
-      "manage_member_tasks",
-      "manage_member_task_checklist",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "delete_member_tasks",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
       "monitor_group_tasks",
-      "manage_group_tasks",
-      "manage_group_task_checklist",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "delete_group_tasks",
+      "edit_group_task_checklist",
       "complete_group_task_checklist",
     ]);
     if (!permCtx) return;
@@ -10608,8 +10726,10 @@ app.get("/api/members/:memberId/tasks", async (req, res) => {
     const permCtx = await requireAnyPermission(req, res, [
       "view_member_tasks",
       "monitor_member_tasks",
-      "manage_member_tasks",
-      "manage_member_task_checklist",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "delete_member_tasks",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
     ]);
     if (!permCtx) return;
@@ -10704,7 +10824,13 @@ app.get("/api/members/:memberId/tasks", async (req, res) => {
       created_by_name: nameById.get(t.created_by_profile_id) || "Staff",
     }));
 
-    const canMonitorOrManage = permCtx.isOrgOwner;
+    const canMonitorOrManage =
+      permCtx.isOrgOwner ||
+      permCtx.permissionSet.has("monitor_member_tasks") ||
+      permCtx.permissionSet.has("add_member_tasks") ||
+      permCtx.permissionSet.has("edit_member_tasks") ||
+      permCtx.permissionSet.has("edit_member_task_checklist") ||
+      permCtx.permissionSet.has("delete_member_tasks");
     if (!canMonitorOrManage) {
       tasks = tasks.filter((t) => {
         const aids = assigneeProfileIdsFromMemberTaskRow(t as MemberTaskRow);
@@ -10736,7 +10862,7 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
   if (!isUuidString(memberId)) return res.status(400).json({ error: "Invalid member id" });
 
   try {
-    const permCtx = await requirePermission(req, res, "manage_member_tasks");
+    const permCtx = await requirePermission(req, res, "add_member_tasks");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -10790,8 +10916,9 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
     if (
       checklist.length > 0 &&
       !permCtx.isOrgOwner &&
-      !permCtx.permissionSet.has("manage_member_tasks") &&
-      !permCtx.permissionSet.has("manage_member_task_checklist")
+      !permCtx.permissionSet.has("add_member_tasks") &&
+      !permCtx.permissionSet.has("edit_member_tasks") &&
+      !permCtx.permissionSet.has("edit_member_task_checklist")
     ) {
       return res.status(403).json({ error: "Missing permission to add task checklist items." });
     }
@@ -10962,11 +11089,11 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
     if (!row || row.organization_id !== orgId) return res.status(404).json({ error: "Task not found" });
     await assertMemberForOrgBranch(row.member_id, orgId, viewerBranch);
 
-    const canManageAll = permCtx.isOrgOwner || permCtx.permissionSet.has("manage_member_tasks");
+    const canManageAll = permCtx.isOrgOwner || permCtx.permissionSet.has("edit_member_tasks");
     const canEditChecklistStructure =
       permCtx.isOrgOwner ||
-      permCtx.permissionSet.has("manage_member_tasks") ||
-      permCtx.permissionSet.has("manage_member_task_checklist");
+      permCtx.permissionSet.has("edit_member_tasks") ||
+      permCtx.permissionSet.has("edit_member_task_checklist");
     const isAssignee = assigneeProfileIdsFromMemberTaskRow(row).includes(user.id);
     const isCreator = String(row.created_by_profile_id || "") === String(user.id);
 
@@ -11204,10 +11331,13 @@ app.delete("/api/member-tasks/:taskId", async (req, res) => {
 
   try {
     const permCtx = await requireAnyPermission(req, res, [
+      "delete_member_tasks",
       "view_member_tasks",
-      "view_group_tasks",
-      "manage_member_tasks",
-      "manage_group_tasks",
+      "monitor_member_tasks",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "edit_member_task_checklist",
+      "complete_member_task_checklist",
     ]);
     if (!permCtx) return;
 
@@ -11247,7 +11377,7 @@ app.delete("/api/member-tasks/:taskId", async (req, res) => {
 
     const canDelete =
       permCtx.isOrgOwner ||
-      permCtx.permissionSet.has("manage_member_tasks") ||
+      permCtx.permissionSet.has("delete_member_tasks") ||
       String(ex.created_by_profile_id || "") === String(user.id);
     if (!canDelete) return res.status(403).json({ error: "Forbidden" });
 
@@ -11270,7 +11400,14 @@ app.get("/api/groups/:groupId/task-target-options", async (req, res) => {
   const { groupId } = req.params;
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
   try {
-    const permCtx = await requireAnyPermission(req, res, ["manage_member_tasks", "manage_group_tasks"]);
+    const permCtx = await requireAnyPermission(req, res, [
+      "add_group_tasks",
+      "edit_group_tasks",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "monitor_group_tasks",
+      "monitor_member_tasks",
+    ]);
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -11367,12 +11504,15 @@ app.get("/api/groups/:groupId/tasks", async (req, res) => {
       "view_group_tasks",
       "view_member_tasks",
       "monitor_group_tasks",
-      "manage_group_tasks",
-      "manage_group_task_checklist",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "delete_group_tasks",
+      "edit_group_task_checklist",
       "complete_group_task_checklist",
       "monitor_member_tasks",
-      "manage_member_tasks",
-      "manage_member_task_checklist",
+      "add_member_tasks",
+      "edit_member_tasks",
+      "edit_member_task_checklist",
       "complete_member_task_checklist",
     ]);
     if (!permCtx) return;
@@ -11470,8 +11610,10 @@ app.get("/api/groups/:groupId/tasks", async (req, res) => {
     const canMonitorOrManageGroup =
       permCtx.isOrgOwner ||
       permCtx.permissionSet.has("monitor_group_tasks") ||
-      permCtx.permissionSet.has("manage_group_tasks") ||
-      permCtx.permissionSet.has("manage_group_task_checklist");
+      permCtx.permissionSet.has("add_group_tasks") ||
+      permCtx.permissionSet.has("edit_group_tasks") ||
+      permCtx.permissionSet.has("delete_group_tasks") ||
+      permCtx.permissionSet.has("edit_group_task_checklist");
     if (!canMonitorOrManageGroup) {
       tasks = tasks.filter((t) => {
         const aids = assigneeProfileIdsFromGroupTaskRow(t as GroupTaskRow);
@@ -11503,7 +11645,7 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
   if (!isUuidString(groupId)) return res.status(400).json({ error: "Invalid group id" });
 
   try {
-    const permCtx = await requireAnyPermission(req, res, ["manage_member_tasks", "manage_group_tasks"]);
+    const permCtx = await requirePermission(req, res, "add_group_tasks");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -11880,8 +12022,12 @@ app.delete("/api/group-tasks/:taskId", async (req, res) => {
     const permCtx = await requireAnyPermission(req, res, [
       "view_group_tasks",
       "view_member_tasks",
-      "manage_member_tasks",
-      "manage_group_tasks",
+      "delete_group_tasks",
+      "monitor_group_tasks",
+      "add_group_tasks",
+      "edit_group_tasks",
+      "edit_group_task_checklist",
+      "complete_group_task_checklist",
     ]);
     if (!permCtx) return;
 
@@ -12229,7 +12375,10 @@ app.post("/api/member-requests/:id/approve", async (req, res) => {
       });
     }
 
-    const reviewers = await profileIdsWithPermission(String(mreq.organization_id), String(mreq.branch_id || viewerBranch), "approve_member_requests");
+    const reviewers = await profileIdsWithAnyPermission(String(mreq.organization_id), String(mreq.branch_id || viewerBranch), [
+      "approve_member_requests",
+      "reject_member_requests",
+    ]);
     const memberApprovalRecipients = recipientIdsExcludingActor(reviewers, user.id);
     const newMemberId = String((member as { id?: string } | null)?.id || "");
     const approvedName =
@@ -12278,7 +12427,7 @@ app.post("/api/member-requests/:id/reject", async (req, res) => {
   const { id } = req.params;
 
   try {
-    const permCtx = await requirePermission(req, res, "approve_member_requests");
+    const permCtx = await requirePermission(req, res, "reject_member_requests");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -13021,6 +13170,9 @@ app.get("/api/families", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permFamList = await requirePermission(req, res, "view_families");
+    if (!permFamList) return;
+
     const { branch_id } = req.query;
     const effectiveBranch = typeof branch_id === "string" && branch_id.trim() ? branch_id.trim() : viewerBranch;
     const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
@@ -13062,6 +13214,9 @@ app.post("/api/families", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
+    const permFamCreate = await requirePermission(req, res, "add_families");
+    if (!permFamCreate) return;
+
     const { familyName, branch_id } = req.body;
     
     const { data: family, error } = await supabaseAdmin
@@ -13088,6 +13243,8 @@ app.put("/api/families/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
+    const permFamPut = await requirePermission(req, res, "edit_families");
+    if (!permFamPut) return;
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -13114,6 +13271,8 @@ app.delete("/api/families/:id", async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
     const token = authHeader.split(" ")[1];
+    const permFamDel = await requirePermission(req, res, "delete_families");
+    if (!permFamDel) return;
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -13143,6 +13302,17 @@ app.post("/api/member-families", async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
 
+    const ctxMfPost = await getActorAuthContextFromToken(token);
+    if (!ctxMfPost) return res.status(401).json({ error: "Unauthorized" });
+    if (!ctxMfPost.isOrgOwner) {
+      const okLink =
+        ctxMfPost.permissionSet.has("add_families") ||
+        (ctxMfPost.permissionSet.has("edit_members") && ctxMfPost.permissionSet.has("view_families"));
+      if (!okLink) {
+        return res.status(403).json({ error: "Missing permission to link members and families" });
+      }
+    }
+
     const { member_id, family_id } = req.body;
     
     const { data, error } = await supabaseAdmin
@@ -13168,30 +13338,16 @@ app.delete("/api/member-families", async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
 
-    const { member_id, family_id } = req.query;
-    
-    const { error } = await supabaseAdmin
-      .from("member_families")
-      .delete()
-      .eq("member_id", member_id)
-      .eq("family_id", family_id);
-
-    if (error) throw error;
-    res.status(204).send();
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete("/api/member-families", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const supabase = getSupabaseClient(token);
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) throw new Error("Invalid token");
+    const ctxMfDel = await getActorAuthContextFromToken(token);
+    if (!ctxMfDel) return res.status(401).json({ error: "Unauthorized" });
+    if (!ctxMfDel.isOrgOwner) {
+      const okUnlink =
+        ctxMfDel.permissionSet.has("delete_families") ||
+        (ctxMfDel.permissionSet.has("edit_members") && ctxMfDel.permissionSet.has("view_families"));
+      if (!okUnlink) {
+        return res.status(403).json({ error: "Missing permission to unlink members and families" });
+      }
+    }
 
     const { member_id, family_id } = req.query;
     
@@ -13214,6 +13370,9 @@ app.get("/api/member-families/member/:memberId", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
+    const permMfMember = await requireAnyPermission(req, res, ["view_members", "view_families"]);
+    if (!permMfMember) return;
+
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -13241,8 +13400,8 @@ app.get("/api/member-families/family/:familyId", async (req, res) => {
   try {
     const permCtx = await requireAnyPermission(req, res, [
       "view_members",
-      "manage_member_tasks",
-      "manage_group_tasks",
+      "view_families",
+      ...ANY_MEMBER_OR_GROUP_TASK_PERM,
     ]);
     if (!permCtx) return;
 
@@ -13369,14 +13528,27 @@ app.get("/api/groups", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const deletedOnly =
+      String(req.query.deleted_only || req.query.trash || "").trim() === "1" ||
+      String(req.query.deleted_only || "").toLowerCase() === "true";
+    if (deletedOnly) {
+      const permGrpTrash = await requireAnyPermission(req, res, [
+        "view_groups",
+        "archive_groups",
+        "restore_groups",
+        "purge_groups",
+      ]);
+      if (!permGrpTrash) return;
+    } else {
+      const permGrpList = await requirePermission(req, res, "view_groups");
+      if (!permGrpList) return;
+    }
+
     const { parent_group_id, member_id, tree } = req.query;
     const treeAll =
       tree === "1" ||
       tree === "true" ||
       (typeof tree === "string" && tree.toLowerCase() === "yes");
-    const deletedOnly =
-      String(req.query.deleted_only || req.query.trash || "").trim() === "1" ||
-      String(req.query.deleted_only || "").toLowerCase() === "true";
     const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
     const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "10"), 10) || 10));
 
@@ -13591,6 +13763,9 @@ app.post("/api/groups", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permGrpCreate = await requirePermission(req, res, "add_groups");
+    if (!permGrpCreate) return;
+
     const { 
       name,
       description,
@@ -13709,6 +13884,9 @@ app.put("/api/groups/:id", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permGrpPut = await requirePermission(req, res, "edit_groups");
+    if (!permGrpPut) return;
 
     const { id } = req.params;
     const groupData = req.body;
@@ -13906,7 +14084,7 @@ app.delete("/api/groups/:id", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
-    const permCtx = await requirePermission(req, res, "manage_groups");
+    const permCtx = await requirePermission(req, res, "archive_groups");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -14023,6 +14201,9 @@ app.post("/api/groups/:id/restore", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permGrpRestore = await requirePermission(req, res, "restore_groups");
+    if (!permGrpRestore) return;
+
     const { id } = req.params;
     if (!isUuidString(id)) {
       return res.status(400).json({ error: "Invalid group id" });
@@ -14085,6 +14266,10 @@ app.post("/api/groups/batch-restore", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permGrpBatchRestore = await requirePermission(req, res, "restore_groups");
+    if (!permGrpBatchRestore) return;
+
     const ids = normalizeUuidArray((req.body || {}).ids);
     if (ids.length === 0) {
       return res.status(400).json({ error: "ids array required" });
@@ -14133,7 +14318,7 @@ app.post("/api/groups/batch-purge", async (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
   const token = authHeader.split(" ")[1];
   try {
-    const permCtx = await requirePermission(req, res, "manage_groups");
+    const permCtx = await requirePermission(req, res, "purge_groups");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -14212,6 +14397,9 @@ app.get("/api/groups/:id", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permGrpGet = await requirePermission(req, res, "view_groups");
+    if (!permGrpGet) return;
 
     const { id } = req.params;
     
@@ -14387,6 +14575,9 @@ app.get("/api/groups/:groupId/events", async (req, res) => {
     const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permGrpEv = await requirePermission(req, res, "view_events");
+    if (!permGrpEv) return;
+
     const { data: grp, error: gErr } = await supabaseAdmin
       .from("groups")
       .select("id, branch_id")
@@ -14494,6 +14685,9 @@ app.get("/api/group-members", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permGmGet = await requireAnyPermission(req, res, ["view_members", "view_groups"]);
+    if (!permGmGet) return;
 
     const { group_id } = req.query;
 
@@ -14605,6 +14799,9 @@ app.post("/api/group-members", async (req, res) => {
       .single();
 
     if (!userProfile) throw new Error("User profile not found");
+
+    const permGmPost = await requirePermission(req, res, "assign_groups");
+    if (!permGmPost) return;
 
     const { group_id, member_id, role_in_group } = req.body;
 
@@ -14827,6 +15024,10 @@ app.post("/api/group-members/bulk", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permGmBulk = await requirePermission(req, res, "assign_groups");
+    if (!permGmBulk) return;
+
     const orgId = String(userProfile.organization_id);
     const body = req.body || {};
     const group_id = typeof body.group_id === "string" ? body.group_id.trim() : "";
@@ -15141,6 +15342,9 @@ app.delete("/api/group-members", async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
 
+    const permGmDel = await requirePermission(req, res, "assign_groups");
+    if (!permGmDel) return;
+
     const { data: userProfile } = await supabaseAdmin
       .from("profiles")
       .select("organization_id")
@@ -15248,6 +15452,9 @@ app.get("/api/group-requests", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permGrList = await requirePermission(req, res, "view_group_requests");
+    if (!permGrList) return;
+
     const { status, group_id } = req.query;
     const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
     const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "10"), 10) || 10));
@@ -15336,6 +15543,9 @@ app.post("/api/group-requests/:id/approve", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
+    const permGrApprove = await requirePermission(req, res, "approve_group_requests");
+    if (!permGrApprove) return;
+
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -15418,10 +15628,10 @@ app.post("/api/group-requests/:id/approve", async (req, res) => {
         );
         const updatedRequest = await markApproved();
         const { data: memberRow } = await supabaseAdmin.from("members").select("*").eq("id", linkedMemberId).single();
-        const reviewers = await profileIdsWithPermission(
+        const reviewers = await profileIdsWithAnyPermission(
           String(request.organization_id),
           String(request.branch_id || viewerBranch),
-          "approve_group_requests",
+          ["approve_group_requests", "reject_group_requests"],
         );
         const approvalRecipients = recipientIdsExcludingActor(reviewers, user.id);
         const gid = String(request.group_id || "");
@@ -15510,10 +15720,10 @@ app.post("/api/group-requests/:id/approve", async (req, res) => {
         (request.branch_id as string | null) ?? null
       );
       const updatedRequest = await markApproved();
-      const reviewers = await profileIdsWithPermission(
+      const reviewers = await profileIdsWithAnyPermission(
         String(request.organization_id),
         String(request.branch_id || viewerBranch),
-        "approve_group_requests",
+        ["approve_group_requests", "reject_group_requests"],
       );
       const approvalRecipientsGuest = recipientIdsExcludingActor(reviewers, user.id);
       const gid2 = String(request.group_id || "");
@@ -15606,6 +15816,9 @@ app.post("/api/group-requests/:id/reject", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
+    const permGrReject = await requirePermission(req, res, "reject_group_requests");
+    if (!permGrReject) return;
+
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -15660,6 +15873,9 @@ app.post("/api/group-requests/:id/ignore", async (req, res) => {
 
   const token = authHeader.split(" ")[1];
   try {
+    const permGrIgnore = await requirePermission(req, res, "reject_group_requests");
+    if (!permGrIgnore) return;
+
     const supabase = getSupabaseClient(token);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw new Error("Invalid token");
@@ -16582,6 +16798,18 @@ app.get("/api/event-types", async (req, res) => {
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
+    const permEtGet = await requireAnyPermission(req, res, [
+      "view_events",
+      "add_events",
+      "edit_events",
+      "delete_events",
+      "view_event_types",
+      "add_event_types",
+      "edit_event_types",
+      "delete_event_types",
+    ]);
+    if (!permEtGet) return;
+
     const { data: rows, error } = await supabaseAdmin
       .from("event_types")
       .select("*")
@@ -16626,6 +16854,10 @@ app.post("/api/event-types", async (req, res) => {
     const description = typeof body.description === "string" ? body.description.trim() || null : null;
     const color = typeof body.color === "string" ? body.color.trim() || null : null;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permEtPost = await requirePermission(req, res, "add_event_types");
+    if (!permEtPost) return;
+
     const branch_id: string | null = viewerBranch;
 
     const row = {
@@ -16685,6 +16917,9 @@ app.patch("/api/event-types/:id", async (req, res) => {
     const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgId);
+
+    const permEtPatch = await requirePermission(req, res, "edit_event_types");
+    if (!permEtPatch) return;
 
     const { data: existing } = await supabaseAdmin
       .from("event_types")
@@ -16746,6 +16981,9 @@ app.delete("/api/event-types/:id", async (req, res) => {
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
+    const permEtDel = await requirePermission(req, res, "delete_event_types");
+    if (!permEtDel) return;
+
     const { data: existing } = await supabaseAdmin
       .from("event_types")
       .select("id, branch_id")
@@ -16787,21 +17025,25 @@ const DEFAULT_MEMBER_STATUS_LABELS = ["Active", "Not active", "Travelled", "Tran
 
 const DEFAULT_GROUP_TYPE_LABELS = ["Ministry", "Subgroup", "Team"];
 
-/** Same pattern as member status options; includes manage_groups for group-type picklist. */
-const GROUP_TYPE_OPTION_WRITE_PERMS = [
-  "manage_groups",
+/** Group-type labels; same elevated staff surfaces as legacy `manage_groups` + settings. */
+const GROUP_TYPE_OPTION_WRITE_PERMS: string[] = [
+  "add_groups",
+  "edit_groups",
+  "archive_groups",
+  "restore_groups",
+  "purge_groups",
   "system_settings",
-  "manage_permissions",
-  "manage_staff",
-] as const;
+  ...SETTINGS_ELEVATED_STAFF_PERMS,
+];
 
-/** Same surfaces that can open /settings (see Root.tsx) plus granular manage_member_statuses. */
-const MEMBER_STATUS_OPTION_WRITE_PERMS = [
-  "manage_member_statuses",
+/** Member status labels; same elevated staff surfaces as legacy `manage_member_statuses` + settings. */
+const MEMBER_STATUS_OPTION_WRITE_PERMS: string[] = [
+  "add_member_status_options",
+  "edit_member_status_options",
+  "delete_member_status_options",
   "system_settings",
-  "manage_permissions",
-  "manage_staff",
-] as const;
+  ...SETTINGS_ELEVATED_STAFF_PERMS,
+];
 
 app.get("/api/member-status-options", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -17556,7 +17798,7 @@ async function fetchPublicDefinitionsForScope(
     }));
 }
 
-const CUSTOM_FIELD_DEFINITION_WRITE_PERMS = ["system_settings", "manage_permissions", "manage_staff"] as const;
+const CUSTOM_FIELD_DEFINITION_WRITE_PERMS: string[] = ["system_settings", ...SETTINGS_ELEVATED_STAFF_PERMS];
 
 app.get("/api/custom-field-definitions", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -17859,6 +18101,17 @@ app.get("/api/event-outline-templates", async (req, res) => {
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgIdEo);
 
+    const permEoGet = await requireAnyPermission(req, res, [
+      "view_events",
+      "add_events",
+      "edit_events",
+      "delete_events",
+      "add_program_templates",
+      "edit_program_templates",
+      "delete_program_templates",
+    ]);
+    if (!permEoGet) return;
+
     const eventTypeId = typeof req.query.event_type_id === "string" ? req.query.event_type_id.trim() : "";
     let q = supabaseAdmin
       .from("event_outline")
@@ -17928,6 +18181,9 @@ app.post("/api/event-outline-templates", async (req, res) => {
     const orgIdTpl = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgIdTpl);
+
+    const permEoPost = await requirePermission(req, res, "add_program_templates");
+    if (!permEoPost) return;
 
     const body = req.body || {};
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -17999,6 +18255,9 @@ app.patch("/api/event-outline-templates/:id", async (req, res) => {
     const orgIdPatch = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgIdPatch);
+
+    const permEoPatch = await requirePermission(req, res, "edit_program_templates");
+    if (!permEoPatch) return;
 
     const { data: tplExisting } = await supabaseAdmin
       .from("event_outline")
@@ -18077,6 +18336,9 @@ app.delete("/api/event-outline-templates/:id", async (req, res) => {
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
     const mainBranchId = await getMainBranchIdForOrg(orgIdDel);
 
+    const permEoDel = await requirePermission(req, res, "delete_program_templates");
+    if (!permEoDel) return;
+
     const { data: tplRow } = await supabaseAdmin
       .from("event_outline")
       .select("id, branch_id")
@@ -18124,6 +18386,9 @@ app.get("/api/events", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permEvList = await requirePermission(req, res, "view_events");
+    if (!permEvList) return;
 
     const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
     const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "10"), 10) || 10));
@@ -18224,6 +18489,9 @@ app.get("/api/events/:id", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permEvDetail = await requirePermission(req, res, "view_events");
+    if (!permEvDetail) return;
+
     const runSelect = (select: string) =>
       supabaseAdmin
         .from("events")
@@ -18311,6 +18579,9 @@ app.post("/api/events", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
+    const permEvCreate = await requirePermission(req, res, "add_events");
+    if (!permEvCreate) return;
+
     const orgIdEv = userProfile.organization_id as string;
     const limE = await assertOrgLimit(supabaseAdmin, orgIdEv, "events_month");
     if (!limE.ok)
@@ -18341,7 +18612,11 @@ app.post("/api/events", async (req, res) => {
     if (assignedPreview.length > 0) {
       const actorCtx = await getActorAuthContextFromToken(token);
       if (!actorCtx) return res.status(401).json({ error: "Unauthorized" });
-      if (!actorCtx.isOrgOwner && !actorCtx.permissionSet.has("assign_event_members")) {
+      if (
+        !actorCtx.isOrgOwner &&
+        !actorCtx.permissionSet.has("assign_event_members") &&
+        !actorCtx.permissionSet.has("add_events")
+      ) {
         return res.status(403).json({ error: "Not allowed to assign members to events" });
       }
     }
@@ -18695,6 +18970,23 @@ app.patch("/api/events/:id", async (req, res) => {
     const hasAssignedUpdate = body.assigned_member_ids !== undefined;
     const hasAudienceFieldUpdate = nextGroupIds !== null || hasAssignedUpdate;
 
+    const actorPatch = await getActorAuthContextFromToken(token);
+    if (!actorPatch) return res.status(401).json({ error: "Unauthorized" });
+    const structuralUpdate = Object.keys(patch).length > 0 || nextGroupIds !== null;
+    if (structuralUpdate) {
+      if (!actorPatch.isOrgOwner && !actorPatch.permissionSet.has("edit_events")) {
+        return res.status(403).json({ error: "Missing permission: edit_events" });
+      }
+    } else if (hasAssignedUpdate) {
+      if (
+        !actorPatch.isOrgOwner &&
+        !actorPatch.permissionSet.has("edit_events") &&
+        !actorPatch.permissionSet.has("assign_event_members")
+      ) {
+        return res.status(403).json({ error: "Not allowed to update event roster" });
+      }
+    }
+
     let updated: Record<string, unknown> | null = null;
     let lastError: { message?: string; code?: string } | null = null;
 
@@ -18773,15 +19065,6 @@ app.patch("/api/events/:id", async (req, res) => {
     }
 
     const updatedRow = updated as Record<string, unknown>;
-
-    if (hasAssignedUpdate) {
-      const actorCtx = await getActorAuthContextFromToken(token);
-      if (!actorCtx) return res.status(401).json({ error: "Unauthorized" });
-      const ids = normalizeUuidArray(body.assigned_member_ids);
-      if (ids.length > 0 && !actorCtx.isOrgOwner && !actorCtx.permissionSet.has("assign_event_members")) {
-        return res.status(403).json({ error: "Not allowed to assign members to events" });
-      }
-    }
 
     try {
       if (nextGroupIds !== null) {
@@ -18939,6 +19222,17 @@ app.get("/api/events/:id/attendance", async (req, res) => {
     );
     if (!canSeeAttGet) return res.status(403).json({ error: "Not allowed to view this event" });
 
+    const attCtx = await getActorAuthContextFromToken(token);
+    if (!attCtx) return res.status(401).json({ error: "Unauthorized" });
+    if (
+      !attCtx.isOrgOwner &&
+      !attCtx.permissionSet.has("view_events") &&
+      !attCtx.permissionSet.has("view_event_attendance") &&
+      !attCtx.permissionSet.has("record_event_attendance")
+    ) {
+      return res.status(403).json({ error: "Not allowed to view attendance" });
+    }
+
     const eventGroupIds = await fetchEventGroupIdsForEvent(id, event.group_id);
     const assignedExplicit = await fetchAssignedMemberIdsForEvent(id);
 
@@ -19084,7 +19378,7 @@ app.put("/api/events/:id/attendance", async (req, res) => {
   if (!isUuidString(id)) return res.status(400).json({ error: "Invalid event id" });
 
   try {
-    const permCtx = await requirePermission(req, res, "track_attendance");
+    const permCtx = await requirePermission(req, res, "record_event_attendance");
     if (!permCtx) return;
 
     const supabase = getSupabaseClient(token);
@@ -19242,6 +19536,9 @@ app.delete("/api/events/:id", async (req, res) => {
     if (!userProfile) throw new Error("User profile not found");
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+
+    const permEvDel = await requirePermission(req, res, "delete_events");
+    if (!permEvDel) return;
 
     const { data: evRow, error: evLoadErr } = await supabaseAdmin
       .from("events")
@@ -19928,7 +20225,10 @@ async function runAttendanceAutomation(now: Date): Promise<void> {
     const createdMs = ev.created_at ? new Date(String(ev.created_at)).getTime() : startMs;
     const retroMs = Number.isFinite(createdMs) ? Math.min(createdMs, startMs) : startMs;
 
-    let recipients = await profileIdsWithPermission(ev.organization_id, ev.branch_id, "track_attendance");
+    let recipients = await profileIdsWithAnyPermission(ev.organization_id, ev.branch_id, [
+      "view_event_attendance",
+      "record_event_attendance",
+    ]);
     if (recipients.length === 0) continue;
     const pcAtt = await mapProfileCreatedAtMsById(recipients);
     recipients = filterRecipientsProfileCreatedNotAfterEntity(recipients, pcAtt, retroMs);

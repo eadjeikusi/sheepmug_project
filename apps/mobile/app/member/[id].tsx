@@ -653,6 +653,21 @@ export default function MemberProfileScreen() {
     setImportantDates((prev) => prev.filter((d) => d.id !== dateId));
   }
 
+  function confirmDeleteNote(noteId: string) {
+    Alert.alert("Delete note", "Remove this note? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => void handleDeleteNote(noteId) },
+    ]);
+  }
+
+  function confirmDeleteImportantDate(d: MemberImportantDate) {
+    const label = String(d.title ?? "").trim() || "this date";
+    Alert.alert("Delete important date", `Remove “${label}” from the profile?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => void handleDeleteImportantDate(d.id) },
+    ]);
+  }
+
   function beginEditImportantDate(d: MemberImportantDate) {
     setEditingImportantId(d.id);
     setEditImpTitle(String(d.title ?? ""));
@@ -1263,7 +1278,7 @@ export default function MemberProfileScreen() {
                                     ) : null}
                                     {can("delete_member_notes") ? (
                                       <Pressable
-                                        onPress={() => void handleDeleteNote(note.id)}
+                                        onPress={() => confirmDeleteNote(note.id)}
                                         hitSlop={8}
                                         style={styles.noteIconBtn}
                                       >
@@ -1503,7 +1518,7 @@ export default function MemberProfileScreen() {
                                     <Pressable onPress={() => beginEditImportantDate(d)}>
                                       <Text style={styles.editLinkText}>Edit</Text>
                                     </Pressable>
-                                    <Pressable onPress={() => void handleDeleteImportantDate(d.id)}>
+                                    <Pressable onPress={() => confirmDeleteImportantDate(d)}>
                                       <Text style={styles.deleteText}>Delete</Text>
                                     </Pressable>
                                   </View>
@@ -1651,20 +1666,20 @@ export default function MemberProfileScreen() {
                       </Pressable>
                       <Pressable
                         accessibilityLabel={
-                          can("track_attendance") ? "Change attendance" : "Attendance (view only)"
+                          can("record_event_attendance") ? "Change attendance" : "Attendance (view only)"
                         }
                         onPress={() => {
-                          if (can("track_attendance")) setAttendancePickEventId(event.id);
+                          if (can("record_event_attendance")) setAttendancePickEventId(event.id);
                         }}
-                        disabled={saving || !can("track_attendance")}
+                        disabled={saving || !can("record_event_attendance")}
                         style={({ pressed }) => [
                           styles.eventAttendanceTag,
                           {
                             backgroundColor: attColors.bg,
                             borderColor: attColors.border,
                           },
-                          !can("track_attendance") && { opacity: 0.55 },
-                          pressed && !saving && can("track_attendance") && { opacity: 0.88 },
+                          !can("record_event_attendance") && { opacity: 0.55 },
+                          pressed && !saving && can("record_event_attendance") && { opacity: 0.88 },
                           saving && { opacity: 0.7 },
                         ]}
                       >

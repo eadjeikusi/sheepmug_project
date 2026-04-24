@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, sizes, type } from "../../theme";
 import { useAuth } from "../../contexts/AuthContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
@@ -10,6 +11,7 @@ import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 export default function TabsLayout() {
   const router = useRouter();
   const { user } = useAuth();
+  const { can } = usePermissions();
   const { unreadCount } = useNotifications();
   const { colors: themedColors } = useTheme();
 
@@ -119,6 +121,7 @@ export default function TabsLayout() {
         options={{
           headerShown: false,
           title: "Event",
+          href: can("view_events") ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "calendar" : "calendar-outline"} color={color} size={sizes.tabBarIcon} />
           ),

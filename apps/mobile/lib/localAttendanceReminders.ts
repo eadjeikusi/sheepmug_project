@@ -61,7 +61,14 @@ function userCanTrackAttendance(user: AuthUser | null): boolean {
   if (user.is_super_admin || user.is_org_owner) return true;
   const perms = user.permissions;
   if (!Array.isArray(perms)) return false;
-  return perms.some((p) => String(p).trim() === "track_attendance");
+  return perms.some((p) => {
+    const x = String(p).trim();
+    return (
+      x === "track_attendance" ||
+      x === "view_event_attendance" ||
+      x === "record_event_attendance"
+    );
+  });
 }
 
 function isPresentAttendance(status: string | null | undefined): boolean {

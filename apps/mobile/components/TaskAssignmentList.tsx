@@ -27,6 +27,12 @@ import {
   formatLongWeekdayDateTime,
 } from "../lib/memberDisplayFormat";
 import { usePermissions } from "../hooks/usePermissions";
+import {
+  canReshapeGroupTaskChecklist,
+  canReshapeMemberTaskChecklist,
+  canWriteGroupTasks,
+  canWriteMemberTasks,
+} from "@sheepmug/permissions-helpers";
 import { colors, radius, type } from "../theme";
 import { useOfflineSync } from "../contexts/OfflineSyncContext";
 
@@ -245,17 +251,17 @@ export function TaskAssignmentList({
 
   const { selectedBranch } = useBranch();
 
-  const canManageMemberTasks = can("manage_member_tasks");
-  const canManageGroupTasks = can("manage_group_tasks");
+  const canWriteMember = canWriteMemberTasks(can);
+  const canWriteGroup = canWriteGroupTasks(can);
 
   const canManageTask = useCallback(
-    (t: TaskItem) => (isGroupTask(t) ? canManageGroupTasks : canManageMemberTasks),
-    [canManageGroupTasks, canManageMemberTasks]
+    (t: TaskItem) => (isGroupTask(t) ? canWriteGroup : canWriteMember),
+    [canWriteGroup, canWriteMember]
   );
 
   /**
    * Inline add/remove/rename on the task row — off for anyone assigned to this task (including staff with
-   * manage_* who are assignees). They can still toggle done; reshaping is for non-assignee managers or web.
+   * Managers who are assignees). They can still toggle done; reshaping is for non-assignee managers or web.
    */
   const canEditChecklistStructureForTask = useCallback(
     (t: TaskItem) => {
@@ -263,9 +269,9 @@ export function TaskAssignmentList({
       const leaders = leaderIdsFromTaskItem(t);
       if (leaders.length > 0 && leaders.includes(viewerId)) return false;
       if (isGroupTask(t)) {
-        return can("manage_group_tasks") || can("manage_group_task_checklist");
+        return canReshapeGroupTaskChecklist(can);
       }
-      return can("manage_member_tasks") || can("manage_member_task_checklist");
+      return canReshapeMemberTaskChecklist(can);
     },
     [can, viewerId]
   );
@@ -306,11 +312,17 @@ export function TaskAssignmentList({
       if (isGroupTask(t) && status === "completed") return false;
       if (viewerId && leaderIdsFromTaskItem(t).includes(viewerId)) return true;
       if (isGroupTask(t)) {
-        return can("manage_group_tasks") || can("manage_group_task_checklist");
+        return (
+          canWriteGroup ||
+          can("edit_group_task_checklist") ||
+          can("complete_group_task_checklist")
+        );
       }
-      return can("manage_member_tasks") || can("manage_member_task_checklist");
+      return (
+        canWriteMember || can("edit_member_task_checklist") || can("complete_member_task_checklist")
+      );
     },
-    [user, viewerId, can]
+    [user, viewerId, can, canWriteGroup, canWriteMember]
   );
 
   const canStructuralEditOrDeleteTask = useCallback(

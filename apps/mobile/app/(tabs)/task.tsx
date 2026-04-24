@@ -123,8 +123,8 @@ export default function TaskScreen() {
   const isElevatedTaskViewer = user?.is_org_owner === true || user?.is_super_admin === true;
   const canSeeMine = can("view_member_tasks") || can("view_group_tasks");
   const canSeeTaskList = isElevatedTaskViewer || canSeeMine;
-  const canCreateMemberTask = can("manage_member_tasks");
-  const canCreateGroupTask = can("manage_group_tasks");
+  const canCreateMemberTask = can("add_member_tasks");
+  const canCreateGroupTask = can("add_group_tasks");
   const canCreateTask = canCreateMemberTask || canCreateGroupTask;
 
   const params = useLocalSearchParams<{ pending?: string }>();
