@@ -109,7 +109,10 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
       </Link>
 
       {hasActions ? (
-        <div className="absolute top-4 right-4 z-10 flex items-center gap-1">
+        <div
+          className="absolute top-4 right-4 z-10 flex items-center gap-1 transition-opacity duration-200 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto md:group-focus-within:opacity-100 md:group-focus-within:pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
           {onEdit ? (
             <button
               type="button"
@@ -120,7 +123,7 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
                 e.stopPropagation();
                 onEdit(ministry);
               }}
-              className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+              className="p-2 rounded-xl text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600 hover:ring-1 hover:ring-blue-200/80"
             >
               <Edit2 className="w-4 h-4" />
             </button>
@@ -135,7 +138,7 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
                 e.stopPropagation();
                 onDelete(ministry.id);
               }}
-              className="p-2 rounded-xl text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+              className="p-2 rounded-xl text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 hover:ring-1 hover:ring-red-200/70"
             >
               <Trash2 className="w-4 h-4" />
             </button>
