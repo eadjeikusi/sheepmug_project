@@ -54,7 +54,8 @@ const shortcutItems: { id: string; icon: typeof Settings; label: string; permiss
 ];
 
 const adminItems: { id: string; icon: typeof Shield; label: string; permission: string | null }[] = [
-  { id: 'superadmin', icon: Shield, label: 'SuperAdmin', permission: 'manage_permissions' },
+  /** Shown only when `user.is_super_admin`; route/API gated the same way. */
+  { id: 'superadmin', icon: Shield, label: 'SuperAdmin', permission: null },
 ];
 interface SidebarProps {
   activeTab: string;
@@ -81,7 +82,10 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     }
     return item.permission == null || can(item.permission);
   });
-  const visibleAdmin = adminItems.filter((item) => item.permission == null || can(item.permission));
+  const visibleAdmin = adminItems.filter((item) => {
+    if (item.id === 'superadmin') return user?.is_super_admin === true;
+    return item.permission == null || can(item.permission);
+  });
   const navCompletelyEmpty =
     !!user &&
     visibleNav.length === 0 &&

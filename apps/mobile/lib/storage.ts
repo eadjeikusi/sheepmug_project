@@ -16,6 +16,8 @@ const OFFLINE_RESOURCE_CACHE_PREFIX = "offline_resource_cache_v1:";
 const OFFLINE_BOOTSTRAP_DONE_KEY = "offline_bootstrap_done_v1";
 const OFFLINE_BOOTSTRAP_DONE_USER_PREFIX = "offline_bootstrap_done_v2:";
 const OFFLINE_META_PREFIX = "offline_meta_v1:";
+/** Same value as `OFFLINE_MANIFEST_KEY` in ./offline/manifest.ts (avoid dynamic import → HMR async bundle errors). */
+const OFFLINE_MANIFEST_CACHE_KEY = "manifest_v1_json";
 const SEARCH_HISTORY_MAX = 12;
 
 export async function getToken() {
@@ -239,11 +241,17 @@ export async function setOfflineResourceCache<T>(key: string, data: T): Promise<
 }
 
 async function offlineBootstrapManifestMatchesUser(userId: string): Promise<boolean> {
-  const { getOfflineManifest } = await import("./offline/manifest");
-  const m = await getOfflineManifest();
-  const saved = m.bootstrap_account_user_id != null ? String(m.bootstrap_account_user_id).trim() : "";
-  if (!saved) return false;
-  return saved === userId;
+  const raw = await getOfflineMeta(OFFLINE_MANIFEST_CACHE_KEY);
+  if (!raw || !String(raw).trim()) return false;
+  try {
+    const parsed = JSON.parse(raw) as { bootstrap_account_user_id?: unknown };
+    const saved =
+      parsed.bootstrap_account_user_id != null ? String(parsed.bootstrap_account_user_id).trim() : "";
+    if (!saved) return false;
+    return saved === userId;
+  } catch {
+    return false;
+  }
 }
 
 /** Per-user offline bootstrap completion. Pass `user.id` from auth; missing id returns false. */

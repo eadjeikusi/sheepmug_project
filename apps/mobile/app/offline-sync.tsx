@@ -14,6 +14,7 @@ import {
 import { HeaderIconCircle } from "../components/HeaderIconCircle";
 import { colors, radius, sizes, type } from "../theme";
 import { clearOfflineImageFiles, getOfflineImageCacheSizeBytes } from "../lib/offline/imageCache";
+import { cancelLocalAttendanceReminders } from "../lib/localAttendanceReminders";
 import { cancelLocalTaskReminders } from "../lib/localTaskReminders";
 import { displayMemberWords } from "../lib/memberDisplayFormat";
 import type { OfflineQueueItem } from "../lib/offline/types";
@@ -297,6 +298,7 @@ export default function OfflineSyncScreen() {
                         await clearOfflineResourceCaches();
                         await clearOfflineImageFiles();
                         await cancelLocalTaskReminders();
+                        await cancelLocalAttendanceReminders();
                         await setOfflineBootstrapDone(user?.id ?? null, false);
                         await refreshCacheSize();
                         Alert.alert("Cache cleared", "Offline cache has been cleared.");

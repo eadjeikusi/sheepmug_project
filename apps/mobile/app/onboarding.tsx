@@ -123,14 +123,14 @@ export default function OnboardingScreen() {
   }, [page, steps, offlineReady, progressAnim]);
 
   const skipEntireTour = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || uploadingImage) return;
     try {
       await setOnboardingCompleted(uid, true);
     } catch {
       /* still navigate */
     }
     router.replace("/");
-  }, [router, uid]);
+  }, [router, uid, uploadingImage]);
 
   const finishToApp = useCallback(async () => {
     if (!uid) return;
@@ -143,6 +143,7 @@ export default function OnboardingScreen() {
   }, [router, uid]);
 
   const goNext = useCallback(() => {
+    if (uploadingImage) return;
     const kind = steps[page];
     if (kind === "offline" && !offlineReady) return;
     if (kind === "finale") {
@@ -154,9 +155,10 @@ export default function OnboardingScreen() {
       listRef.current?.scrollToIndex({ index: next, animated: true });
       setPage(next);
     }
-  }, [page, steps, offlineReady, finishToApp]);
+  }, [page, steps, offlineReady, finishToApp, uploadingImage]);
 
   const goHeaderBack = useCallback(() => {
+    if (uploadingImage) return;
     if (page > 0) {
       const prev = page - 1;
       listRef.current?.scrollToIndex({ index: prev, animated: true });
@@ -166,10 +168,16 @@ export default function OnboardingScreen() {
     } else {
       void skipEntireTour();
     }
-  }, [page, navigation, skipEntireTour]);
+  }, [page, navigation, skipEntireTour, uploadingImage]);
 
   const onScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const photoIdx = steps.indexOf("photo");
+      if (uploadingImage && photoIdx >= 0) {
+        listRef.current?.scrollToIndex({ index: photoIdx, animated: true });
+        setPage(photoIdx);
+        return;
+      }
       const x = e.nativeEvent.contentOffset.x;
       let i = Math.round(x / width);
       i = Math.min(Math.max(i, 0), steps.length - 1);
@@ -181,7 +189,7 @@ export default function OnboardingScreen() {
       }
       setPage(i);
     },
-    [width, steps, offlineReady]
+    [width, steps, offlineReady, uploadingImage]
   );
 
   const onScrollToIndexFailed = useCallback((info: { index: number }) => {
@@ -247,8 +255,11 @@ export default function OnboardingScreen() {
             <View style={[styles.illustrationCircle, { backgroundColor: "#f3f4f6" }]}>
               <Ionicons name="hand-left-outline" size={72} color={colors.textPrimary} />
             </View>
-            <Text style={styles.welcomePrefix}>Welcome,</Text>
-            <Text style={styles.welcomeName}>{firstName}</Text>
+            <View style={styles.welcomeHiRow}>
+              <Text style={styles.welcomeHiLine} numberOfLines={1} ellipsizeMode="tail">
+                Hi, <Text style={styles.welcomeHiName}>{firstName}</Text>
+              </Text>
+            </View>
             {orgName ? <Text style={styles.orgLine}>{orgName}</Text> : null}
             <Text style={styles.body}>
               Take a minute while we set up your account on this device. Swipe through a quick tour, or skip anytime.
@@ -407,7 +418,7 @@ export default function OnboardingScreen() {
 
   const bottomPad = Math.max(insets.bottom, 12);
   const kind = steps[page];
-  const nextDisabled = kind === "offline" && !offlineReady;
+  const nextDisabled = uploadingImage || (kind === "offline" && !offlineReady);
   const isLast = kind === "finale";
   const nextLabel = isLast ? "GET STARTED" : "NEXT";
 
@@ -420,6 +431,7 @@ export default function OnboardingScreen() {
           <HeaderIconCircleButton
             onPress={goHeaderBack}
             hitSlop={12}
+            disabled={uploadingImage}
             accessibilityRole="button"
             accessibilityLabel={page > 0 ? "Previous slide" : "Go back"}
           >
@@ -438,6 +450,7 @@ export default function OnboardingScreen() {
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={onScrollEnd}
           onScrollToIndexFailed={onScrollToIndexFailed}
+          scrollEnabled={!uploadingImage}
           getItemLayout={(_, index) => ({
             length: width,
             offset: width * index,
@@ -461,11 +474,16 @@ export default function OnboardingScreen() {
           <Pressable
             onPress={() => void skipEntireTour()}
             hitSlop={16}
+            disabled={uploadingImage}
             accessibilityRole="button"
             accessibilityLabel="Skip onboarding"
-            style={({ pressed }) => [styles.skipPress, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.skipPress,
+              pressed && !uploadingImage && styles.pressed,
+              uploadingImage && styles.skipDisabled,
+            ]}
           >
-            <Text style={styles.skip}>SKIP</Text>
+            <Text style={[styles.skip, uploadingImage && styles.skipTextDisabled]}>SKIP</Text>
           </Pressable>
           <Pressable
             onPress={goNext}
@@ -512,21 +530,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  welcomePrefix: {
-    fontSize: 20,
-    lineHeight: 26,
+  welcomeHiRow: {
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  welcomeHiLine: {
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: "600",
     color: "#111827",
     textAlign: "center",
+    flexShrink: 1,
   },
-  welcomeName: {
-    fontSize: 26,
-    lineHeight: 32,
+  welcomeHiName: {
     fontWeight: "800",
     color: "#111827",
-    textAlign: "center",
-    marginTop: 4,
-    marginBottom: 4,
   },
   orgLine: {
     fontSize: 16,
@@ -732,6 +754,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.textSecondary,
     letterSpacing: 0.5,
+  },
+  skipDisabled: {
+    opacity: 0.35,
+  },
+  skipTextDisabled: {
+    color: "#9ca3af",
   },
   nextBtn: {
     backgroundColor: "#111827",

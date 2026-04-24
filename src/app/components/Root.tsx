@@ -18,6 +18,12 @@ export default function Root() {
   useEffect(() => {
     if (loading || !user) return;
     const seg = location.pathname === '/' ? '' : location.pathname.replace(/^\//, '').split('/')[0] || '';
+    if (seg === 'superadmin') {
+      if (user.is_super_admin !== true) {
+        navigate('/', { replace: true });
+      }
+      return;
+    }
     if (seg === 'settings') {
       const ok =
         can('system_settings') ||

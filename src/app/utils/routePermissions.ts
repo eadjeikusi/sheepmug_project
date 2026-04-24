@@ -29,7 +29,8 @@ export function permissionsForPath(pathname: string): string[] | null {
     notifications: null,
     settings: null,
     profile: null,
-    superadmin: 'manage_permissions',
+    /** Enforced in Root with `user.is_super_admin`; API uses requireSuperAdmin. */
+    superadmin: null,
   };
 
   if (p in map) {

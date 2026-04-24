@@ -158,6 +158,11 @@ export function notificationHrefFromActionPath(
 
   const ev = /^\/events\/([^/?#]+)$/i.exec(path);
   if (ev?.[1] && isUuid(ev[1])) {
+    const sp = new URLSearchParams(queryStr);
+    const tabRaw = String(sp.get("tab") || "").trim().toLowerCase();
+    if (tabRaw === "attendance") {
+      return { pathname: "/event/[id]", params: { id: ev[1], tab: "attendance" } };
+    }
     return { pathname: "/event/[id]", params: { id: ev[1] } };
   }
 

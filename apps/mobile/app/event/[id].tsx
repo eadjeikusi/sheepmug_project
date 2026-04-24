@@ -37,6 +37,7 @@ import {
 } from "../../lib/eventLocation";
 import { colors, radius, sizes, type } from "../../theme";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
+import { markAttendanceTabVisitedForEvent } from "../../lib/localAttendanceReminders";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
 
@@ -218,7 +219,7 @@ function eventCoverImageFromItem(ev: EventItem | null): string | null {
 export default function EventDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string | string[] }>();
   const { isOnline, queueAttendanceUpdate } = useOfflineSync();
 
   const [tab, setTab] = useState<EventTab>("details");
@@ -241,6 +242,22 @@ export default function EventDetailScreen() {
   const groupTriggerRef = useRef<View>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [eventTypeRows, setEventTypeRows] = useState<EventTypeRow[]>([]);
+
+  const initialTabFromParams = useMemo((): EventTab | null => {
+    const raw = Array.isArray(tabParam) ? tabParam[0] : tabParam;
+    const t = String(raw || "").trim().toLowerCase();
+    if (t === "attendance") return "attendance";
+    return null;
+  }, [tabParam]);
+
+  useEffect(() => {
+    if (initialTabFromParams) setTab(initialTabFromParams);
+  }, [initialTabFromParams]);
+
+  useEffect(() => {
+    if (!id || tab !== "attendance") return;
+    void markAttendanceTabVisitedForEvent(String(id));
+  }, [id, tab]);
 
   useEffect(() => {
     let mounted = true;

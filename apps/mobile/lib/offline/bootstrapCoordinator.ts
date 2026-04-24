@@ -1,3 +1,4 @@
+import { rescheduleLocalAttendanceRemindersFromCache } from "../localAttendanceReminders";
 import { rescheduleLocalTaskRemindersFromCache } from "../localTaskReminders";
 import { getOfflineBootstrapDone, setOfflineBootstrapDone } from "../storage";
 import { runOfflineBootstrap, type OfflineBootstrapProgress } from "./bootstrap";
@@ -63,6 +64,7 @@ export async function ensureOfflineBootstrap(
     const now = new Date().toISOString();
     await markLastSyncAt(now);
     await rescheduleLocalTaskRemindersFromCache();
+    await rescheduleLocalAttendanceRemindersFromCache();
   })().finally(() => {
     inflight.delete(id);
   });

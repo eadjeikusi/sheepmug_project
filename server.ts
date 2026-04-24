@@ -1737,6 +1737,17 @@ async function updateMemberPrimaryPhoto(memberId: string, url: string | null): P
   throw new Error(lastErr?.message || "Could not update member photo (no matching image column)");
 }
 
+/** Matches `requireSuperAdmin` / `permissionSetForProfileRow` super-admin detection for the client payload. */
+function profileIsSuperAdminForAuthPayload(profileData: Record<string, unknown>): boolean {
+  if (profileData.is_super_admin === true) return true;
+  const envEmails = (process.env.SUPERADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const em = String(profileData.email || "").toLowerCase();
+  return em.length > 0 && envEmails.includes(em);
+}
+
 function buildUserAuthPayload(
   profileData: Record<string, unknown>,
   perm: Awaited<ReturnType<typeof permissionSetForProfileRow>>,
@@ -1759,7 +1770,7 @@ function buildUserAuthPayload(
     branch_id: profileData.branch_id,
     role_id: profileData.role_id ?? null,
     is_org_owner: perm.isOrgOwner,
-    is_super_admin: profileData.is_super_admin === true,
+    is_super_admin: profileIsSuperAdminForAuthPayload(profileData),
     permissions: [...perm.permissionSet],
     profile_image: img || null,
     cms_onboarding_completed: cmsDone,

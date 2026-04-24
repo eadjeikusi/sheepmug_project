@@ -23,6 +23,7 @@ import { runOfflineSync } from "../lib/offline/syncEngine";
 import type { OfflineQueueItem } from "../lib/offline/types";
 import { devLog, devWarn } from "../lib/devLog";
 import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
+import { rescheduleLocalAttendanceRemindersFromCache } from "../lib/localAttendanceReminders";
 import { rescheduleLocalTaskRemindersFromCache } from "../lib/localTaskReminders";
 
 type OfflineSyncState = {
@@ -73,6 +74,7 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
 
   const refreshLocalTaskReminders = useCallback(async () => {
     await rescheduleLocalTaskRemindersFromCache();
+    await rescheduleLocalAttendanceRemindersFromCache();
   }, []);
 
   const refreshQueue = useCallback(async () => {
