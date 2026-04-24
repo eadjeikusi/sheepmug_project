@@ -138,35 +138,98 @@ function groupMemberStatusLabel(row: GroupMemberApiRow): string {
   return String(row.status || "active");
 }
 
-type ResolvedMinistryLeader =
+type MinistryLeaderListItem =
   | { kind: "member"; memberId: string; name: string; imageUri: string | null }
-  | { kind: "staff"; name: string; imageUri: string | null; email: string | null };
+  | { kind: "staff"; profileId?: string; name: string; imageUri: string | null; email: string | null };
 
-function resolveMinistryLeader(group: Group | null, memberRows: GroupMemberApiRow[]): ResolvedMinistryLeader | null {
-  if (!group) return null;
+function staffRowFromScopeProfile(m: {
+  first_name?: unknown;
+  last_name?: unknown;
+  avatar_url?: unknown;
+  email?: unknown;
+}): MinistryLeaderListItem | null {
+  const fn = typeof m.first_name === "string" ? m.first_name : "";
+  const ln = typeof m.last_name === "string" ? m.last_name : "";
+  const name = `${fn} ${ln}`.trim();
+  if (!name) return null;
+  const rawAv = typeof m.avatar_url === "string" && m.avatar_url.trim() ? m.avatar_url.trim() : "";
+  const imageUri = rawAv ? normalizeImageUri(rawAv) : null;
+  const em = typeof m.email === "string" && m.email.trim() ? m.email.trim() : null;
+  return { kind: "staff", name: displayMemberWords(name), imageUri, email: em };
+}
+
+/** All leaders: formal `leader_id` first (if any), then other staff with ministry scope; deduped by id. */
+function resolveMinistryLeaders(group: Group | null, memberRows: GroupMemberApiRow[]): MinistryLeaderListItem[] {
+  if (!group) return [];
   const raw = (group as { leader_id?: unknown }).leader_id;
   const lid = typeof raw === "string" && raw.trim() ? raw.trim() : "";
-  if (!lid) return null;
-  const row = memberRows.find((r) => groupMemberDirectoryId(r) === lid);
-  if (row) {
-    const name = groupMemberDisplayName(row);
-    const uri = groupMemberImageUri(row);
-    const imageUri = uri ? normalizeImageUri(uri) : null;
-    return { kind: "member", memberId: lid, name, imageUri };
+  const scopeRaw = (group as { ministry_scope_leader_profiles?: unknown }).ministry_scope_leader_profiles;
+  const scopeList = Array.isArray(scopeRaw) ? scopeRaw : [];
+  const out: MinistryLeaderListItem[] = [];
+  const seen = new Set<string>();
+
+  const pushScopeStaff = (profileId: string, row: (typeof scopeList)[number]) => {
+    if (seen.has(profileId)) return;
+    const s = staffRowFromScopeProfile(
+      row as {
+        first_name?: unknown;
+        last_name?: unknown;
+        avatar_url?: unknown;
+        email?: unknown;
+      },
+    );
+    if (!s) return;
+    seen.add(profileId);
+    out.push({ ...s, kind: "staff", profileId });
+  };
+
+  if (lid) {
+    const prof = (group as { profiles?: unknown }).profiles;
+    if (prof && typeof prof === "object" && prof !== null && !Array.isArray(prof)) {
+      const p = prof as { first_name?: unknown; last_name?: unknown; avatar_url?: unknown; email?: unknown };
+      const fn = typeof p.first_name === "string" ? p.first_name : "";
+      const ln = typeof p.last_name === "string" ? p.last_name : "";
+      const name = `${fn} ${ln}`.trim();
+      if (name) {
+        seen.add(lid);
+        const rawAv = typeof p.avatar_url === "string" && p.avatar_url.trim() ? p.avatar_url.trim() : "";
+        const imageUri = rawAv ? normalizeImageUri(rawAv) : null;
+        const em = typeof p.email === "string" && p.email.trim() ? p.email.trim() : null;
+        out.push({ kind: "staff", profileId: lid, name: displayMemberWords(name), imageUri, email: em });
+      }
+    }
+    if (!seen.has(lid)) {
+      const row = memberRows.find((r) => groupMemberDirectoryId(r) === lid);
+      if (row) {
+        seen.add(lid);
+        const name = groupMemberDisplayName(row);
+        const uri = groupMemberImageUri(row);
+        const imageUri = uri ? normalizeImageUri(uri) : null;
+        out.push({ kind: "member", memberId: lid, name, imageUri });
+      }
+    }
+    if (!seen.has(lid)) {
+      const scopeMatch = scopeList.find(
+        (x) =>
+          x &&
+          typeof x === "object" &&
+          typeof (x as { id?: string }).id === "string" &&
+          (x as { id: string }).id === lid,
+      );
+      if (scopeMatch && typeof scopeMatch === "object") {
+        pushScopeStaff(lid, scopeMatch);
+      }
+    }
   }
-  const prof = (group as { profiles?: unknown }).profiles;
-  if (prof && typeof prof === "object" && prof !== null && !Array.isArray(prof)) {
-    const p = prof as { first_name?: unknown; last_name?: unknown; avatar_url?: unknown; email?: unknown };
-    const fn = typeof p.first_name === "string" ? p.first_name : "";
-    const ln = typeof p.last_name === "string" ? p.last_name : "";
-    const name = `${fn} ${ln}`.trim();
-    if (!name) return null;
-    const rawAv = typeof p.avatar_url === "string" && p.avatar_url.trim() ? p.avatar_url.trim() : "";
-    const imageUri = rawAv ? normalizeImageUri(rawAv) : null;
-    const em = typeof p.email === "string" && p.email.trim() ? p.email.trim() : null;
-    return { kind: "staff", name: displayMemberWords(name), imageUri, email: em };
+
+  for (const item of scopeList) {
+    if (!item || typeof item !== "object") continue;
+    const pid = typeof (item as { id?: string }).id === "string" ? (item as { id: string }).id.trim() : "";
+    if (!pid || seen.has(pid)) continue;
+    pushScopeStaff(pid, item);
   }
-  return null;
+
+  return out;
 }
 
 /** —— Events list (parity with `event` tab) —— */
@@ -299,11 +362,11 @@ export default function MinistryDetailScreen() {
     );
   }, [can, user?.is_org_owner]);
 
+  /** Keep Tasks in the strip (parity with web ministry tabs); panel body gates fetch + actions via `canSeeMinistryTasksTab`. */
   const visibleTabs = useMemo(() => {
-    const base = TAB_ORDER.filter((t) => t !== "tasks" || canSeeMinistryTasksTab);
-    if (!canViewGroupRequests) return base.filter((t) => t !== "requests");
-    return base;
-  }, [canSeeMinistryTasksTab, canViewGroupRequests]);
+    if (!canViewGroupRequests) return TAB_ORDER.filter((t) => t !== "requests");
+    return TAB_ORDER;
+  }, [canViewGroupRequests]);
 
   const [tab, setTab] = useState<MinistryTab>("members");
   const [group, setGroup] = useState<Group | null>(null);
@@ -329,7 +392,8 @@ export default function MinistryDetailScreen() {
     height: number;
   } | null>(null);
   const [linkQrKind, setLinkQrKind] = useState<null | "public" | "join">(null);
-  const [leaderSheetOpen, setLeaderSheetOpen] = useState(false);
+  const [leaderSheetLeader, setLeaderSheetLeader] = useState<MinistryLeaderListItem | null>(null);
+  const [leadersPickerOpen, setLeadersPickerOpen] = useState(false);
   const [createSubgroupOpen, setCreateSubgroupOpen] = useState(false);
   const overflowMenuRef = useRef<View>(null);
 
@@ -434,6 +498,8 @@ export default function MinistryDetailScreen() {
     const t = typeof tabParam === "string" ? tabParam.trim().toLowerCase() : "";
     if (t === "requests" && visibleTabs.includes("requests")) {
       setTab("requests");
+    } else if (t === "tasks" && visibleTabs.includes("tasks")) {
+      setTab("tasks");
     }
   }, [tabParam, visibleTabs]);
 
@@ -462,7 +528,7 @@ export default function MinistryDetailScreen() {
 
   const { publicPageUrl, joinPageUrl } = useMemo(() => getGroupShareUrls(group), [group]);
   const coverUri = useMemo(() => groupCoverUri(group), [group]);
-  const resolvedLeader = useMemo(() => resolveMinistryLeader(group, members), [group, members]);
+  const resolvedLeaders = useMemo(() => resolveMinistryLeaders(group, members), [group, members]);
 
   const linkQrUrl = useMemo(() => {
     if (linkQrKind === "public") return publicPageUrl;
@@ -717,36 +783,49 @@ export default function MinistryDetailScreen() {
           <Text style={styles.subtitle}>
             {group?.description?.trim() ? displayMemberWords(group.description) : "No description"}
           </Text>
-          {resolvedLeader ? (
-            <Pressable
-              onPress={() => setLeaderSheetOpen(true)}
-              style={({ pressed }) => [styles.leaderHeroRow, pressed && styles.leaderHeroRowPressed]}
-              accessibilityRole="button"
-              accessibilityLabel={`Assigned leader ${resolvedLeader.name}. Double tap for details.`}
-            >
-              <Text style={styles.leaderHeroLabel}>Assigned leader</Text>
-              <View style={styles.leaderHeroInner}>
-                {resolvedLeader.imageUri ? (
-                  <Image
-                    source={{ uri: resolvedLeader.imageUri }}
-                    style={styles.leaderHeroAvatar}
-                    accessibilityIgnoresInvertColors
-                  />
-                ) : (
-                  <MemberInitialAvatar
-                    initial={(resolvedLeader.name.trim()[0] || "?").toUpperCase()}
-                    size={40}
-                  />
-                )}
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.leaderHeroName} numberOfLines={2}>
-                    {displayMemberWords(resolvedLeader.name)}
-                  </Text>
-                  <Text style={styles.leaderHeroHint}>Tap for photo and details</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-              </View>
-            </Pressable>
+          {resolvedLeaders.length > 0 ? (
+            <View style={styles.leaderHeroSection}>
+              <Text style={styles.leaderHeroLabel}>
+                {resolvedLeaders.length > 1 ? "Assigned leaders" : "Assigned leader"}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.leaderHeroScrollContent}
+                nestedScrollEnabled
+              >
+                {resolvedLeaders.map((leader, idx) => (
+                  <Pressable
+                    key={leader.kind === "member" ? leader.memberId : leader.profileId ?? `leader-${idx}`}
+                    onPress={() => setLeaderSheetLeader(leader)}
+                    style={({ pressed }) => [styles.leaderHeroTile, pressed && styles.leaderHeroRowPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Leader ${leader.name}. Double tap for details.`}
+                  >
+                    {leader.imageUri ? (
+                      <Image
+                        source={{ uri: leader.imageUri }}
+                        style={styles.leaderHeroAvatar}
+                        accessibilityIgnoresInvertColors
+                      />
+                    ) : (
+                      <MemberInitialAvatar
+                        initial={(leader.name.trim()[0] || "?").toUpperCase()}
+                        size={44}
+                      />
+                    )}
+                    <Text
+                      style={styles.leaderHeroNameTile}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {displayMemberWords(leader.name)}
+                    </Text>
+                    <Text style={styles.leaderHeroHint}>Details</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
           ) : (
             <Text style={styles.mutedSmall}>
               No leader assigned. Use the ··· menu → Group leader after one is set, or assign on the web ministry page.
@@ -1081,18 +1160,24 @@ export default function MinistryDetailScreen() {
                 <Ionicons name="link-outline" size={22} color={colors.textPrimary} />
                 <Text style={styles.headerDropdownLabel}>Join Request Link</Text>
               </Pressable>
-              {resolvedLeader ? (
+              {resolvedLeaders.length > 0 ? (
                 <>
                   <View style={styles.headerDropdownDivider} />
                   <Pressable
                     style={({ pressed }) => [styles.headerDropdownRow, pressed && styles.headerDropdownRowPressed]}
                     onPress={() => {
                       closeHeaderMenu();
-                      setLeaderSheetOpen(true);
+                      if (resolvedLeaders.length === 1) {
+                        setLeaderSheetLeader(resolvedLeaders[0]);
+                      } else {
+                        setLeadersPickerOpen(true);
+                      }
                     }}
                   >
                     <Ionicons name="ribbon-outline" size={22} color={colors.textPrimary} />
-                    <Text style={styles.headerDropdownLabel}>Group leader</Text>
+                    <Text style={styles.headerDropdownLabel}>
+                      {resolvedLeaders.length > 1 ? "Group leaders" : "Group leader"}
+                    </Text>
                   </Pressable>
                 </>
               ) : null}
@@ -1101,44 +1186,92 @@ export default function MinistryDetailScreen() {
         </View>
       </Modal>
 
-      <Modal visible={leaderSheetOpen} transparent animationType="fade" onRequestClose={() => setLeaderSheetOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setLeaderSheetOpen(false)}>
+      <Modal
+        visible={leadersPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLeadersPickerOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setLeadersPickerOpen(false)}>
+          <Pressable style={[styles.modalCard, { maxHeight: 420 }]} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>Group leaders</Text>
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+              {resolvedLeaders.map((leader, idx) => (
+                <Pressable
+                  key={leader.kind === "member" ? leader.memberId : leader.profileId ?? `pick-${idx}`}
+                  style={({ pressed }) => [
+                    styles.headerDropdownRow,
+                    pressed && styles.headerDropdownRowPressed,
+                    { paddingVertical: 12 },
+                  ]}
+                  onPress={() => {
+                    setLeadersPickerOpen(false);
+                    setLeaderSheetLeader(leader);
+                  }}
+                >
+                  <Ionicons name="person-outline" size={22} color={colors.textPrimary} />
+                  <Text
+                    style={[styles.headerDropdownLabel, { flex: 1, flexShrink: 1, minWidth: 0 }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {displayMemberWords(leader.name)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.modalClose} onPress={() => setLeadersPickerOpen(false)}>
+              <Text style={styles.modalCloseText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={leaderSheetLeader != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLeaderSheetLeader(null)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setLeaderSheetLeader(null)}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            {resolvedLeader ? (
+            {leaderSheetLeader ? (
               <>
                 <Text style={styles.modalTitle}>Group leader</Text>
                 <View style={{ alignItems: "center", marginVertical: 16 }}>
-                  {resolvedLeader.imageUri ? (
+                  {leaderSheetLeader.imageUri ? (
                     <Image
-                      source={{ uri: resolvedLeader.imageUri }}
+                      source={{ uri: leaderSheetLeader.imageUri }}
                       style={{ width: 96, height: 96, borderRadius: 48 }}
                       accessibilityIgnoresInvertColors
                     />
                   ) : (
                     <MemberInitialAvatar
-                      initial={(resolvedLeader.name.trim()[0] || "?").toUpperCase()}
+                      initial={(leaderSheetLeader.name.trim()[0] || "?").toUpperCase()}
                       size={96}
                     />
                   )}
                 </View>
-                <Text style={[styles.modalLine, { textAlign: "center", fontWeight: "600" }]}>
-                  {displayMemberWords(resolvedLeader.name)}
+                <Text
+                  style={[styles.modalLine, { textAlign: "center", fontWeight: "600", alignSelf: "stretch" }]}
+                  numberOfLines={2}
+                  ellipsizeMode="tail"
+                >
+                  {displayMemberWords(leaderSheetLeader.name)}
                 </Text>
-                {resolvedLeader.kind === "staff" && resolvedLeader.email ? (
-                  <Text style={[styles.modalLine, { textAlign: "center" }]}>{resolvedLeader.email}</Text>
-                ) : null}
-                {resolvedLeader.kind === "member" ? (
+                {leaderSheetLeader.kind === "member" ? (
                   <Pressable
                     style={[styles.viewMemberBtn, { marginTop: 16 }]}
                     onPress={() => {
-                      setLeaderSheetOpen(false);
-                      router.push({ pathname: "/member/[id]", params: { id: resolvedLeader.memberId } });
+                      const idMember = leaderSheetLeader.memberId;
+                      setLeaderSheetLeader(null);
+                      router.push({ pathname: "/member/[id]", params: { id: idMember } });
                     }}
                   >
                     <Text style={styles.viewMemberBtnText}>View profile</Text>
                   </Pressable>
                 ) : null}
-                <Pressable style={styles.modalClose} onPress={() => setLeaderSheetOpen(false)}>
+                <Pressable style={styles.modalClose} onPress={() => setLeaderSheetLeader(null)}>
                   <Text style={styles.modalCloseText}>Close</Text>
                 </Pressable>
               </>
@@ -1447,36 +1580,58 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     letterSpacing: type.body.letterSpacing,
   },
-  leaderHeroRow: {
+  leaderHeroSection: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-    gap: 6,
+    gap: 8,
+  },
+  leaderHeroScrollContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  leaderHeroTile: {
+    width: 104,
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
   },
   leaderHeroRowPressed: { opacity: 0.92 },
-  leaderHeroLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.textSecondary,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-  },
-  leaderHeroInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
   leaderHeroAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#f1f5f9",
   },
   leaderHeroName: {
     fontSize: type.bodyStrong.size,
     fontWeight: type.bodyStrong.weight,
     color: colors.textPrimary,
+  },
+  leaderHeroNameTile: {
+    fontSize: type.caption.size,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 16,
+    width: "100%",
+    maxWidth: "100%",
+  },
+  leaderHeroLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
   leaderHeroHint: {
     fontSize: type.caption.size,

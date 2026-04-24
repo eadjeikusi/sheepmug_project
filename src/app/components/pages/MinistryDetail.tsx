@@ -28,19 +28,15 @@ import {
 import {
   Trash2,
   ArrowLeft,
-  Users,
   Mail,
   ChevronRight,
   Globe,
   Download,
   Share2,
-  Send,
+  MessageSquareText,
   Calendar,
-  GitBranch,
-  Inbox,
   UserCircle2,
   Phone,
-  Crown,
   Search,
   CheckCircle,
   XCircle,
@@ -54,39 +50,80 @@ import {
 
 type DetailTab = 'overview' | 'members' | 'events' | 'requests' | 'tasks' | 'subgroups' | 'settings';
 
-type ResolvedGroupLeader =
-  | { kind: 'member'; member: Member }
-  | { kind: 'staff'; profile: NonNullable<Group['profiles']> };
+function displayNameFromGroupProfile(prof: Group['profiles'] | null | undefined): string {
+  if (!prof || typeof prof !== 'object') return 'Leader assigned';
+  const raw = `${prof.first_name || ''} ${prof.last_name || ''}`.trim();
+  if (raw) return displayTitleWords(raw);
+  const em = prof.email != null ? String(prof.email).trim() : '';
+  if (em) return em;
+  return 'Leader assigned';
+}
 
-function leaderSummaryFromResolved(resolved: ResolvedGroupLeader | null): {
-  title: string;
-  photo: string | null;
-  initialsSeed: string;
-} {
-  if (!resolved) {
-    return { title: '', photo: null, initialsSeed: 'Leader' };
-  }
-  if (resolved.kind === 'member') {
-    const raw = `${resolved.member.first_name || ''} ${resolved.member.last_name || ''}`.trim();
-    const m = resolved.member;
-    const photo =
-      (m as Member & { memberimage_url?: string | null }).memberimage_url ||
-      m.member_url ||
-      m.avatar_url ||
-      m.profileImage ||
-      null;
-    return {
-      title: raw ? displayTitleWords(raw) : 'Leader',
-      photo,
-      initialsSeed: raw || 'Leader',
-    };
-  }
-  const raw = `${resolved.profile.first_name || ''} ${resolved.profile.last_name || ''}`.trim();
+function photoFromGroupProfile(prof: Group['profiles'] | null | undefined): string | null {
+  const u = prof?.avatar_url;
+  return u && String(u).trim() ? String(u).trim() : null;
+}
+
+type MinistryLeaderDisplayRow = {
+  id: string;
+  profile: NonNullable<Group['profiles']>;
+  /** Set when this row is the group’s formal `leader_id` (ministry record). */
+  isFormal: boolean;
+};
+
+function scopeRowToProfile(m: NonNullable<Group['ministry_scope_leader_profiles']>[number]): Group['profiles'] {
   return {
-    title: raw ? displayTitleWords(raw) : 'Leader',
-    photo: resolved.profile.avatar_url || null,
-    initialsSeed: raw || 'Leader',
+    first_name: m.first_name,
+    last_name: m.last_name,
+    email: m.email ?? null,
+    avatar_url: m.avatar_url ?? null,
   };
+}
+
+/** Formal leader first (if any), then all staff with ministry scope for this group or an ancestor; deduped by profile id. */
+function buildMinistryLeaderDisplayRows(group: Group | null): MinistryLeaderDisplayRow[] {
+  if (!group) return [];
+  const lid =
+    group.leader_id != null && isUuidLeaderId(String(group.leader_id)) ? String(group.leader_id).trim() : '';
+  const scopeList = group.ministry_scope_leader_profiles ?? [];
+  const rows: MinistryLeaderDisplayRow[] = [];
+  const seen = new Set<string>();
+
+  const push = (id: string, profile: Group['profiles'] | null | undefined, isFormal: boolean) => {
+    if (!profile || typeof profile !== 'object') return;
+    if (seen.has(id)) return;
+    if (displayNameFromGroupProfile(profile) === 'Leader assigned') return;
+    seen.add(id);
+    rows.push({ id, profile, isFormal });
+  };
+
+  if (lid) {
+    if (group.profiles && typeof group.profiles === 'object') {
+      push(lid, group.profiles, true);
+    } else {
+      const m = scopeList.find((p) => p.id === lid);
+      if (m) push(lid, scopeRowToProfile(m), true);
+    }
+  }
+
+  for (const m of scopeList) {
+    if (!m?.id) continue;
+    if (seen.has(m.id)) continue;
+    const profile = scopeRowToProfile(m);
+    if (displayNameFromGroupProfile(profile) === 'Leader assigned') continue;
+    seen.add(m.id);
+    rows.push({
+      id: m.id,
+      profile,
+      isFormal: Boolean(lid && m.id === lid),
+    });
+  }
+
+  return rows;
+}
+
+function isUuidLeaderId(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
 const DEFAULT_PUB_PHONE_REGION = 'US';
@@ -491,7 +528,7 @@ const MinistryDetail: React.FC = () => {
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requestActionBusyId, setRequestActionBusyId] = useState<string | null>(null);
   const [shareLinksModalOpen, setShareLinksModalOpen] = useState(false);
-  const [leaderPreviewOpen, setLeaderPreviewOpen] = useState(false);
+  const [leaderPreviewRow, setLeaderPreviewRow] = useState<MinistryLeaderDisplayRow | null>(null);
   const [bulkSmsModalOpen, setBulkSmsModalOpen] = useState(false);
 
   const [isAddMembersModalOpen, setIsAddMembersModalOpen] = useState(false);
@@ -1352,42 +1389,16 @@ const MinistryDetail: React.FC = () => {
   }, [shareLinksModalOpen]);
 
   useEffect(() => {
-    if (!leaderPreviewOpen) return;
+    if (!leaderPreviewRow) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLeaderPreviewOpen(false);
+      if (e.key === 'Escape') setLeaderPreviewRow(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [leaderPreviewOpen]);
+  }, [leaderPreviewRow]);
 
-  const resolvedLeaderForCard = useMemo((): ResolvedGroupLeader | null => {
-    if (!group?.leader_id) return null;
-    const lid = String(group.leader_id);
-    const direct = availableMembers.find((m: { id?: string }) => m.id === lid);
-    if (direct) {
-      return {
-        kind: 'member',
-        member: normalizeMemberForDetailPanel(direct as Record<string, unknown> & { id: string }),
-      };
-    }
-    const gm = dedupedGroupMembers.find((r: { member_id?: string | null }) => String(r.member_id || '') === lid);
-    if (gm) {
-      const m = memberFromGroupRow(gm, availableMembers as Record<string, unknown>[]);
-      if (m) return { kind: 'member', member: m };
-    }
-    const prof = group.profiles;
-    if (prof && typeof prof === 'object') {
-      const fn = String(prof.first_name || '').trim();
-      const ln = String(prof.last_name || '').trim();
-      if (fn || ln) return { kind: 'staff', profile: prof };
-    }
-    return null;
-  }, [group?.leader_id, group?.profiles, availableMembers, dedupedGroupMembers]);
-
-  const leaderHeroSummary = useMemo(
-    () => leaderSummaryFromResolved(resolvedLeaderForCard),
-    [resolvedLeaderForCard],
-  );
+  const ministryLeaderRows = useMemo(() => buildMinistryLeaderDisplayRows(group), [group]);
+  const hasDisplayableLeader = ministryLeaderRows.length > 0;
 
   const eventsCount = groupEvents.length;
 
@@ -1439,146 +1450,61 @@ const MinistryDetail: React.FC = () => {
   ];
 
   const renderLeaderCard = () => {
-    const leaderNameRaw =
-      resolvedLeaderForCard?.kind === 'member'
-        ? `${resolvedLeaderForCard.member.first_name || ''} ${resolvedLeaderForCard.member.last_name || ''}`.trim()
-        : resolvedLeaderForCard?.kind === 'staff'
-          ? `${resolvedLeaderForCard.profile.first_name || ''} ${resolvedLeaderForCard.profile.last_name || ''}`.trim()
-          : '';
-    const leaderNameDisplay = leaderNameRaw ? displayTitleWords(leaderNameRaw) : 'No leader assigned';
-    const leaderPhoto =
-      resolvedLeaderForCard?.kind === 'member'
-        ? (resolvedLeaderForCard.member as Member & { memberimage_url?: string | null }).memberimage_url ||
-          resolvedLeaderForCard.member.member_url ||
-          resolvedLeaderForCard.member.avatar_url ||
-          resolvedLeaderForCard.member.profileImage ||
-          null
-        : resolvedLeaderForCard?.kind === 'staff'
-          ? resolvedLeaderForCard.profile.avatar_url || null
-          : null;
-    const leaderEmail =
-      resolvedLeaderForCard?.kind === 'member'
-        ? resolvedLeaderForCard.member.email
-        : resolvedLeaderForCard?.kind === 'staff'
-          ? resolvedLeaderForCard.profile.email
-          : null;
-    const leaderPhone =
-      resolvedLeaderForCard?.kind === 'member'
-        ? resolvedLeaderForCard.member.phone || resolvedLeaderForCard.member.phone_number
-        : null;
-    const leaderInitials = memberInitials(leaderNameRaw || 'Leader');
-
+    const multi = ministryLeaderRows.length > 1;
     return (
-      <>
-        <div className="mb-10">
-          <p className="text-xs font-semibold text-gray-400 mb-3">Group Leader</p>
-          <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/80 to-blue-50/50 p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-              <button
-                type="button"
-                disabled={!resolvedLeaderForCard}
-                onClick={() => resolvedLeaderForCard && setLeaderPreviewOpen(true)}
-                className={`shrink-0 text-left rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                  resolvedLeaderForCard ? 'cursor-pointer hover:opacity-95' : 'cursor-default'
-                }`}
-              >
-                {leaderPhoto ? (
-                  <img
-                    src={leaderPhoto}
-                    alt=""
-                    className="w-16 h-16 rounded-full object-cover border-4 border-white shadow pointer-events-none"
-                  />
-                ) : (
-                  <div className="w-16 h-16 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-lg font-bold border-4 border-white shadow pointer-events-none">
-                    {leaderInitials}
-                  </div>
-                )}
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                    disabled={!resolvedLeaderForCard}
-                    onClick={() => resolvedLeaderForCard && setLeaderPreviewOpen(true)}
-                    className={`min-w-0 text-left rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                      resolvedLeaderForCard ? 'cursor-pointer hover:opacity-90' : 'cursor-default'
-                    }`}
-                  >
-                    <p className="text-lg font-semibold text-gray-900">{leaderNameDisplay}</p>
-                    <div className="mt-2 flex flex-col gap-1 text-sm text-gray-600">
-                      {(leaderEmail || group.contact_email) && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          {leaderEmail || group.contact_email}
-                        </span>
-                      )}
-                      {leaderPhone && (
-                        <span className="inline-flex items-center gap-1.5">
-                          <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          {leaderPhone}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                  <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-100 text-blue-800 text-xs font-semibold border border-blue-200/80">
-                    <Crown className="w-3.5 h-3.5" />
-                    Leader
-                  </div>
-                </div>
-                <details className="mt-4 max-w-md group">
-                  <summary className="cursor-pointer text-sm font-medium text-blue-800 list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-                    <span className="rounded-lg border border-blue-200 bg-white px-3 py-2 group-open:bg-blue-50/80">
-                      Assign or change leader…
-                    </span>
-                    <span className="text-xs font-normal text-gray-500">(member directory list)</span>
-                  </summary>
-                  <div className="mt-3 pt-3 border-t border-dashed border-blue-100">
-                    <p className="text-xs text-gray-500 mb-2">
-                      This list is everyone in your branch directory so you can pick who leads this ministry. It is not
-                      the list of people assigned to the group.
-                    </p>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Choose leader</label>
-                    <select
-                      value={group.leader_id || ''}
-                      disabled={loadingAvailableMembers}
-                      onChange={async (e) => {
-                        const newLeaderId = e.target.value === '' ? null : e.target.value;
-                        if (!token || !groupId || !group) return;
-                        try {
-                          const response = await fetch(`/api/groups/${groupId}`, {
-                            method: 'PUT',
-                            headers: withBranchScope(selectedBranch?.id, {
-                              'Content-Type': 'application/json',
-                              Authorization: `Bearer ${token}`,
-                            }),
-                            body: JSON.stringify({ leader_id: newLeaderId }),
-                          });
-                          if (!response.ok) {
-                            const errorData = await response.json().catch(() => ({}));
-                            throw new Error(errorData.error || 'Failed to update leader');
-                          }
-                          toast.success('Leader updated');
-                          fetchGroupDetails();
-                        } catch (err: any) {
-                          toast.error(err.message);
-                        }
-                      }}
-                      className="w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    >
-                      <option value="">No leader</option>
-                      {availableMembers.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.first_name} {member.last_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </details>
-              </div>
+      <div className="mb-10">
+        <p className="text-xs font-semibold text-gray-400 mb-3">
+          {multi ? 'Group leaders' : 'Group leader'}
+        </p>
+        {!hasDisplayableLeader ? (
+          <div className="flex flex-col sm:flex-row sm:items-start gap-5">
+            <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-lg font-bold border-4 border-white shadow shrink-0">
+              ?
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-lg font-semibold text-gray-900">No leader assigned</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Assign a leader from your organization profiles when you are ready, or add this ministry under a staff
+                member in Settings → Staff & leaders.
+              </p>
             </div>
           </div>
-        </div>
-      </>
+        ) : (
+          <div className="overflow-x-auto -mx-1 px-1 pb-1 scrollbar-thin">
+                <ul className="flex flex-row gap-3 list-none p-0 m-0 w-max max-w-none">
+                  {ministryLeaderRows.map((row) => {
+                    const displayName = displayNameFromGroupProfile(row.profile);
+                    const photo = photoFromGroupProfile(row.profile);
+                    const ini = memberInitials(displayName);
+                    return (
+                      <li key={row.id} className="shrink-0 w-[9.75rem] flex flex-col items-stretch">
+                        <button
+                          type="button"
+                          onClick={() => setLeaderPreviewRow(row)}
+                          className="flex flex-col items-center text-center gap-2 rounded-xl border border-blue-100/90 bg-white/70 px-3 pt-3 pb-2.5 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-400 hover:bg-white/90 transition-colors w-full"
+                        >
+                          {photo ? (
+                            <img
+                              src={photo}
+                              alt=""
+                              className="w-14 h-14 rounded-full object-cover border-4 border-white shadow pointer-events-none"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-base font-bold border-4 border-white shadow pointer-events-none">
+                              {ini}
+                            </div>
+                          )}
+                          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 w-full">
+                            {displayName}
+                          </p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -1616,31 +1542,6 @@ const MinistryDetail: React.FC = () => {
           ))}
         </div>
       )}
-    </div>
-  );
-
-  const renderQuickStats = () => (
-    <div>
-      <p className="text-xs font-semibold text-gray-400 mb-3">Quick Stats</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Members', value: dedupedGroupMembers.length, icon: Users },
-          { label: 'Events', value: eventsCount, icon: Calendar },
-          { label: 'Subgroups', value: subgroups.length, icon: GitBranch },
-          { label: 'Pending requests', value: pendingRequests.length, icon: Inbox, accent: pendingRequests.length > 0 },
-        ].map(({ label, value, icon: Icon, accent }) => (
-          <div
-            key={label}
-            className={`rounded-2xl border p-4 shadow-sm ${
-              accent ? 'border-amber-100 bg-amber-50/50' : 'border-gray-100 bg-white'
-            }`}
-          >
-            <Icon className={`w-4 h-4 ${accent ? 'text-amber-600' : 'text-blue-500'}`} />
-            <p className={`mt-2 text-2xl font-bold ${accent ? 'text-amber-800' : 'text-gray-900'}`}>{value}</p>
-            <p className="text-xs font-medium text-gray-500 mt-0.5">{label}</p>
-          </div>
-        ))}
-      </div>
     </div>
   );
 
@@ -1711,94 +1612,38 @@ const MinistryDetail: React.FC = () => {
                     {displayTitleWords(group.description)}
                   </p>
                 )}
-                <div className="flex flex-wrap gap-x-6 gap-y-2 mt-5 text-sm text-gray-600">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-blue-500" />
-                    <strong className="text-gray-900">{dedupedGroupMembers.length}</strong> members
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-blue-500" />
-                    <strong className="text-gray-900">{eventsCount}</strong> events
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <GitBranch className="w-4 h-4 text-blue-500" />
-                    <strong className="text-gray-900">{subgroups.length}</strong> subgroups
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 ${
-                      pendingRequests.length > 0 ? 'text-amber-700 font-medium' : ''
-                    }`}
-                  >
-                    <Inbox className="w-4 h-4" />
-                    <strong className={pendingRequests.length > 0 ? 'text-amber-800' : 'text-gray-900'}>
-                      {pendingRequests.length}
-                    </strong>{' '}
-                    pending requests
-                  </span>
-                </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0" role="toolbar" aria-label="Ministry actions">
               <button
                 type="button"
                 onClick={() => setShareLinksModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100"
+                aria-label="QR code and share links"
+                title="QR & share links"
+                className="inline-flex items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100 p-2.5 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
-                <Globe className="w-4 h-4" />
-                QR & share links
+                <Globe className="w-5 h-5 shrink-0" aria-hidden />
               </button>
               <button
                 type="button"
                 onClick={() => setBulkSmsModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+                aria-label="Message all members"
+                title="Message all members"
+                className="inline-flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
               >
-                <Send className="w-4 h-4" />
-                Message all members
+                <MessageSquareText className="w-5 h-5 shrink-0" aria-hidden />
               </button>
               <button
                 type="button"
                 onClick={() => setDeleteMinistryModalOpen(true)}
                 disabled={isAllMembersGroup}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-red-200 bg-white text-red-700 hover:bg-red-50"
+                aria-label={isAllMembersGroup ? 'Delete ministry (not available for this group)' : 'Delete ministry'}
+                title={isAllMembersGroup ? 'Not available for this group' : 'Delete ministry'}
+                className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40 disabled:pointer-events-none p-2.5 outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
               >
-                <Trash2 className="w-4 h-4" />
-                Delete ministry
+                <Trash2 className="w-5 h-5 shrink-0" aria-hidden />
               </button>
             </div>
-          </div>
-
-          <div className="mt-6 pt-6 border-t border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Assigned leader</p>
-            {resolvedLeaderForCard ? (
-              <button
-                type="button"
-                onClick={() => setLeaderPreviewOpen(true)}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/90 px-4 py-3 text-left hover:bg-gray-50 w-full max-w-xl transition-colors"
-              >
-                {leaderHeroSummary.photo ? (
-                  <img
-                    src={leaderHeroSummary.photo}
-                    alt=""
-                    className="w-12 h-12 rounded-full object-cover ring-2 ring-white shadow shrink-0"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-sm font-bold shrink-0">
-                    {memberInitials(leaderHeroSummary.initialsSeed)}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-base font-semibold text-gray-900">{leaderHeroSummary.title}</p>
-                  <p className="text-xs text-blue-600 font-medium mt-0.5">Click for photo and contact details</p>
-                </div>
-                <Crown className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />
-              </button>
-            ) : (
-              <p className="text-sm text-gray-600 max-w-xl">
-                <span className="font-medium text-gray-800">No leader assigned.</span> Open the{' '}
-                <strong>Overview</strong> tab and expand <strong>Assign or change leader</strong> to pick someone from
-                your member directory.
-              </p>
-            )}
           </div>
 
           <div className="mt-8 border-b border-gray-100">
@@ -1832,7 +1677,6 @@ const MinistryDetail: React.FC = () => {
           <div>
             {renderLeaderCard()}
             {renderSubgroupGrid()}
-            {renderQuickStats()}
           </div>
         )}
 
@@ -2511,11 +2355,11 @@ const MinistryDetail: React.FC = () => {
         )}
       </div>
 
-      {leaderPreviewOpen && resolvedLeaderForCard ? (
+      {leaderPreviewRow && group ? (
         <div
           className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50"
           role="presentation"
-          onClick={() => setLeaderPreviewOpen(false)}
+          onClick={() => setLeaderPreviewRow(null)}
         >
           <div
             className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center"
@@ -2525,61 +2369,29 @@ const MinistryDetail: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Group leader</p>
-            {resolvedLeaderForCard.kind === 'member' &&
-            ((resolvedLeaderForCard.member as Member & { memberimage_url?: string | null }).memberimage_url ||
-              resolvedLeaderForCard.member.member_url ||
-              resolvedLeaderForCard.member.avatar_url ||
-              resolvedLeaderForCard.member.profileImage) ? (
+            {photoFromGroupProfile(leaderPreviewRow.profile) ? (
               <img
-                src={
-                  ((resolvedLeaderForCard.member as Member & { memberimage_url?: string | null }).memberimage_url ||
-                    resolvedLeaderForCard.member.member_url ||
-                    resolvedLeaderForCard.member.avatar_url ||
-                    resolvedLeaderForCard.member.profileImage) as string
-                }
-                alt=""
-                className="w-28 h-28 rounded-full object-cover mx-auto border-4 border-gray-100 shadow"
-              />
-            ) : resolvedLeaderForCard.kind === 'staff' && resolvedLeaderForCard.profile.avatar_url ? (
-              <img
-                src={resolvedLeaderForCard.profile.avatar_url}
+                src={photoFromGroupProfile(leaderPreviewRow.profile)!}
                 alt=""
                 className="w-28 h-28 rounded-full object-cover mx-auto border-4 border-gray-100 shadow"
               />
             ) : (
               <div className="w-28 h-28 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-2xl font-bold mx-auto border-4 border-gray-100 shadow">
-                {memberInitials(
-                  resolvedLeaderForCard.kind === 'member'
-                    ? `${resolvedLeaderForCard.member.first_name || ''} ${resolvedLeaderForCard.member.last_name || ''}`
-                    : `${resolvedLeaderForCard.profile.first_name || ''} ${resolvedLeaderForCard.profile.last_name || ''}`,
-                )}
+                {memberInitials(displayNameFromGroupProfile(leaderPreviewRow.profile))}
               </div>
             )}
             <p className="mt-4 text-lg font-semibold text-gray-900">
-              {resolvedLeaderForCard.kind === 'member'
-                ? displayTitleWords(
-                    `${resolvedLeaderForCard.member.first_name || ''} ${resolvedLeaderForCard.member.last_name || ''}`.trim(),
-                  )
-                : displayTitleWords(
-                    `${resolvedLeaderForCard.profile.first_name || ''} ${resolvedLeaderForCard.profile.last_name || ''}`.trim(),
-                  )}
+              {displayNameFromGroupProfile(leaderPreviewRow.profile)}
             </p>
-            {resolvedLeaderForCard.kind === 'member' && resolvedLeaderForCard.member.email ? (
-              <p className="mt-2 text-sm text-gray-600 break-all">{resolvedLeaderForCard.member.email}</p>
-            ) : null}
-            {resolvedLeaderForCard.kind === 'staff' && resolvedLeaderForCard.profile.email ? (
-              <p className="mt-2 text-sm text-gray-600 break-all">{resolvedLeaderForCard.profile.email}</p>
-            ) : null}
-            {resolvedLeaderForCard.kind === 'member' &&
-            (resolvedLeaderForCard.member.phone || resolvedLeaderForCard.member.phone_number) ? (
-              <p className="mt-2 text-sm text-gray-600">
-                {resolvedLeaderForCard.member.phone || resolvedLeaderForCard.member.phone_number}
+            {!leaderPreviewRow.isFormal ? (
+              <p className="mt-3 text-xs text-gray-500 text-left">
+                Listed because they have ministry access in Settings → Staff & leaders.
               </p>
             ) : null}
             <button
               type="button"
               className="mt-6 w-full rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-200"
-              onClick={() => setLeaderPreviewOpen(false)}
+              onClick={() => setLeaderPreviewRow(null)}
             >
               Close
             </button>

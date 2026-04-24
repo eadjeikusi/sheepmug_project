@@ -242,6 +242,14 @@ export interface Group {
     email?: string | null;
     avatar_url?: string | null;
   } | null;
+  /** Staff with ministry access covering this group (Settings → Staff & leaders). Populated on GET /api/groups/:id. */
+  ministry_scope_leader_profiles?: Array<{
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    avatar_url: string | null;
+  }>;
   program_outline_content?: string | null;
   /** Root → parent chain from GET /api/groups/:id (excludes current group) */
   breadcrumb?: { id: string; name: string }[];

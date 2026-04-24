@@ -5314,6 +5314,7 @@ app.get("/api/org/staff", async (req, res) => {
     const ctx = await requireAnyPermission(req, res, [
       "manage_staff",
       "manage_permissions",
+      "manage_groups",
       "view_member_tasks",
       "view_group_tasks",
       "manage_member_tasks",
@@ -5350,10 +5351,23 @@ app.get("/api/org/staff", async (req, res) => {
 
     let { data: rows, error } = await supabaseAdmin
       .from("profiles")
-      .select("id, email, first_name, last_name, branch_id, role_id, is_org_owner, is_active, created_at")
+      .select(
+        "id, email, first_name, last_name, branch_id, role_id, is_org_owner, is_active, created_at, avatar_url",
+      )
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false })
       .limit(500);
+
+    if (error && String(error.message || "").toLowerCase().includes("avatar_url")) {
+      const rAv = await supabaseAdmin
+        .from("profiles")
+        .select("id, email, first_name, last_name, branch_id, role_id, is_org_owner, is_active, created_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      rows = (rAv.data || []).map((p) => ({ ...p, avatar_url: null as string | null }));
+      error = rAv.error;
+    }
 
     if (error && String(error.message || "").toLowerCase().includes("is_org_owner")) {
       const r2 = await supabaseAdmin
@@ -5362,7 +5376,7 @@ app.get("/api/org/staff", async (req, res) => {
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(500);
-      rows = (r2.data || []).map((p) => ({ ...p, is_org_owner: false, is_active: true }));
+      rows = (r2.data || []).map((p) => ({ ...p, is_org_owner: false, is_active: true, avatar_url: null as string | null }));
       error = r2.error;
     }
 
@@ -5373,7 +5387,7 @@ app.get("/api/org/staff", async (req, res) => {
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(500);
-      rows = (r3.data || []).map((p) => ({ ...p, is_active: true }));
+      rows = (r3.data || []).map((p) => ({ ...p, is_active: true, avatar_url: (p as { avatar_url?: string }).avatar_url ?? null }));
       error = r3.error;
     }
 
@@ -14270,11 +14284,71 @@ app.get("/api/groups/:id", async (req, res) => {
       (g.public_website_enabled as boolean | null | undefined) ??
       (g.publicWebsiteEnabled as boolean | null | undefined);
     const publicWebsiteEnabled = rawSite === false ? false : true;
+
+    /** Profiles with Settings → Staff ministry access to this group or an ancestor (same expansion rules as visibility). */
+    let ministryScopeLeaderProfiles: Array<{
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      email: string | null;
+      avatar_url: string | null;
+    }> = [];
+    try {
+      const scopeGroupIds = [id, ...breadcrumb.map((b) => b.id)].filter(
+        (gid, idx, arr) => arr.indexOf(gid) === idx,
+      );
+      if (scopeGroupIds.length > 0) {
+        const { data: scopeLinks } = await supabaseAdmin
+          .from("profile_ministry_scope")
+          .select("profile_id")
+          .in("group_id", scopeGroupIds);
+        const profileIds = [
+          ...new Set(
+            (scopeLinks || [])
+              .map((r) => String((r as { profile_id?: string }).profile_id || "").trim())
+              .filter(isUuidString),
+          ),
+        ];
+        if (profileIds.length > 0) {
+          const { data: profs } = await supabaseAdmin
+            .from("profiles")
+            .select("id, first_name, last_name, email, avatar_url, branch_id, is_org_owner, is_active")
+            .in("id", profileIds)
+            .eq("organization_id", userProfile.organization_id as string);
+          const gBranch = String((group as { branch_id?: string | null }).branch_id || "");
+          const rows = (profs || []).filter((p) => {
+            const row = p as {
+              branch_id?: string | null;
+              is_org_owner?: boolean | null;
+              is_active?: boolean | null;
+            };
+            if (row.is_org_owner === true) return true;
+            if (row.is_active === false) return false;
+            return String(row.branch_id || "") === gBranch;
+          }) as Array<{
+            id: string;
+            first_name: string | null;
+            last_name: string | null;
+            email: string | null;
+            avatar_url: string | null;
+          }>;
+          ministryScopeLeaderProfiles = [...rows].sort((a, b) => {
+            const ln = (a.last_name || "").localeCompare(b.last_name || "");
+            if (ln !== 0) return ln;
+            return (a.first_name || "").localeCompare(b.first_name || "");
+          });
+        }
+      }
+    } catch {
+      /* profile_ministry_scope optional */
+    }
+
     res.status(200).json({
       ...group,
       public_link_slug: (g.public_link_slug as string | null | undefined) ?? (g.publicLinkSlug as string | null) ?? null,
       public_website_enabled: publicWebsiteEnabled,
       breadcrumb,
+      ministry_scope_leader_profiles: ministryScopeLeaderProfiles,
     });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
