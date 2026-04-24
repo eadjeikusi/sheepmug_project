@@ -138,6 +138,37 @@ function groupMemberStatusLabel(row: GroupMemberApiRow): string {
   return String(row.status || "active");
 }
 
+type ResolvedMinistryLeader =
+  | { kind: "member"; memberId: string; name: string; imageUri: string | null }
+  | { kind: "staff"; name: string; imageUri: string | null; email: string | null };
+
+function resolveMinistryLeader(group: Group | null, memberRows: GroupMemberApiRow[]): ResolvedMinistryLeader | null {
+  if (!group) return null;
+  const raw = (group as { leader_id?: unknown }).leader_id;
+  const lid = typeof raw === "string" && raw.trim() ? raw.trim() : "";
+  if (!lid) return null;
+  const row = memberRows.find((r) => groupMemberDirectoryId(r) === lid);
+  if (row) {
+    const name = groupMemberDisplayName(row);
+    const uri = groupMemberImageUri(row);
+    const imageUri = uri ? normalizeImageUri(uri) : null;
+    return { kind: "member", memberId: lid, name, imageUri };
+  }
+  const prof = (group as { profiles?: unknown }).profiles;
+  if (prof && typeof prof === "object" && prof !== null && !Array.isArray(prof)) {
+    const p = prof as { first_name?: unknown; last_name?: unknown; avatar_url?: unknown; email?: unknown };
+    const fn = typeof p.first_name === "string" ? p.first_name : "";
+    const ln = typeof p.last_name === "string" ? p.last_name : "";
+    const name = `${fn} ${ln}`.trim();
+    if (!name) return null;
+    const rawAv = typeof p.avatar_url === "string" && p.avatar_url.trim() ? p.avatar_url.trim() : "";
+    const imageUri = rawAv ? normalizeImageUri(rawAv) : null;
+    const em = typeof p.email === "string" && p.email.trim() ? p.email.trim() : null;
+    return { kind: "staff", name: displayMemberWords(name), imageUri, email: em };
+  }
+  return null;
+}
+
 /** —— Events list (parity with `event` tab) —— */
 type WhenFilter = "all" | "upcoming" | "past";
 const WHEN_OPTIONS: { id: WhenFilter; label: string }[] = [
@@ -298,6 +329,7 @@ export default function MinistryDetailScreen() {
     height: number;
   } | null>(null);
   const [linkQrKind, setLinkQrKind] = useState<null | "public" | "join">(null);
+  const [leaderSheetOpen, setLeaderSheetOpen] = useState(false);
   const [createSubgroupOpen, setCreateSubgroupOpen] = useState(false);
   const overflowMenuRef = useRef<View>(null);
 
@@ -430,6 +462,7 @@ export default function MinistryDetailScreen() {
 
   const { publicPageUrl, joinPageUrl } = useMemo(() => getGroupShareUrls(group), [group]);
   const coverUri = useMemo(() => groupCoverUri(group), [group]);
+  const resolvedLeader = useMemo(() => resolveMinistryLeader(group, members), [group, members]);
 
   const linkQrUrl = useMemo(() => {
     if (linkQrKind === "public") return publicPageUrl;
@@ -1013,9 +1046,70 @@ export default function MinistryDetailScreen() {
                 <Ionicons name="link-outline" size={22} color={colors.textPrimary} />
                 <Text style={styles.headerDropdownLabel}>Join Request Link</Text>
               </Pressable>
+              {resolvedLeader ? (
+                <>
+                  <View style={styles.headerDropdownDivider} />
+                  <Pressable
+                    style={({ pressed }) => [styles.headerDropdownRow, pressed && styles.headerDropdownRowPressed]}
+                    onPress={() => {
+                      closeHeaderMenu();
+                      setLeaderSheetOpen(true);
+                    }}
+                  >
+                    <Ionicons name="ribbon-outline" size={22} color={colors.textPrimary} />
+                    <Text style={styles.headerDropdownLabel}>Group leader</Text>
+                  </Pressable>
+                </>
+              ) : null}
             </View>
           ) : null}
         </View>
+      </Modal>
+
+      <Modal visible={leaderSheetOpen} transparent animationType="fade" onRequestClose={() => setLeaderSheetOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setLeaderSheetOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            {resolvedLeader ? (
+              <>
+                <Text style={styles.modalTitle}>Group leader</Text>
+                <View style={{ alignItems: "center", marginVertical: 16 }}>
+                  {resolvedLeader.imageUri ? (
+                    <Image
+                      source={{ uri: resolvedLeader.imageUri }}
+                      style={{ width: 96, height: 96, borderRadius: 48 }}
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : (
+                    <MemberInitialAvatar
+                      initial={(resolvedLeader.name.trim()[0] || "?").toUpperCase()}
+                      size={96}
+                    />
+                  )}
+                </View>
+                <Text style={[styles.modalLine, { textAlign: "center", fontWeight: "600" }]}>
+                  {displayMemberWords(resolvedLeader.name)}
+                </Text>
+                {resolvedLeader.kind === "staff" && resolvedLeader.email ? (
+                  <Text style={[styles.modalLine, { textAlign: "center" }]}>{resolvedLeader.email}</Text>
+                ) : null}
+                {resolvedLeader.kind === "member" ? (
+                  <Pressable
+                    style={[styles.viewMemberBtn, { marginTop: 16 }]}
+                    onPress={() => {
+                      setLeaderSheetOpen(false);
+                      router.push({ pathname: "/member/[id]", params: { id: resolvedLeader.memberId } });
+                    }}
+                  >
+                    <Text style={styles.viewMemberBtnText}>View profile</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={styles.modalClose} onPress={() => setLeaderSheetOpen(false)}>
+                  <Text style={styles.modalCloseText}>Close</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal

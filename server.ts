@@ -13368,7 +13368,7 @@ app.get("/api/groups", async (req, res) => {
 
     let query = supabaseAdmin
       .from("groups")
-      .select("*, profiles!leader_id(first_name, last_name)") // Disambiguate embed (multiple FKs groups↔profiles)
+      .select("*, profiles!leader_id(first_name, last_name, email, avatar_url)") // Disambiguate embed (multiple FKs groups↔profiles)
       .eq("organization_id", userProfile.organization_id)
       .eq("branch_id", viewerBranch);
 
@@ -14203,7 +14203,7 @@ app.get("/api/groups/:id", async (req, res) => {
     
     const { data: group, error } = await supabaseAdmin
       .from("groups")
-      .select("*, profiles!leader_id(first_name, last_name)") // Disambiguate embed (multiple FKs groups↔profiles)
+      .select("*, profiles!leader_id(first_name, last_name, email, avatar_url)") // Disambiguate embed (multiple FKs groups↔profiles)
       .eq("id", id)
       .eq("organization_id", userProfile.organization_id)
       .single();
@@ -19416,7 +19416,7 @@ app.get("/api/public/groups/:slug", async (req, res) => {
 
     let query = supabaseAdmin
       .from("groups")
-      .select("*, profiles!leader_id(first_name, last_name)")
+      .select("*, profiles!leader_id(first_name, last_name, email, avatar_url)")
       .eq("public_link_slug", slug)
       .or(publicOnFilter)
       .eq("is_deleted", false);
@@ -19429,7 +19429,7 @@ app.get("/api/public/groups/:slug", async (req, res) => {
       if (msg.includes("is_deleted") || code === "42703") {
         ({ data: group, error } = await supabaseAdmin
           .from("groups")
-          .select("*, profiles!leader_id(first_name, last_name)")
+          .select("*, profiles!leader_id(first_name, last_name, email, avatar_url)")
           .eq("public_link_slug", slug)
           .or(publicOnFilter)
           .maybeSingle());

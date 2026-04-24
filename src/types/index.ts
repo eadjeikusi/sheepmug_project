@@ -236,7 +236,12 @@ export interface Group {
     image_url: string | null;
     initials: string;
   }>;
-  profiles?: { first_name: string | null; last_name: string | null } | null;
+  profiles?: {
+    first_name: string | null;
+    last_name: string | null;
+    email?: string | null;
+    avatar_url?: string | null;
+  } | null;
   program_outline_content?: string | null;
   /** Root → parent chain from GET /api/groups/:id (excludes current group) */
   breadcrumb?: { id: string; name: string }[];
