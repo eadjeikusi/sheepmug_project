@@ -717,6 +717,41 @@ export default function MinistryDetailScreen() {
           <Text style={styles.subtitle}>
             {group?.description?.trim() ? displayMemberWords(group.description) : "No description"}
           </Text>
+          {resolvedLeader ? (
+            <Pressable
+              onPress={() => setLeaderSheetOpen(true)}
+              style={({ pressed }) => [styles.leaderHeroRow, pressed && styles.leaderHeroRowPressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`Assigned leader ${resolvedLeader.name}. Double tap for details.`}
+            >
+              <Text style={styles.leaderHeroLabel}>Assigned leader</Text>
+              <View style={styles.leaderHeroInner}>
+                {resolvedLeader.imageUri ? (
+                  <Image
+                    source={{ uri: resolvedLeader.imageUri }}
+                    style={styles.leaderHeroAvatar}
+                    accessibilityIgnoresInvertColors
+                  />
+                ) : (
+                  <MemberInitialAvatar
+                    initial={(resolvedLeader.name.trim()[0] || "?").toUpperCase()}
+                    size={40}
+                  />
+                )}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.leaderHeroName} numberOfLines={2}>
+                    {displayMemberWords(resolvedLeader.name)}
+                  </Text>
+                  <Text style={styles.leaderHeroHint}>Tap for photo and details</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+              </View>
+            </Pressable>
+          ) : (
+            <Text style={styles.mutedSmall}>
+              No leader assigned. Use the ··· menu → Group leader after one is set, or assign on the web ministry page.
+            </Text>
+          )}
         </View>
 
         <ScrollView
@@ -1411,6 +1446,43 @@ const styles = StyleSheet.create({
     lineHeight: type.body.lineHeight,
     color: colors.textSecondary,
     letterSpacing: type.body.letterSpacing,
+  },
+  leaderHeroRow: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 6,
+  },
+  leaderHeroRowPressed: { opacity: 0.92 },
+  leaderHeroLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  leaderHeroInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  leaderHeroAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#f1f5f9",
+  },
+  leaderHeroName: {
+    fontSize: type.bodyStrong.size,
+    fontWeight: type.bodyStrong.weight,
+    color: colors.textPrimary,
+  },
+  leaderHeroHint: {
+    fontSize: type.caption.size,
+    color: colors.accent,
+    marginTop: 2,
+    fontWeight: "600",
   },
   segmentScroll: { paddingVertical: 4, gap: 0 },
   segmentWrap: {
