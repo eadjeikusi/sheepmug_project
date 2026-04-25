@@ -488,8 +488,8 @@ export default function EventDetail() {
     'group relative rounded-none border-0 border-b-2 border-transparent bg-transparent px-0 py-3 text-sm font-medium text-gray-500 shadow-none transition-colors hover:text-gray-800 data-[state=active]:border-blue-600 data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:shadow-none';
 
   return (
-    <div className="min-h-0 bg-gray-50 pb-16">
-      <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+    <div className="min-h-0 w-full min-w-0 bg-gray-50 pb-16">
+      <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 md:px-8 md:py-8">
         <div className="mb-8 flex flex-col gap-4 border-b border-gray-100 pb-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
             <button

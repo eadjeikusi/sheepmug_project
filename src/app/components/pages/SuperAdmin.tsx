@@ -222,8 +222,8 @@ export default function SuperAdmin() {
   ];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="mx-auto w-full min-w-0 max-w-7xl p-4 sm:p-6 md:p-8">
+      <div className="flex min-w-0 items-center gap-3 mb-6">
         <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-600 rounded-xl flex items-center justify-center">
           <Shield className="w-6 h-6 text-white" />
         </div>
@@ -233,13 +233,14 @@ export default function SuperAdmin() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-8 border-b border-gray-200 pb-2">
+      <div className="mb-8 max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-gray-200 pb-2">
+        <div className="flex min-w-min flex-nowrap gap-2 sm:flex-wrap">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               tab === id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
@@ -247,6 +248,7 @@ export default function SuperAdmin() {
             {label}
           </button>
         ))}
+        </div>
       </div>
 
       {tab === 'overview' && statsLoading && (
@@ -327,13 +329,13 @@ export default function SuperAdmin() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && void loadOrgs()}
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm"
+                className="min-h-11 w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-base sm:text-sm"
               />
             </div>
             <select
               value={tierFilter}
               onChange={(e) => setTierFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
+              className="min-h-11 w-full border border-gray-200 bg-white px-3 py-2 text-sm rounded-xl sm:w-auto"
             >
               <option value="all">All tiers</option>
               <option value="free">free</option>
@@ -344,7 +346,7 @@ export default function SuperAdmin() {
             <button
               type="button"
               onClick={() => void loadOrgs()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm"
+              className="min-h-11 w-full bg-blue-600 px-4 py-2 text-sm text-white rounded-xl sm:w-auto"
             >
               Search
             </button>
@@ -355,8 +357,8 @@ export default function SuperAdmin() {
               <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
                     <th className="text-left px-4 py-3 font-semibold">Organization</th>
@@ -426,7 +428,7 @@ export default function SuperAdmin() {
       )}
 
       {tab === 'branches' && (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+        <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
           <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -458,9 +460,9 @@ export default function SuperAdmin() {
             placeholder="Search email or name…"
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
-            className="w-full max-w-md px-3 py-2 border border-gray-200 rounded-xl text-sm"
+            className="min-h-11 w-full max-w-md border border-gray-200 px-3 py-2 text-base sm:text-sm rounded-xl"
           />
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+          <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
             <table className="w-full text-sm min-w-[720px]">
               <thead className="bg-gray-50 border-b">
                 <tr>

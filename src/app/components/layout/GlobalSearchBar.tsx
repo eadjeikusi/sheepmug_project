@@ -160,7 +160,7 @@ export default function GlobalSearchBar() {
   if (!canSearch) return null;
 
   return (
-    <div className="flex-1 max-w-2xl mx-3 relative" ref={wrapRef}>
+    <div className="relative w-full min-w-0 max-w-2xl flex-1 sm:mx-3" ref={wrapRef}>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         <input
@@ -184,7 +184,7 @@ export default function GlobalSearchBar() {
           placeholder="Search members, ministries, events, and families…"
           autoComplete="off"
           spellCheck={false}
-          className="w-full pl-10 pr-9 py-2 bg-white border border-gray-200 rounded-md hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all text-[13px] text-gray-900 placeholder:text-gray-500"
+          className="min-h-11 w-full rounded-md border border-gray-200 bg-white py-2.5 pl-10 pr-9 text-base text-gray-900 transition-all placeholder:text-gray-500 hover:border-blue-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:min-h-0 sm:py-2 sm:text-[13px]"
           aria-label="Search members, ministries, events, and families"
           aria-expanded={showPanel}
           aria-controls="global-search-results"

@@ -124,7 +124,7 @@ const JoinGroupPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100/90 p-4">
+      <div className="flex min-h-dvh w-full min-w-0 items-center justify-center bg-slate-100/90 p-4">
         <p className="text-sm text-slate-600">Loading…</p>
       </div>
     );
@@ -140,18 +140,18 @@ const JoinGroupPage: React.FC = () => {
 
   if (!groupData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100/90 p-4">
+      <div className="flex min-h-dvh w-full min-w-0 items-center justify-center bg-slate-100/90 p-4">
         <p className="text-sm text-slate-600">This join link is not valid.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100/90 p-4">
+    <div className="flex min-h-dvh w-full min-w-0 items-center justify-center bg-slate-100/90 p-4">
       <div
         role="dialog"
         aria-labelledby="join-dialog-title"
-        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="w-full min-w-0 max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-lg"
       >
         <h1 id="join-dialog-title" className="text-lg font-semibold text-slate-900">
           Join {groupData.name}
@@ -174,7 +174,7 @@ const JoinGroupPage: React.FC = () => {
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               placeholder="First name"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
               required
             />
           </div>
@@ -189,7 +189,7 @@ const JoinGroupPage: React.FC = () => {
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               placeholder="Last name"
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
               required
             />
           </div>
@@ -210,7 +210,7 @@ const JoinGroupPage: React.FC = () => {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="min-h-11 w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {isSubmitting ? 'Sending…' : 'Request to join'}
           </button>

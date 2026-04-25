@@ -179,9 +179,9 @@ const Ministries: React.FC = () => {
 
   return (
     <>
-      <div className="flex flex-col flex-1 p-6">
-        <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Ministries Management</h1>
+      <div className="flex min-w-0 w-full flex-1 flex-col p-4 sm:p-6">
+        <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Ministries Management</h1>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 mr-2">
               <label htmlFor="ministry-type-filter" className="text-sm text-gray-600 whitespace-nowrap">

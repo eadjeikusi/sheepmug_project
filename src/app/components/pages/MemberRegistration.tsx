@@ -182,8 +182,8 @@ export default function MemberRegistration() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 py-12 px-4">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-dvh w-full min-w-0 bg-gradient-to-br from-blue-50 via-white to-blue-50 py-8 px-4 sm:py-12">
+      <div className="mx-auto w-full min-w-0 max-w-3xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

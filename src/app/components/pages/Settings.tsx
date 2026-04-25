@@ -1700,13 +1700,13 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-b border-gray-200">
+        <div className="flex max-w-full flex-nowrap items-center gap-x-0.5 gap-y-1 overflow-x-auto overflow-y-hidden scroll-smooth border-b border-gray-200 overscroll-x-contain sm:flex-wrap sm:overflow-x-visible sm:gap-x-1">
           <button
             type="button"
             onClick={() => navigateSettings({ main: 'general' })}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
               mainTab === 'general'
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1718,7 +1718,7 @@ export default function Settings() {
           <button
             type="button"
             onClick={() => navigateSettings({ main: 'notifications' })}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
               mainTab === 'notifications'
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1730,7 +1730,7 @@ export default function Settings() {
           <button
             type="button"
             onClick={() => navigateSettings({ main: 'roles' })}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+            className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
               mainTab === 'roles'
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1743,7 +1743,7 @@ export default function Settings() {
 
         {mainTab === 'general' && (
           <div
-            className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 -mb-1"
+            className="flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden scroll-smooth border-b border-gray-100 pb-3 -mb-1 overscroll-x-contain sm:flex-wrap sm:overflow-x-visible"
             role="tablist"
             aria-label="General settings sections"
           >
@@ -1758,7 +1758,7 @@ export default function Settings() {
                 role="tab"
                 aria-selected={generalSub === t.id}
                 onClick={() => navigateSettings({ main: 'general', generalSub: t.id })}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                className={`shrink-0 rounded-full border px-3 py-2 text-xs font-medium transition-all min-[480px]:py-1.5 ${
                   generalSub === t.id
                     ? 'border-gray-900 bg-gray-900 text-white'
                     : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
@@ -1772,7 +1772,7 @@ export default function Settings() {
 
         {mainTab === 'roles' && (
           <div
-            className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 -mb-1"
+            className="flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden scroll-smooth border-b border-gray-100 pb-3 -mb-1 overscroll-x-contain sm:flex-wrap sm:overflow-x-visible"
             role="tablist"
             aria-label="Roles and permissions"
           >
@@ -1781,7 +1781,7 @@ export default function Settings() {
               role="tab"
               aria-selected={rolesSub === 'staff'}
               onClick={() => navigateSettings({ main: 'roles', rolesSub: 'staff' })}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all inline-flex items-center gap-1.5 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium transition-all min-[480px]:py-1.5 ${
                 rolesSub === 'staff'
                   ? 'border-gray-900 bg-gray-900 text-white'
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
@@ -1795,7 +1795,7 @@ export default function Settings() {
               role="tab"
               aria-selected={rolesSub === 'permissions'}
               onClick={() => navigateSettings({ main: 'roles', rolesSub: 'permissions' })}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all inline-flex items-center gap-1.5 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium transition-all min-[480px]:py-1.5 ${
                 rolesSub === 'permissions'
                   ? 'border-gray-900 bg-gray-900 text-white'
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
@@ -2779,7 +2779,7 @@ export default function Settings() {
                         <strong>Staff / Leaders</strong>.
                       </p>
 
-                      <div className="max-h-[min(70vh,720px)] overflow-y-auto pr-1">
+                      <div className="max-h-[min(75dvh,720px)] overflow-y-auto pr-1 sm:max-h-[min(70vh,720px)]">
                         <PermissionRoleMatrix
                           permDraft={permDraft}
                           impliedByOther={impliedByOther}

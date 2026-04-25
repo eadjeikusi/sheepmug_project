@@ -1878,18 +1878,18 @@ export default function Members() {
         onChange={(e) => void handleImportFilePicked(e.target.files?.[0] ?? null)}
       />
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="font-semibold text-gray-900 text-[20px]">Members & Families</h1>
           <p className="mt-2 text-gray-500 text-[12px]">Manage your church members and family groups</p>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={() => setFamiliesPickerOpen(true)}
             title="Families — browse by household"
             aria-label="Open families list"
-            className="inline-flex items-center justify-center w-9 h-9 text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all shadow-sm"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all shadow-sm"
           >
             <UsersRound className="w-4 h-4" />
           </button>
@@ -1908,7 +1908,7 @@ export default function Members() {
               }}
               title="Member Link"
               aria-label="Member Link"
-              className="inline-flex items-center justify-center w-9 h-9 text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all shadow-sm"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all shadow-sm"
             >
               <QrCode className="w-4 h-4" />
             </button>
@@ -1918,7 +1918,7 @@ export default function Members() {
               onClick={handleImport}
               title="Import"
               aria-label="Import"
-              className="inline-flex items-center justify-center w-9 h-9 text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
             >
               <Upload className="w-4 h-4" />
             </button>
@@ -1927,7 +1927,7 @@ export default function Members() {
             onClick={() => setIsExportModalOpen(true)}
             title="Export"
             aria-label="Export"
-            className="inline-flex items-center justify-center w-9 h-9 text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
           >
             <Download className="w-4 h-4" />
           </button>
@@ -1935,7 +1935,7 @@ export default function Members() {
             onClick={() => navigate('/important-dates')}
             title="All Important Dates"
             aria-label="All Important Dates"
-            className="inline-flex items-center justify-center w-9 h-9 text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-gray-700 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all shadow-sm"
           >
             <CalendarDays className="w-4 h-4" />
           </button>
@@ -1945,7 +1945,7 @@ export default function Members() {
             }}
             title={viewType === 'members' ? 'Add Member' : 'Add Family'}
             aria-label={viewType === 'members' ? 'Add Member' : 'Add Family'}
-            className="inline-flex items-center justify-center w-9 h-9 text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-all shadow-sm"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-all shadow-sm"
           >
             <Plus className="w-4 h-4" />
           </button>
@@ -1953,14 +1953,14 @@ export default function Members() {
       </div>
 
       {/* View Toggle and Search */}
-      <div className="flex items-center justify-between gap-4 mt-6 mb-6">
-        <div className="flex items-center space-x-3">
+      <div className="mt-6 mb-6 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex max-w-full gap-2 overflow-x-auto overflow-y-hidden scroll-smooth overscroll-x-contain pb-1 lg:flex-wrap lg:overflow-x-visible">
           <button
             onClick={() => {
               setViewType('members');
               setShowDeletedMembers(false);
             }}
-            className={`flex items-center px-6 py-3 rounded-xl font-medium transition-all ${ viewType === 'members' && !showDeletedMembers ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
+            className={`flex shrink-0 items-center px-4 py-3 sm:px-6 rounded-xl font-medium transition-all ${ viewType === 'members' && !showDeletedMembers ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
           >
             <UsersIcon className="w-4 h-4 mr-2" />
             Members
@@ -1974,7 +1974,7 @@ export default function Members() {
           </button>
           <button
             onClick={() => setViewType('families')}
-            className={`flex items-center px-6 py-3 rounded-xl font-medium transition-all ${ viewType === 'families' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
+            className={`flex shrink-0 items-center px-4 py-3 sm:px-6 rounded-xl font-medium transition-all ${ viewType === 'families' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
           >
             <Home className="w-4 h-4 mr-2" />
             Family Groups
@@ -1988,7 +1988,7 @@ export default function Members() {
           </button>
           <button
             onClick={() => setViewType('requests')}
-            className={`flex items-center px-6 py-3 rounded-xl font-medium transition-all ${ viewType === 'requests' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
+            className={`flex shrink-0 items-center px-4 py-3 sm:px-6 rounded-xl font-medium transition-all ${ viewType === 'requests' ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
           >
             <Clock className="w-4 h-4 mr-2" />
             Requests
@@ -2006,7 +2006,7 @@ export default function Members() {
               setViewType('members'); // Keep viewType as 'members' for consistent rendering of the table structure
               setShowDeletedMembers(true);
             }}
-            className={`flex items-center px-6 py-3 rounded-xl font-medium transition-all ${ showDeletedMembers && viewType === 'members' ? 'bg-red-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
+            className={`flex shrink-0 items-center px-4 py-3 sm:px-6 rounded-xl font-medium transition-all ${ showDeletedMembers && viewType === 'members' ? 'bg-red-600 text-white shadow-sm' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50' } text-[14px]`}
           >
             <Trash2 className="w-4 h-4 mr-2" />
             Deleted ({deletedMembersTotalCount ?? members.filter(m => m.is_deleted).length})
@@ -2014,18 +2014,18 @@ export default function Members() {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-3 min-w-0 flex-1 justify-end">
+        <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-1 sm:flex-row sm:items-center sm:justify-end">
           {viewType === 'members' && (
             <button
               type="button"
               onClick={() => setMembersFilterPanelOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-[14px] text-gray-900 hover:bg-gray-50 shadow-sm"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-[14px] text-gray-900 hover:bg-gray-50 shadow-sm sm:w-auto"
             >
               <Filter className="w-4 h-4 text-gray-500" />
               Filters
             </button>
           )}
-          <div className="relative max-w-md w-full sm:w-auto sm:min-w-[200px]">
+          <div className="relative w-full min-w-0 max-w-md sm:min-w-[200px]">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
@@ -2038,7 +2038,7 @@ export default function Members() {
                     ? 'Search requests...'
                     : 'Search families...'
               }
-              className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+              className="min-h-11 w-full pl-12 pr-4 py-3 text-base sm:text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
             />
           </div>
         </div>
@@ -2060,31 +2060,31 @@ export default function Members() {
                 exit={{ opacity: 0, y: -20 }}
                 className="bg-blue-50 border border-blue-200 rounded-2xl p-4"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-semibold">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center space-x-4 min-w-0">
+                    <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-semibold shrink-0">
                       {selectedMembers.size}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-gray-900">
                         {selectedMembers.size} {selectedMembers.size === 1 ? 'Member' : 'Members'} Selected
                       </p>
                       <p className="text-sm text-gray-600">Choose an action below</p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-3">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <button
                       onClick={() => {
                         setIsAssignToGroupModalOpen(true);
                       }}
-                      className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+                      className="flex min-h-11 items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
                     >
                       <GitFork className="w-4 h-4 mr-2" />
                       Assign to Group
                     </button>
                     <button
                       onClick={() => setIsAssignToFamilyModalOpen(true)}
-                      className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+                      className="flex min-h-11 items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
                     >
                       <Home className="w-4 h-4 mr-2" />
                       Assign to Family
@@ -2100,7 +2100,7 @@ export default function Members() {
                           }
                           openAssignTaskModal(ordered);
                         }}
-                        className="flex items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
+                        className="flex min-h-11 items-center px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm font-medium"
                       >
                         <ListTodo className="w-4 h-4 mr-2" />
                         Assign task
@@ -2108,7 +2108,7 @@ export default function Members() {
                     )}
                     <button
                       onClick={clearSelection}
-                      className="p-2.5 text-gray-600 hover:text-gray-800 hover:bg-white rounded-xl transition-all"
+                      className="min-h-11 min-w-11 p-2.5 text-gray-600 hover:text-gray-800 hover:bg-white rounded-xl transition-all"
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -2168,8 +2168,8 @@ export default function Members() {
           </AnimatePresence>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
+            <table className="w-full border-collapse min-w-[720px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-6 py-4 w-16">

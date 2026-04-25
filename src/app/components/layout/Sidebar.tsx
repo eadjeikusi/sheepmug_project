@@ -65,9 +65,12 @@ const adminItems: { id: string; icon: typeof Shield; label: string; permission: 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  /** When false, sidebar is off-canvas (mobile / small tablet). */
+  mobileOpen: boolean;
+  onMobileClose: () => void;
 }
 
-export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
+export default function Sidebar({ activeTab, setActiveTab, mobileOpen, onMobileClose }: SidebarProps) {
   const { user } = useAuth();
   const { can } = usePermissions();
   const { count: openTaskCount } = useMyOpenTaskCount();
@@ -91,8 +94,16 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     visibleShortcuts.length === 0 &&
     visibleAdmin.length === 0;
 
+  const go = (id: string) => {
+    setActiveTab(id);
+    onMobileClose();
+  };
+
   return (
-    <aside className="w-64 bg-[#fbfcfb] border-r border-gray-200/70 flex flex-col">
+    <aside
+      className={`flex w-64 min-w-0 max-w-[min(16rem,88vw)] flex-col border-r border-gray-200/70 bg-[#fbfcfb] max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:top-0 max-lg:z-50 max-lg:transform max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-lg:shadow-2xl lg:static ${mobileOpen ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'}`}
+      aria-label="Main navigation"
+    >
       <div className="h-16 flex items-center px-4 border-b border-gray-200/70">
         <img
           src="/sheepmug-logo.png"
@@ -109,7 +120,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
       <nav className="flex-1 overflow-y-auto px-2.5 py-3">
         {navCompletelyEmpty && (
-          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
             Your account has no role permissions yet. Ask an admin to assign a role, or sign out and sign back in to refresh your access.
           </div>
         )}
@@ -123,8 +134,9 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             return (
               <li key={item.id}>
                 <button
-                  onClick={() => setActiveTab(item.id)}
-                  className={`group flex items-center w-full px-2.5 py-2 rounded-md transition-all ${
+                  type="button"
+                  onClick={() => go(item.id)}
+                  className={`group flex min-h-11 w-full items-center rounded-md px-2.5 py-2.5 transition-all ${
                     isActive
                       ? 'text-blue-900 bg-blue-50 border border-blue-100 font-medium shadow-sm'
                       : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'
@@ -158,14 +170,15 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`group flex items-center w-full px-2.5 py-2 rounded-md transition-all ${
+                type="button"
+                onClick={() => go(item.id)}
+                className={`group flex min-h-11 w-full items-center rounded-md px-2.5 py-2.5 transition-all ${
                   isActive
                     ? 'text-blue-900 bg-blue-50 border border-blue-100 font-medium shadow-sm'
                     : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'
                 }`}
               >
-                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-all ${
+                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-all ${
                   isActive ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-700'
                 }`}>
                   <Icon className="w-4 h-4" />
@@ -186,8 +199,9 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`group flex items-center w-full px-2.5 py-2 rounded-md transition-all ${
+              type="button"
+              onClick={() => go(item.id)}
+              className={`group flex min-h-11 w-full items-center rounded-md px-2.5 py-2.5 transition-all ${
                 isActive
                   ? 'text-blue-900 bg-blue-50 border border-blue-100 font-medium shadow-sm'
                   : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'

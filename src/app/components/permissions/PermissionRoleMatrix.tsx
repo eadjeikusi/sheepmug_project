@@ -96,7 +96,7 @@ function MatrixCell({
           type="checkbox"
           disabled
           aria-hidden
-          className="h-4 w-4 cursor-not-allowed rounded border-gray-200 opacity-35 grayscale"
+          className="h-5 w-5 cursor-not-allowed rounded border-gray-200 opacity-35 grayscale sm:h-4 sm:w-4"
         />
       </td>
     );
@@ -122,8 +122,8 @@ function MatrixCell({
         aria-label={ariaLabel}
         className={
           cellDisabled && impliedOnly
-            ? 'h-4 w-4 cursor-not-allowed rounded border-gray-300 text-blue-600 opacity-90'
-            : 'h-4 w-4 rounded border-gray-300'
+            ? 'h-5 w-5 cursor-not-allowed rounded border-gray-300 text-blue-600 opacity-90 sm:h-4 sm:w-4'
+            : 'h-5 w-5 rounded border-gray-300 sm:h-4 sm:w-4'
         }
       />
     </td>
@@ -180,7 +180,10 @@ export function PermissionRoleMatrix({ permDraft, impliedByOther, onToggle, onAp
               </div>
 
               {isOpen ? (
-                <div id={`perm-matrix-${section.id}`} className="overflow-x-auto">
+                <div
+                  id={`perm-matrix-${section.id}`}
+                  className="touch-pan-x overflow-x-auto overscroll-x-contain"
+                >
                   <table className="w-full min-w-[640px] text-sm">
                     <thead>
                       <tr>

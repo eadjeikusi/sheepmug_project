@@ -432,7 +432,7 @@ export default function Events() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search title, location, ministry…"
-                className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-sm text-gray-900 placeholder:text-gray-500 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="min-h-11 w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-3 text-base text-gray-900 placeholder:text-gray-500 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 sm:text-sm"
               />
             </label>
             <div className="flex flex-wrap items-center gap-2">
@@ -497,8 +497,8 @@ export default function Events() {
                 : 'No events match your filters.'}
             </div>
           ) : (
-            <div className="overflow-x-hidden rounded-xl border border-gray-100">
-              <table className="w-full table-fixed">
+            <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-xl border border-gray-100">
+              <table className="w-full min-w-[640px] table-fixed">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/90">
                     <th className="w-[26%] min-w-0 px-3 py-3 text-left text-xs font-semibold text-gray-500 md:px-4 md:py-4">

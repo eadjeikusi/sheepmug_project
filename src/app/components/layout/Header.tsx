@@ -1,4 +1,4 @@
-import { Bell, MessageSquare, X, LogOut, User } from 'lucide-react';
+import { Bell, MessageSquare, X, LogOut, User, Menu } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,9 +13,10 @@ import { navigateFromNotificationActionPath } from '@/utils/notificationNavigate
 
 interface HeaderProps {
   setActiveTab?: (tab: string) => void;
+  onOpenMobileNav?: () => void;
 }
 
-export default function Header({ setActiveTab }: HeaderProps) {
+export default function Header({ setActiveTab, onOpenMobileNav }: HeaderProps) {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -67,10 +68,20 @@ export default function Header({ setActiveTab }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 bg-[#fbfcfb] border-b border-gray-200/70 flex items-center gap-4 px-4">
-      <div className="flex-1 min-w-0 flex justify-center">
+    <header className="flex min-h-14 items-center gap-2 border-b border-gray-200/70 bg-[#fbfcfb] px-3 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] sm:min-h-16 sm:gap-3 sm:px-4 sm:py-0">
+      {onOpenMobileNav ? (
+        <button
+          type="button"
+          onClick={onOpenMobileNav}
+          className="shrink-0 rounded-lg p-2.5 text-gray-700 hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 lg:hidden"
+          aria-label="Open menu"
+        >
+          <Menu className="h-6 w-6" strokeWidth={2} />
+        </button>
+      ) : null}
+      <div className="flex min-w-0 flex-1 justify-center sm:pl-0">
         {can('view_members') || can('view_events') || can('view_groups') || can('view_families') ? (
-          <div className="w-full max-w-2xl">
+          <div className="w-full max-w-2xl min-w-0">
             <GlobalSearchBar />
           </div>
         ) : (
@@ -79,16 +90,17 @@ export default function Header({ setActiveTab }: HeaderProps) {
       </div>
 
       {/* Right Section */}
-      <div className="flex items-center space-x-2 flex-shrink-0">
+      <div className="flex flex-shrink-0 items-center gap-0.5 sm:gap-2 sm:space-x-0">
         {/* Notifications */}
         <div className="relative" ref={dropdownRef}>
           <button
+            type="button"
             onClick={() => setIsNotificationOpen(!isNotificationOpen)}
-            className="relative p-2 text-gray-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-all border border-transparent hover:border-blue-100"
+            className="relative min-h-11 min-w-11 p-2.5 text-gray-600 transition-all hover:border-blue-100 hover:bg-blue-50 hover:text-blue-800 sm:min-h-0 sm:min-w-0 sm:p-2"
           >
-            <Bell className="w-5 h-5" />
+            <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-semibold rounded-full px-1">
+              <span className="absolute right-1.5 top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold text-white">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -102,7 +114,7 @@ export default function Header({ setActiveTab }: HeaderProps) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
-                className="absolute right-0 mt-2 w-96 bg-white rounded-md shadow-xl border border-gray-200 z-50 overflow-hidden"
+                className="absolute right-0 z-50 mt-2 w-[min(100vw-1.25rem,24rem)] max-w-[min(100vw-1.25rem,24rem)] overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl"
               >
                 {/* Dropdown Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
@@ -201,19 +213,20 @@ export default function Header({ setActiveTab }: HeaderProps) {
           <button
             type="button"
             onClick={() => navigate('/messages')}
-            className="relative p-2 text-gray-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-all border border-transparent hover:border-blue-100"
+            className="relative min-h-11 min-w-11 p-2.5 text-gray-600 transition-all hover:border-blue-100 hover:bg-blue-50 hover:text-blue-800 sm:min-h-0 sm:min-w-0 sm:rounded-md sm:p-2"
             aria-label="Messages"
           >
-            <MessageSquare className="w-5 h-5" />
+            <MessageSquare className="h-5 w-5" />
           </button>
         ) : null}
 
         {/* Profile or Login Button */}
         {isAuthenticated && user ? (
           <div className="relative" ref={profileDropdownRef}>
-            <button 
+            <button
+              type="button"
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center space-x-2.5 pl-2.5 pr-3 py-1.5 hover:bg-white rounded-md transition-all border border-transparent hover:border-gray-200"
+              className="flex min-h-11 min-w-0 items-center space-x-2.5 rounded-md border border-transparent py-1.5 pl-1.5 pr-2 transition-all hover:border-gray-200 hover:bg-white sm:min-h-0 sm:pl-2.5 sm:pr-3"
             >
               {user.profile_image ? (
                 <img
@@ -241,7 +254,7 @@ export default function Header({ setActiveTab }: HeaderProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-xl border border-gray-200 z-50 overflow-hidden"
+                  className="absolute right-0 z-50 mt-2 w-[min(100vw-1.25rem,16rem)] max-w-[min(100vw-1.25rem,16rem)] overflow-hidden rounded-md border border-gray-200 bg-white shadow-xl"
                 >
                   <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
                     <p className="text-sm font-medium text-gray-900 truncate">{user.first_name} {user.last_name}</p>
@@ -256,8 +269,9 @@ export default function Header({ setActiveTab }: HeaderProps) {
                       <span>Profile Settings</span>
                     </button>
                     <button
+                      type="button"
                       onClick={handleLogout}
-                      className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-all"
+                      className="flex w-full min-h-10 items-center space-x-3 px-4 py-2.5 text-sm text-gray-800 transition-all hover:bg-blue-50"
                     >
                       <LogOut className="w-4 h-4" />
                       <span>Logout</span>

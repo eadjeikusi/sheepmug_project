@@ -108,20 +108,20 @@ export default function Notifications() {
   }, [loadingMore, hasMore, loadMoreNotifications]);
 
   return (
-    <div className="space-y-8">
+    <div className="w-full min-w-0 space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold text-gray-900">Notifications</h1>
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-gray-900 sm:text-3xl">Notifications</h1>
           <p className="mt-2 text-gray-500">
             {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'All caught up! 🎉'}
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-stretch sm:justify-end">
           <button
             onClick={handleMarkAllRead}
             disabled={unreadCount === 0}
-            className={`flex items-center px-4 py-2.5 text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm ${
+            className={`flex min-h-11 w-full items-center justify-center px-4 py-2.5 text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm sm:w-auto ${
               unreadCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
@@ -131,7 +131,7 @@ export default function Notifications() {
           <button
             onClick={handleClearAll}
             disabled={notifications.length === 0}
-            className={`flex items-center px-4 py-2.5 text-red-600 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all shadow-sm ${
+            className={`flex min-h-11 w-full items-center justify-center px-4 py-2.5 text-red-600 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all shadow-sm sm:w-auto ${
               notifications.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
@@ -142,12 +142,13 @@ export default function Notifications() {
       </div>
 
       {/* Filter Tabs */}
-      <div className="bg-white rounded-2xl p-2 shadow-sm border border-gray-100 inline-flex">
+      <div className="max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain pb-1 -mb-1">
+        <div className="inline-flex min-w-min rounded-2xl border border-gray-100 bg-white p-2 shadow-sm">
         {(['all', 'unread', 'today', 'week'] as FilterType[]).map((filterOption) => (
           <button
             key={filterOption}
             onClick={() => setFilter(filterOption)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+            className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               filter === filterOption
                 ? 'bg-gray-900 text-white shadow-sm'
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -163,6 +164,7 @@ export default function Notifications() {
             )}
           </button>
         ))}
+        </div>
       </div>
 
       {notificationFilterChips.length > 0 ? (
@@ -196,7 +198,7 @@ export default function Notifications() {
                     : {};
                 navigateFromNotificationActionPath(navigate, notification.action_path, payload);
               }}
-              className={`bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer ${
+              className={`bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all cursor-pointer ${
                 !notification.read_at ? 'ring-2 ring-blue-100' : ''
               }`}
             >

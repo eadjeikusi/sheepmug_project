@@ -144,24 +144,24 @@ export default function Messages() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
+    <div className="w-full min-w-0 space-y-6">
+      <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div className="min-w-0">
           <h1 className="font-semibold text-gray-900 text-[20px]">Bulk SMS</h1>
           <p className="mt-2 text-gray-500">Send SMS to members and groups (delivery via Hubtel — not connected yet)</p>
         </div>
         <button
           type="button"
           onClick={() => setComposeOpen(true)}
-          className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm text-[12px]"
+          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm text-[12px] sm:w-auto"
         >
           <Plus className="w-5 h-5 mr-2" />
           Compose SMS
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex-1 max-w-md">
+      <div className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div className="w-full min-w-0 sm:max-w-md sm:flex-1">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -169,12 +169,12 @@ export default function Messages() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by label, recipients, or body…"
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+              className="min-h-11 w-full pl-10 pr-4 py-2.5 text-base bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all sm:text-sm"
             />
           </div>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2 bg-white rounded-xl border border-gray-200 p-1">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth rounded-xl border border-gray-200 bg-white p-1 sm:flex-wrap sm:overflow-x-visible">
           {(
             [
               ['all', 'All'],
@@ -187,7 +187,7 @@ export default function Messages() {
               key={id}
               type="button"
               onClick={() => setFilterTab(id)}
-              className={`px-4 py-2 rounded-lg font-medium transition-all text-[13px] ${
+              className={`shrink-0 px-4 py-2 rounded-lg font-medium transition-all text-[13px] ${
                 filterTab === id ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
               }`}
             >
@@ -202,8 +202,8 @@ export default function Messages() {
       ) : null}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600">

@@ -238,7 +238,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6">
       <div>
         <h1 className="font-semibold text-gray-900 text-[24px]">Hello {user?.first_name || 'there'}</h1>
         <p className="mt-1 text-gray-500 text-[14px]">Simple view of what needs attention right now.</p>

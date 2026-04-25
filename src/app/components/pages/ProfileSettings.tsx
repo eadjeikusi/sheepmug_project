@@ -211,14 +211,14 @@ export default function ProfileSettings() {
 
   if (!user) {
     return (
-      <div className="max-w-lg mx-auto py-16 text-center text-gray-500">
+      <div className="mx-auto max-w-lg min-h-[50dvh] px-4 py-16 text-center text-gray-500">
         Sign in to manage your profile.
       </div>
     );
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-8">
+    <div className="mx-auto w-full min-w-0 max-w-xl space-y-8 px-4 sm:px-0">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Profile</h1>
         <p className="mt-1 text-sm text-gray-500">Your name, email, photo, and password</p>
@@ -290,7 +290,7 @@ export default function ProfileSettings() {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   autoComplete="given-name"
-                  className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  className="min-h-11 w-full pl-9 pr-3 py-2.5 text-base sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
               </div>
             </div>
@@ -306,7 +306,7 @@ export default function ProfileSettings() {
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   autoComplete="family-name"
-                  className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  className="min-h-11 w-full pl-9 pr-3 py-2.5 text-base sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
               </div>
             </div>
@@ -323,7 +323,7 @@ export default function ProfileSettings() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
-                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                className="min-h-11 w-full pl-9 pr-3 py-2.5 text-base sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
               />
             </div>
             <p className="mt-1.5 text-xs text-gray-500">
@@ -344,12 +344,12 @@ export default function ProfileSettings() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
               <Lock className="w-4 h-4 text-gray-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold text-gray-900">Password</h2>
               <p className="text-xs text-gray-500">Use a strong password you do not reuse elsewhere</p>
             </div>
@@ -364,7 +364,7 @@ export default function ProfileSettings() {
                 setConfirmPassword('');
               }
             }}
-            className="text-sm font-medium text-blue-600 hover:text-blue-700 shrink-0"
+            className="self-start text-sm font-medium text-blue-600 hover:text-blue-700 sm:self-auto"
           >
             {showPasswordSection ? 'Cancel' : 'Change password'}
           </button>
@@ -380,7 +380,7 @@ export default function ProfileSettings() {
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
-                  className="w-full px-3 py-2.5 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  className="min-h-11 w-full px-3 py-2.5 pr-10 text-base sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
                 <button
                   type="button"
@@ -422,7 +422,7 @@ export default function ProfileSettings() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
-                  className="w-full px-3 py-2.5 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                  className="min-h-11 w-full px-3 py-2.5 pr-10 text-base sm:text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
                 />
                 <button
                   type="button"

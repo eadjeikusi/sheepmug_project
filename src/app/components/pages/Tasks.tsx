@@ -1036,7 +1036,7 @@ export default function Tasks() {
   };
 
   return (
-    <div className="space-y-10 max-w-4xl">
+    <div className="w-full min-w-0 max-w-4xl space-y-10">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
           <ListTodo className="w-7 h-7 text-blue-600" />
@@ -1068,8 +1068,11 @@ export default function Tasks() {
                     }.`}
               </p>
             </div>
-            <div className="relative shrink-0 flex items-center gap-2 flex-wrap sm:flex-nowrap" ref={createMenuRef}>
-                <div className="relative min-w-[12rem] sm:min-w-[16rem] md:min-w-[20rem] flex-1 sm:flex-none items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm flex">
+            <div
+              className="relative flex w-full min-w-0 flex-col gap-2 sm:shrink-0 sm:ml-0 sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:gap-2"
+              ref={createMenuRef}
+            >
+                <div className="relative flex min-h-11 w-full min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm sm:min-w-[16rem] md:min-w-[20rem]">
                   <motion.span
                     animate={branchSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
                     transition={{ duration: 0.45, repeat: branchSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
@@ -1084,7 +1087,7 @@ export default function Tasks() {
                     onChange={(e) => setBranchSearch(e.target.value)}
                     onFocus={() => setBranchSearchFocus(true)}
                     onBlur={() => setBranchSearchFocus(false)}
-                    className="flex-1 min-w-0 text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
+                    className="min-w-0 flex-1 text-base sm:text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
                     aria-label="Search tasks"
                   />
                 </div>
@@ -1609,7 +1612,7 @@ export default function Tasks() {
                     </button>
                   ))}
                 </div>
-                <div className="relative flex flex-1 min-w-[12rem] max-w-md items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
+                <div className="relative flex min-h-11 w-full min-w-0 max-w-md flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
                   <motion.span
                     animate={mineSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
                     transition={{ duration: 0.45, repeat: mineSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
@@ -1624,7 +1627,7 @@ export default function Tasks() {
                     onChange={(e) => setMineSearch(e.target.value)}
                     onFocus={() => setMineSearchFocus(true)}
                     onBlur={() => setMineSearchFocus(false)}
-                    className="flex-1 min-w-0 text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
+                    className="min-w-0 flex-1 text-base sm:text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
                     aria-label="Search your tasks"
                   />
                 </div>

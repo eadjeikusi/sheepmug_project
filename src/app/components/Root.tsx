@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
@@ -63,18 +63,63 @@ export default function Root() {
 
   const activeTab = getActiveTab();
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   const setActiveTab = (tab: string) => {
     navigate(`/${tab === 'dashboard' ? '' : tab}`);
   };
 
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+
+  useEffect(() => {
+    closeMobileNav();
+  }, [location.pathname, closeMobileNav]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMobileNav();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileNavOpen, closeMobileNav]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || !mobileNavOpen) return;
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const apply = () => {
+      if (mq.matches) document.body.style.overflow = 'hidden';
+      else document.body.style.overflow = '';
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => {
+      mq.removeEventListener('change', apply);
+      document.body.style.overflow = '';
+    };
+  }, [mobileNavOpen]);
+
   return (
     <AppProvider>
       <NotificationProvider>
-        <div className="flex h-screen bg-gray-50">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Header setActiveTab={setActiveTab} />
-            <main className="flex-1 overflow-y-auto p-8">
+        <div className="flex h-dvh min-h-0 w-full max-w-full bg-gray-50">
+          {mobileNavOpen ? (
+            <button
+              type="button"
+              className="fixed inset-0 z-40 cursor-default border-0 bg-black/50 p-0 lg:hidden"
+              aria-label="Close menu"
+              onClick={closeMobileNav}
+            />
+          ) : null}
+          <Sidebar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            mobileOpen={mobileNavOpen}
+            onMobileClose={closeMobileNav}
+          />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <Header setActiveTab={setActiveTab} onOpenMobileNav={() => setMobileNavOpen(true)} />
+            <main className="flex-1 min-h-0 w-full min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-6 lg:p-8">
               <Outlet />
             </main>
           </div>

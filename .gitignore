@@ -31,4 +31,5 @@ coverage/
 # Expo / React Native
 .expo/
 apps/mobile/.expo/
+apps/mobile/.expo-export-test/
 apps/mobile/.env

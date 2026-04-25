@@ -128,7 +128,7 @@ const PublicGroupPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 text-slate-600">
+      <div className="flex min-h-dvh w-full min-w-0 flex-col items-center justify-center bg-slate-50 text-slate-600">
         <p className="text-sm font-medium">Loading…</p>
       </div>
     );
@@ -136,7 +136,7 @@ const PublicGroupPage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4">
+      <div className="flex min-h-dvh w-full min-w-0 flex-col items-center justify-center bg-slate-50 px-4">
         <p className="text-center text-red-600">{error}</p>
         <Link to="/" className="mt-6 text-sm font-semibold text-blue-600 hover:text-blue-800">
           Go home
@@ -147,7 +147,7 @@ const PublicGroupPage: React.FC = () => {
 
   if (!groupData) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 text-center">
+      <div className="flex min-h-dvh w-full min-w-0 flex-col items-center justify-center bg-slate-50 px-4 text-center">
         <h1 className="text-xl font-semibold text-slate-900">Page not found</h1>
         <p className="mt-2 text-sm text-slate-600">This public ministry page is not available.</p>
         <Link to="/" className="mt-6 text-sm font-semibold text-blue-600 hover:text-blue-800">
@@ -163,7 +163,7 @@ const PublicGroupPage: React.FC = () => {
     'rounded-lg border-0 bg-transparent px-3 py-2 text-sm font-medium text-slate-500 shadow-none data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-dvh w-full min-w-0 bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3 sm:px-6">
           <Link
@@ -181,7 +181,7 @@ const PublicGroupPage: React.FC = () => {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full min-w-0 max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
         {/* Hero — cover (rounded, course-style) */}
         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-200 shadow-sm ring-1 ring-black/5">
           {groupData.cover_image_url?.trim() ? (

@@ -50,15 +50,15 @@ export default function ImportantDates() {
   const countLabel = useMemo(() => `${items.length} upcoming`, [items.length]);
 
   return (
-    <div className="p-6 md:p-8 space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="w-full min-w-0 space-y-5 p-4 sm:p-6 md:p-8">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-gray-900">All Important Dates</h1>
           <p className="text-sm text-gray-500 mt-1">{countLabel}</p>
         </div>
         <button
           onClick={() => navigate('/members')}
-          className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50"
+          className="min-h-11 w-full shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 sm:w-auto"
         >
           Back to Members
         </button>
@@ -71,15 +71,15 @@ export default function ImportantDates() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search member or date title..."
-            className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+            className="min-h-11 w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-lg text-base sm:text-sm"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-0.5 -mx-0.5 px-0.5">
           {RANGE_OPTIONS.map((opt) => (
             <button
               key={opt.id}
               onClick={() => setRangeDays(opt.id)}
-              className={`px-3 py-1.5 rounded-full text-sm border ${
+              className={`shrink-0 px-3 py-2 sm:py-1.5 rounded-full text-sm border ${
                 rangeDays === opt.id
                   ? 'border-blue-300 bg-blue-50 text-blue-700'
                   : 'border-gray-200 bg-white text-gray-700'
