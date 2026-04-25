@@ -142,10 +142,12 @@ export default function Sidebar({ activeTab, setActiveTab, mobileOpen, onMobileC
                       : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'
                   }`}
                 >
-                  <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-all ${
-                    isActive ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-700'
-                  }`}>
-                    <Icon className="w-4 h-4" />
+                  <span
+                    className={`inline-flex h-7 w-7 items-center justify-center ${
+                      isActive ? 'text-blue-700' : 'text-gray-500 group-hover:text-blue-700'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={isActive ? 2.25 : 2} />
                   </span>
                   <span className="ml-2.5 text-[13px] flex-1 text-left">{item.label}</span>
                   {item.showOpenTaskBadge && can('view_group_tasks') && openTaskCount > 0 && (
@@ -178,10 +180,12 @@ export default function Sidebar({ activeTab, setActiveTab, mobileOpen, onMobileC
                     : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'
                 }`}
               >
-                <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-all ${
-                  isActive ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-700'
-                }`}>
-                  <Icon className="w-4 h-4" />
+                <span
+                  className={`inline-flex h-7 w-7 items-center justify-center ${
+                    isActive ? 'text-blue-700' : 'text-gray-500 group-hover:text-blue-700'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" strokeWidth={isActive ? 2.25 : 2} />
                 </span>
                 <span className="ml-2.5 text-[13px]">{item.label}</span>
               </button>
@@ -207,10 +211,12 @@ export default function Sidebar({ activeTab, setActiveTab, mobileOpen, onMobileC
                   : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:text-gray-900'
               }`}
             >
-              <span className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-all ${
-                isActive ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-700'
-              }`}>
-                <Icon className="w-4 h-4" />
+              <span
+                className={`inline-flex h-7 w-7 items-center justify-center ${
+                  isActive ? 'text-blue-700' : 'text-gray-500 group-hover:text-blue-700'
+                }`}
+              >
+                <Icon className="h-4 w-4" strokeWidth={isActive ? 2.25 : 2} />
               </span>
               <span className="ml-2.5 text-[13px]">{item.label}</span>
             </button>

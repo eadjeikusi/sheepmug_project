@@ -126,6 +126,31 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    /* Firefox: thumb, track */
+    scrollbar-color: #d1d5db #f3f4f6;
+  }
+
+  *::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #f3f4f6;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 5px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #c4c8cd;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: #f3f4f6;
   }
 
   body {

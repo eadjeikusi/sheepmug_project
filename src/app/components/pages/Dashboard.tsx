@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
+  Building2,
   CalendarCheck,
   Inbox,
   ListTodo,
-  User,
   Users,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -43,8 +43,112 @@ type EventAttendancePayload = {
   attendance: Array<{ member_id: string; status: string }>;
 };
 
+function memberImageUrl(m: Member | null | undefined): string {
+  if (!m) return '';
+  const profileImg = (m as { profile_image?: string | null }).profile_image;
+  const cands = [m.avatar_url, m.member_url, profileImg, m.profileImage];
+  for (const x of cands) {
+    if (typeof x === 'string' && x.trim().length > 0) return x.trim();
+  }
+  return '';
+}
+
+function isMaleGender(g: string | null | undefined): boolean {
+  const s = (g || '').toLowerCase().trim();
+  return s === 'male' || s === 'm' || s.startsWith('male');
+}
+
+function isFemaleGender(g: string | null | undefined): boolean {
+  const s = (g || '').toLowerCase().trim();
+  return s === 'female' || s === 'f' || s.startsWith('female');
+}
+
 function cardIcon(icon: React.ReactNode) {
   return <div className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center">{icon}</div>;
+}
+
+function MemberFace({
+  m,
+  size = 'md',
+  className = '',
+}: {
+  m: Member;
+  size?: 'sm' | 'md';
+  className?: string;
+}) {
+  const src = memberImageUrl(m);
+  const initial = (m.first_name?.[0] || m.last_name?.[0] || '?').toUpperCase();
+  const sm = size === 'sm';
+  const dim = sm ? 'h-8 w-8 text-[10px] border-2' : 'h-9 w-9 text-xs border-2';
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className={`${sm ? 'h-8 w-8' : 'h-9 w-9'} shrink-0 rounded-full object-cover ring-2 ring-white ${className}`}
+      />
+    );
+  }
+  const male = isMaleGender(m.gender);
+  const female = isFemaleGender(m.gender);
+  return (
+    <div
+      className={`${dim} flex shrink-0 items-center justify-center rounded-full font-semibold ring-2 ring-white ${
+        male
+          ? 'border-blue-200 bg-blue-100 text-blue-800'
+          : female
+            ? 'border-rose-200 bg-rose-100 text-rose-900'
+            : 'border-gray-200 bg-gray-100 text-gray-700'
+      } ${className}`}
+    >
+      {initial}
+    </div>
+  );
+}
+
+function StackedMemberFaces({ members, max = 4, size = 'sm' }: { members: Member[]; max?: number; size?: 'sm' | 'md' }) {
+  const slice = members.slice(0, max);
+  if (slice.length === 0) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white bg-slate-100 ring-2 ring-white">
+        <Users className="h-3.5 w-3.5 text-slate-500" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center pl-1">
+      {slice.map((m, i) => (
+        <div key={m.id} className={i > 0 ? '-ml-2' : ''} style={{ zIndex: slice.length - i }}>
+          <MemberFace m={m} size={size} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GroupFaceStack({ groups, max = 3 }: { groups: DashGroup[]; max?: number }) {
+  const slice = groups.slice(0, max);
+  if (slice.length === 0) {
+    return (
+      <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-100 ring-2 ring-white">
+        <Building2 className="h-3.5 w-3.5 text-slate-500" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center pl-1">
+      {slice.map((g, i) => (
+        <div
+          key={g.id}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-slate-100 to-slate-50 text-[10px] font-bold text-slate-700 ring-2 ring-white ${i > 0 ? '-ml-2' : ''}`}
+          style={{ zIndex: slice.length - i }}
+          title={g.name}
+        >
+          {(g.name || '?')[0]?.toUpperCase() ?? '?'}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -107,6 +211,7 @@ export default function Dashboard() {
                   ...(m as Member),
                   fullName: `${firstName} ${lastName}`.trim(),
                   profileImage,
+                  profile_image: fallbackImage,
                   member_url: memberUrl,
                 } as Member;
               });
@@ -237,6 +342,27 @@ export default function Dashboard() {
     [allMembers.length, groups.length, memberRequestCount, groupRequestCount, tasks.length],
   );
 
+  /** Overlapping faces for stat cards (prioritize members with photos; separate pools so cards differ). */
+  const statFacePools = useMemo(() => {
+    const preferWithPhotos = (list: Member[]) => {
+      const withPhoto = list.filter((m) => memberImageUrl(m));
+      return withPhoto.length >= 3 ? withPhoto : list;
+    };
+    const pool = preferWithPhotos(allMembers);
+    const n = pool.length;
+    const take = (start: number) => {
+      if (n === 0) return [];
+      const out: Member[] = [];
+      for (let i = 0; i < 4; i += 1) out.push(pool[(start + i) % n]);
+      return out;
+    };
+    return {
+      members: pool.slice(0, 4),
+      requests: n > 4 ? take(4) : pool.slice(0, 4),
+      tasks: n > 8 ? take(8) : take(2),
+    };
+  }, [allMembers]);
+
   return (
     <div className="w-full min-w-0 space-y-6">
       <div>
@@ -253,11 +379,34 @@ export default function Dashboard() {
             transition={{ delay: idx * 0.05 }}
             className="bg-white rounded-2xl p-4 border border-gray-200 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
           >
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500">{s.label}</p>
-              {cardIcon(<BarChart3 className="w-4 h-4 text-gray-600" />)}
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs text-gray-500 leading-tight">{s.label}</p>
+              <div className="flex shrink-0 items-center gap-1">
+                {s.label === 'Members' ? (
+                  <StackedMemberFaces members={statFacePools.members} max={4} />
+                ) : s.label === 'Groups' ? (
+                  <GroupFaceStack groups={groups} max={3} />
+                ) : s.label === 'Pending Requests' ? (
+                  <div className="flex items-center gap-0.5">
+                    <StackedMemberFaces members={statFacePools.requests} max={3} />
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white bg-amber-50 ring-2 ring-white">
+                      <Inbox className="h-3.5 w-3.5 text-amber-700" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-0.5">
+                    <StackedMemberFaces members={statFacePools.tasks} max={3} />
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white bg-blue-50 ring-2 ring-white">
+                      <ListTodo className="h-3.5 w-3.5 text-blue-700" />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">{loading ? '...' : s.value}</p>
+            <div className="mt-2 flex items-end justify-between gap-2">
+              <p className="text-2xl font-semibold text-gray-900 tabular-nums">{loading ? '...' : s.value}</p>
+              <div className="opacity-80">{cardIcon(<BarChart3 className="w-4 h-4 text-gray-600" />)}</div>
+            </div>
           </motion.div>
         ))}
       </div>
@@ -303,7 +452,7 @@ export default function Dashboard() {
             </div>
             <div className="space-y-2">
               {recentMembers.slice(0, 4).map((m) => {
-                const imageSrc = m.profileImage || m.member_url || '';
+                const imageSrc = memberImageUrl(m);
                 return (
                   <button
                     key={m.id}
@@ -312,10 +461,14 @@ export default function Dashboard() {
                     className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
                   >
                     {imageSrc ? (
-                      <img src={imageSrc} alt={`${m.first_name} ${m.last_name}`} className="w-10 h-10 rounded-full object-cover border border-gray-200" />
+                      <img
+                        src={imageSrc}
+                        alt={`${m.first_name} ${m.last_name}`}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white border border-gray-200 shadow-sm"
+                      />
                     ) : (
-                      <div className="w-10 h-10 rounded-full border border-gray-200 bg-gray-50 flex items-center justify-center">
-                        <User className="w-4 h-4 text-gray-400" />
+                      <div className="shrink-0">
+                        <MemberFace m={m} size="md" />
                       </div>
                     )}
                     <div className="min-w-0">

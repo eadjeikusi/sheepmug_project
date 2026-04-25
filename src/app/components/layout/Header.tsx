@@ -232,11 +232,11 @@ export default function Header({ setActiveTab, onOpenMobileNav }: HeaderProps) {
                 <img
                   src={user.profile_image}
                   alt=""
-                  className="w-8 h-8 rounded-md object-cover bg-gray-100 border border-gray-200"
+                  className="h-8 w-8 shrink-0 rounded-full object-cover ring-2 ring-white ring-offset-1 ring-offset-[#fbfcfb] border border-gray-200/80"
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-md bg-blue-700 flex items-center justify-center text-white font-semibold text-sm">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-700 text-sm font-semibold text-white ring-2 ring-white ring-offset-1 ring-offset-[#fbfcfb]">
                   {user.first_name?.[0]}
                 </div>
               )}
