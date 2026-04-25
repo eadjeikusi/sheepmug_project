@@ -16,6 +16,9 @@ export default function Root() {
   const { user, loading } = useAuth();
   const { can } = usePermissions();
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+
   useEffect(() => {
     if (loading || !user) return;
     const seg = location.pathname === '/' ? '' : location.pathname.replace(/^\//, '').split('/')[0] || '';
@@ -34,42 +37,6 @@ export default function Root() {
       navigate('/', { replace: true });
     }
   }, [loading, user, location.pathname, can, navigate]);
-  
-  // Show loading state while checking auth (bypassed but kept for compatibility)
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  // Determine active tab from URL
-  const getActiveTab = () => {
-    const path = location.pathname;
-    if (path === '/') return 'dashboard';
-    if (path.startsWith('/groups')) return 'groups';
-    if (path.startsWith('/tasks')) return 'tasks';
-    if (path.startsWith('/messages')) return 'messages';
-    return path.slice(1).split('/')[0] || 'dashboard';
-  };
-
-  const activeTab = getActiveTab();
-
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  const setActiveTab = (tab: string) => {
-    navigate(`/${tab === 'dashboard' ? '' : tab}`);
-  };
-
-  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
 
   useEffect(() => {
     closeMobileNav();
@@ -98,6 +65,37 @@ export default function Root() {
       document.body.style.overflow = '';
     };
   }, [mobileNavOpen]);
+
+  // Show loading state while checking auth (bypassed but kept for compatibility)
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-gray-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  const getActiveTab = () => {
+    const path = location.pathname;
+    if (path === '/') return 'dashboard';
+    if (path.startsWith('/groups')) return 'groups';
+    if (path.startsWith('/tasks')) return 'tasks';
+    if (path.startsWith('/messages')) return 'messages';
+    return path.slice(1).split('/')[0] || 'dashboard';
+  };
+
+  const activeTab = getActiveTab();
+
+  const setActiveTab = (tab: string) => {
+    navigate(`/${tab === 'dashboard' ? '' : tab}`);
+  };
 
   return (
     <AppProvider>
