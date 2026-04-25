@@ -1232,7 +1232,7 @@ export default function CreateEventModal({
                           {eventTypesList.length === 0 ? (
                             <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                               No event types are configured. Add types in{' '}
-                              <Link to="/settings?tab=eventTypes" className="font-medium text-blue-700 underline">
+                              <Link to="/settings?tab=general&sub=eventTypes" className="font-medium text-blue-700 underline">
                                 Settings → Event types
                               </Link>
                               .
@@ -1630,7 +1630,7 @@ export default function CreateEventModal({
                     ) : selectedCustomTypeId ? (
                       <p className="mt-6 text-sm text-gray-600">
                         No program templates for this event type yet.{' '}
-                        <Link to="/settings?tab=programTemplates" className="font-medium text-blue-600 hover:underline">
+                        <Link to="/settings?tab=general&sub=programTemplates" className="font-medium text-blue-600 hover:underline">
                           Add a program template
                         </Link>{' '}
                         or build the program in the editor below.

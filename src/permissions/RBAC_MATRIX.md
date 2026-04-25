@@ -24,7 +24,6 @@ This doc summarizes where permissions are enforced after the atomic split. For t
 | Attendance (GET/PUT) | `view_event_attendance`, `record_event_attendance` (read vs write paths differ) |
 | Custom fields, member status, group type options | Match `atomicCanHelpers` + `*_OPTION_WRITE` constants in `server.ts` |
 | Requests | `view_*_requests`, `approve_*_requests`, `reject_*_requests` (separate) |
-| Notifications QA | `configure_notifications` / `send_notifications` (routes); role admin surfaces use role/staff atomics |
 
 Search `server.ts` for `requirePermission` / `requireAnyPermission` for the full set.
 

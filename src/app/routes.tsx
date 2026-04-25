@@ -84,11 +84,11 @@ export const router = createBrowserRouter([
       },
       {
         path: "event-types",
-        element: <Navigate to="/settings?tab=eventTypes" replace />,
+        element: <Navigate to="/settings?tab=general&sub=eventTypes" replace />,
       },
       {
         path: "program-templates",
-        element: <Navigate to="/settings?tab=programTemplates" replace />,
+        element: <Navigate to="/settings?tab=general&sub=programTemplates" replace />,
       },
       {
         path: "tasks",

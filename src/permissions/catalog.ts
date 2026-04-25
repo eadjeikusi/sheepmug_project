@@ -164,14 +164,14 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
       },
       {
         id: "edit_member_task_checklist",
-        name: "Edit member task checklists",
+        name: "Member task control",
         description: "Add, remove, or rename checklist steps on member tasks",
         implies: ["complete_member_task_checklist"],
         actionKinds: ["edit"],
       },
       {
         id: "complete_member_task_checklist",
-        name: "Complete member task checklist items",
+        name: "Member task todo",
         description: "Mark checklist items done and update task progress on your assignments",
         actionKinds: ["complete"],
       },
@@ -211,14 +211,14 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
       },
       {
         id: "edit_group_task_checklist",
-        name: "Edit group task checklists",
+        name: "Group task control",
         description: "Add, remove, or rename checklist steps on group tasks",
         implies: ["complete_group_task_checklist"],
         actionKinds: ["edit"],
       },
       {
         id: "complete_group_task_checklist",
-        name: "Complete group task checklist items",
+        name: "Group task todo",
         description: "Mark checklist items done and update group task status on your assignments",
         actionKinds: ["complete"],
       },
@@ -415,12 +415,6 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
     permissions: [
       { id: "send_messages", name: "Send messages", description: "Use messaging to reach members", actionKinds: ["send"] },
       {
-        id: "send_notifications",
-        name: "Send notifications",
-        description: "Trigger notification deliveries where applicable",
-        actionKinds: ["send"],
-      },
-      {
         id: "configure_notifications",
         name: "Configure notifications",
         description: "Change notification templates and settings",
@@ -567,6 +561,17 @@ export const ALL_PERMISSION_IDS: string[] = PERMISSION_CATALOG.flatMap((c) =>
 
 const ALLOWED = new Set(ALL_PERMISSION_IDS);
 
+const PERM_DEF_BY_ID = new Map<string, PermissionDef>();
+for (const cat of PERMISSION_CATALOG) {
+  for (const p of cat.permissions) {
+    PERM_DEF_BY_ID.set(p.id, p);
+  }
+}
+
+export function getPermissionDef(id: string): PermissionDef | undefined {
+  return PERM_DEF_BY_ID.get(id);
+}
+
 export function isValidPermissionId(id: string): boolean {
   return ALLOWED.has(id);
 }
@@ -634,7 +639,8 @@ export const LEGACY_PERMISSION_ALIASES: Record<string, string[]> = {
   manage_event_types: ["view_event_types", "add_event_types", "edit_event_types", "delete_event_types"],
   manage_program_templates: ["add_program_templates", "edit_program_templates", "delete_program_templates"],
   track_attendance: ["view_event_attendance", "record_event_attendance"],
-  manage_notifications: ["send_notifications", "configure_notifications"],
+  manage_notifications: ["configure_notifications"],
+  send_notifications: [],
   manage_branches: ["add_branches", "edit_branches", "delete_branches"],
   manage_member_statuses: ["add_member_status_options", "edit_member_status_options", "delete_member_status_options"],
   manage_permissions: ["view_roles", "add_roles", "edit_roles", "delete_roles", "assign_staff_roles"],

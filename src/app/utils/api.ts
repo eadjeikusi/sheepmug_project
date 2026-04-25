@@ -542,28 +542,6 @@ export const notificationsApi = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
-  listTestTypes: () => apiRequest('/notifications/test-types'),
-  testSend: (payload: {
-    type: string;
-    recipient_profile_id: string;
-    actor_profile_id?: string;
-    entity_id?: string;
-    action_path?: string;
-    /** Bypass 60-minute QA dedupe (sends a new row). */
-    force?: boolean;
-  }) =>
-    apiRequest('/notifications/test-send', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-  testPreview: (recipientProfileId: string, limit = 25) =>
-    apiRequest(
-      `/notifications/test-preview?recipient_profile_id=${encodeURIComponent(recipientProfileId)}&limit=${encodeURIComponent(
-        String(limit),
-      )}`,
-    ),
-  testPreviewUnreadCount: (recipientProfileId: string) =>
-    apiRequest(`/notifications/test-preview/unread-count?recipient_profile_id=${encodeURIComponent(recipientProfileId)}`),
 };
 
 // Test API connection

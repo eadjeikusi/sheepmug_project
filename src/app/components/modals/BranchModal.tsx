@@ -181,7 +181,7 @@ export default function BranchModal({ branch, organizationId, onClose, onSave }:
           <form onSubmit={handleSubmit}>
             <div className="px-6 py-6">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Branch name <span className="text-red-500">*</span>
+                Branch name <span className="text-blue-600">*</span>
               </label>
               <input
                 type="text"
@@ -193,10 +193,10 @@ export default function BranchModal({ branch, organizationId, onClose, onSave }:
                 placeholder="e.g., Youth Campus"
                 autoFocus
                 className={`w-full px-4 py-2.5 border ${
-                  nameError ? 'border-red-300' : 'border-gray-200'
-                } rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all`}
+                  nameError ? 'border-blue-300' : 'border-gray-200'
+                } rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-200 transition-all`}
               />
-              {nameError && <p className="text-xs text-red-500 mt-1">{nameError}</p>}
+              {nameError && <p className="text-xs text-blue-600 mt-1">{nameError}</p>}
               {!branch ? (
                 <p className="text-xs text-gray-500 mt-3">
                   Members, events, and groups are scoped to the branch you select in the header.
@@ -210,12 +210,12 @@ export default function BranchModal({ branch, organizationId, onClose, onSave }:
                 value={timezoneQuery}
                 onChange={(e) => setTimezoneQuery(e.target.value)}
                 placeholder="Search timezone or UTC offset (e.g. +03:00)"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all mb-2"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-200 transition-all mb-2"
               />
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-200 transition-all"
               >
                 {filteredTimezoneOptions.length > 0 ? (
                   filteredTimezoneOptions.map((option) => (
@@ -239,7 +239,7 @@ export default function BranchModal({ branch, organizationId, onClose, onSave }:
                 type="time"
                 value={reminderTime}
                 onChange={(e) => setReminderTime(e.target.value)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-200 transition-all"
               />
             </div>
 

@@ -6,7 +6,16 @@ export default function App() {
   return (
     <>
       <RouterProvider router={router} />
-      <Toaster position="top-right" richColors expand={true} />
+      <Toaster
+        position="top-right"
+        richColors
+        expand
+        toastOptions={{
+          classNames: {
+            toast: 'rounded-none',
+          },
+        }}
+      />
     </>
   );
 }

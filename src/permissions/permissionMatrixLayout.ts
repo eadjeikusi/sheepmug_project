@@ -4,7 +4,7 @@
  * Rows are ordered logically within each section (e.g. core Members first, then related member capabilities).
  */
 
-import { ALL_PERMISSION_IDS } from './catalog';
+import { ALL_PERMISSION_IDS, validatePermissionIds } from './catalog';
 
 export type CrudKey = 'view' | 'add' | 'edit' | 'delete';
 
@@ -113,12 +113,12 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
       },
       {
         rowId: 'member-task-checklist-structure',
-        label: 'Member task checklist (steps)',
+        label: 'Member task control',
         cells: { edit: 'edit_member_task_checklist' },
       },
       {
         rowId: 'member-task-checklist-complete',
-        label: 'Member task checklist (complete)',
+        label: 'Member task todo',
         cells: { edit: 'complete_member_task_checklist' },
       },
     ],
@@ -144,12 +144,12 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
       },
       {
         rowId: 'group-task-checklist-structure',
-        label: 'Group task checklist (steps)',
+        label: 'Group task control',
         cells: { edit: 'edit_group_task_checklist' },
       },
       {
         rowId: 'group-task-checklist-complete',
-        label: 'Group task checklist (complete)',
+        label: 'Group task todo',
         cells: { edit: 'complete_group_task_checklist' },
       },
     ],
@@ -218,8 +218,8 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
     ],
   },
   {
-    id: 'events',
-    title: 'Events',
+    id: 'events_and_attendance',
+    title: 'Events & attendance',
     matrixRows: [
       {
         rowId: 'events',
@@ -236,12 +236,6 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
         label: 'Event roster (assign members)',
         cells: { edit: 'assign_event_members' },
       },
-    ],
-  },
-  {
-    id: 'event_setup',
-    title: 'Event setup',
-    matrixRows: [
       {
         rowId: 'event-types',
         label: 'Event types',
@@ -261,12 +255,6 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
           delete: 'delete_program_templates',
         },
       },
-    ],
-  },
-  {
-    id: 'attendance',
-    title: 'Attendance',
-    matrixRows: [
       {
         rowId: 'event-attendance',
         label: 'Event attendance',
@@ -285,11 +273,6 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
         rowId: 'send-messages',
         label: 'Send messages',
         cells: { add: 'send_messages' },
-      },
-      {
-        rowId: 'send-notifications',
-        label: 'Send notifications',
-        cells: { add: 'send_notifications' },
       },
       {
         rowId: 'notification-settings',
@@ -395,6 +378,20 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
 ];
 
 export const PERMISSION_MATRIX_SECTIONS: PermissionMatrixSection[] = RAW_SECTIONS;
+
+/** All assignable permission ids for a matrix section, in a stable order (row order, then view → add → edit → delete). */
+export function getMatrixSectionPermissionIds(sectionId: string): string[] {
+  const sec = PERMISSION_MATRIX_SECTIONS.find((s) => s.id === sectionId);
+  if (!sec) return [];
+  const raw: string[] = [];
+  for (const row of sec.matrixRows) {
+    for (const col of CRUD_COLUMNS) {
+      const id = row.cells[col.key];
+      if (id) raw.push(id);
+    }
+  }
+  return validatePermissionIds(raw);
+}
 
 const _catalogSet = new Set(ALL_PERMISSION_IDS);
 

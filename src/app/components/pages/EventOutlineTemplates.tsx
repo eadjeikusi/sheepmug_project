@@ -46,7 +46,7 @@ function TemplateTimeBudgetCell({
   }
   const rem = plannedMinutes - usedMinutes;
   const secondStr = rem >= 0 ? formatHoursMinutes(rem) : formatHoursMinutes(-rem);
-  const tone = rem >= 0 ? 'text-blue-700' : 'text-amber-700';
+  const tone = rem >= 0 ? 'text-blue-700' : 'text-blue-800';
   const suffix = rem >= 0 ? 'left' : 'over';
   return (
     <div className="text-sm">
@@ -334,9 +334,9 @@ export default function EventOutlineTemplates({ embedded = false }: EventOutline
           </div>
 
           {eventTypes.length === 0 && !loading ? (
-            <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+            <div className="rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-900">
               Add at least one{' '}
-              <Link to="/settings?tab=eventTypes" className="font-medium underline decoration-amber-600/50">
+              <Link to="/settings?tab=general&sub=eventTypes" className="font-medium underline decoration-blue-600/50">
                 event type
               </Link>{' '}
               before you can create program templates.
@@ -438,7 +438,7 @@ export default function EventOutlineTemplates({ embedded = false }: EventOutline
                               onClick={() => void handleDelete(r)}
                               title="Delete template"
                               aria-label="Delete template"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>

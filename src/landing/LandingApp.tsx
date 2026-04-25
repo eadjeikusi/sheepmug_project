@@ -168,7 +168,7 @@ function CardCornerAbstract({ tone }: { tone: "gold" | "coral" | "violet" }) {
 function LeaderTaskFlowCards() {
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#D8F3DC] p-6 shadow-sm ring-1 ring-black/5">
+      <div className="relative overflow-hidden rounded-none bg-[#D8F3DC] p-6 shadow-sm ring-1 ring-black/5">
         <div className="relative z-10">
           <span className="inline-block rounded-full border border-neutral-900/25 bg-white/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-900">
           Task Flow
@@ -187,7 +187,7 @@ function LeaderTaskFlowCards() {
         <CardCornerAbstract tone="gold" />
       </div>
 
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#FFE8D6] p-6 shadow-sm ring-1 ring-black/5">
+      <div className="relative overflow-hidden rounded-none bg-[#FFE8D6] p-6 shadow-sm ring-1 ring-black/5">
         <div className="relative z-10">
           <span className="inline-block rounded-full border border-neutral-900/25 bg-white/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-900">
             Ministry Scope
@@ -206,7 +206,7 @@ function LeaderTaskFlowCards() {
         <CardCornerAbstract tone="coral" />
       </div>
 
-      <div className="relative overflow-hidden rounded-[2rem] bg-[#D8F3DC] p-6 shadow-sm ring-1 ring-black/5">
+      <div className="relative overflow-hidden rounded-none bg-[#D8F3DC] p-6 shadow-sm ring-1 ring-black/5">
         <div className="relative z-10">
           <span className="inline-block rounded-full border border-neutral-900/25 bg-white/60 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-900">
             Access Control
@@ -332,7 +332,7 @@ function PastelShowcaseCard({
   if (variant === "green") {
     return (
       <div
-        className={`flex min-h-[280px] flex-col-reverse overflow-hidden rounded-[2rem] shadow-sm ring-1 ring-black/5 md:min-h-[300px] md:flex-row ${bg}`}
+        className={`flex min-h-[280px] flex-col-reverse overflow-hidden rounded-none shadow-sm ring-1 ring-black/5 md:min-h-[300px] md:flex-row ${bg}`}
       >
         <div className="relative flex flex-1 flex-col justify-between gap-8 p-6 sm:p-8 md:min-w-0">
           <ArrowCircleLink className="self-start" />
@@ -354,7 +354,7 @@ function PastelShowcaseCard({
 
   return (
     <div
-      className={`flex min-h-[280px] flex-col-reverse overflow-hidden rounded-[2rem] shadow-sm ring-1 ring-black/5 md:min-h-[300px] md:flex-row ${bg}`}
+      className={`flex min-h-[280px] flex-col-reverse overflow-hidden rounded-none shadow-sm ring-1 ring-black/5 md:min-h-[300px] md:flex-row ${bg}`}
     >
       <div className="relative flex flex-1 flex-col justify-between gap-6 p-6 sm:p-8 md:min-w-0">
         {arrowAtTop ? <ArrowCircleLink className="self-start" /> : null}
@@ -507,10 +507,10 @@ export function LandingApp() {
                   className="inline-flex items-center justify-center gap-2 rounded-full border border-neutral-300 bg-white px-6 py-3.5 text-center text-base font-semibold text-neutral-800 transition hover:bg-neutral-50"
                 >
                   <span className="inline-grid h-4 w-4 grid-cols-2 gap-[2px]">
-                    <span className="rounded-[2px] bg-[#1e3a8a]" />
-                    <span className="rounded-[2px] bg-[#1e3a8a]" />
-                    <span className="rounded-[2px] bg-[#1e3a8a]" />
-                    <span className="rounded-[2px] bg-[#1e3a8a]" />
+                    <span className="rounded-none bg-[#1e3a8a]" />
+                    <span className="rounded-none bg-[#1e3a8a]" />
+                    <span className="rounded-none bg-[#1e3a8a]" />
+                    <span className="rounded-none bg-[#1e3a8a]" />
                   </span>
                   <Download className="h-4 w-4 text-neutral-700" />
                   Windows
@@ -772,7 +772,7 @@ function FeatureCard({ icon, title, body }: { icon: ReactNode; title: string; bo
         : "gold";
   return (
     <div
-      className={`relative overflow-hidden rounded-[2rem] p-6 shadow-sm ring-1 ring-black/5 transition hover:shadow-md ${cardTone}`}
+      className={`relative overflow-hidden rounded-none p-6 shadow-sm ring-1 ring-black/5 transition hover:shadow-md ${cardTone}`}
     >
       <div className="relative z-10">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-neutral-900/10 bg-white/70">

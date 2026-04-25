@@ -63,10 +63,6 @@ export function canConfigureCustomFieldsUi(can: CanFn): boolean {
   return can("system_settings") || canAnyRoleAdmin(can) || canAnyStaffSettings(can);
 }
 
-export function canUseNotificationQa(can: CanFn): boolean {
-  return canAnyRoleAdmin(can);
-}
-
 export function canViewOrEditEventTypesUi(can: CanFn): boolean {
   return some(can, ["view_event_types", "add_event_types", "edit_event_types", "delete_event_types"]);
 }

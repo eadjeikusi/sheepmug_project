@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { User, Bell, Database, Users, CheckSquare, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe, Copy } from 'lucide-react';
+import { User, Bell, Users, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe, Copy, Settings2, Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useBranch } from '../../contexts/BranchContext';
 import { useAuth } from '../../contexts/AuthContext';
-import DatabaseConnectionTest from '../DatabaseConnectionTest';
 import BranchModal from '../modals/BranchModal';
 import { useApp } from '../../contexts/AppContext';
 import { withBranchScope } from '../../utils/branchScopeHeaders';
 import { ALL_PERMISSION_IDS, resolveImpliedPermissions, validatePermissionIds } from '../../../permissions/catalog';
+import { getMatrixSectionPermissionIds } from '../../../permissions/permissionMatrixLayout';
 import { PermissionRoleMatrix } from '../permissions/PermissionRoleMatrix';
 import {
   canAccessStaffOrRoleAdmin,
@@ -17,7 +17,6 @@ import {
   canConfigureCustomFieldsUi,
   canConfigureGroupTypeOptions,
   canConfigureMemberStatusOptions,
-  canUseNotificationQa as canAccessNotificationQa,
   canViewOrEditEventTypesUi,
   canViewOrEditProgramTemplatesUi,
 } from '../../../permissions/atomicCanHelpers';
@@ -27,8 +26,6 @@ import { useGroupTypeOptions } from '../../hooks/useGroupTypeOptions';
 import type { MemberStatusOption, GroupTypeOption, CustomFieldDefinition, Organization } from '../../../types';
 import EventTypes from './EventTypes';
 import EventOutlineTemplates from './EventOutlineTemplates';
-import { notificationsApi } from '../../utils/api';
-import { formatNotificationDateTime } from '@/utils/dateDisplayFormat';
 
 type ApiRoleRow = { id: string; name: string; permissions: string[] };
 
@@ -43,20 +40,69 @@ type FieldDraft = {
   show_on_public: boolean;
 };
 
-type SettingsTab =
-  | 'general'
-  | 'notifications'
-  | 'notificationsQA'
-  | 'staff'
-  | 'permissions'
+/** Top-level settings nav: General (with sub-sections), Notifications, Roles & permissions (with sub-tabs). */
+type SettingsMainTab = 'general' | 'notifications' | 'roles';
+
+type GeneralSubTab =
+  | 'organization'
   | 'customFields'
   | 'eventTypes'
   | 'programTemplates'
   | 'memberStatuses'
   | 'groupTypes'
   | 'integrations'
-  | 'branches'
-  | 'database';
+  | 'branches';
+
+type RolesSubTab = 'staff' | 'permissions';
+
+const GENERAL_SUB_TABS: { id: GeneralSubTab; label: string }[] = [
+  { id: 'organization', label: 'Organization name' },
+  { id: 'customFields', label: 'Custom fields' },
+  { id: 'eventTypes', label: 'Event types' },
+  { id: 'programTemplates', label: 'Program templates' },
+  { id: 'memberStatuses', label: 'Member status' },
+  { id: 'groupTypes', label: 'Group types' },
+  { id: 'branches', label: 'Branch selection' },
+  { id: 'integrations', label: 'Integrations' },
+];
+
+const LEGACY_SETTINGS_TAB_TO_STATE: Record<
+  string,
+  { main: SettingsMainTab; generalSub?: GeneralSubTab; rolesSub?: RolesSubTab }
+> = {
+  staff: { main: 'roles', rolesSub: 'staff' },
+  permissions: { main: 'roles', rolesSub: 'permissions' },
+  customFields: { main: 'general', generalSub: 'customFields' },
+  eventTypes: { main: 'general', generalSub: 'eventTypes' },
+  programTemplates: { main: 'general', generalSub: 'programTemplates' },
+  memberStatuses: { main: 'general', generalSub: 'memberStatuses' },
+  groupTypes: { main: 'general', generalSub: 'groupTypes' },
+  branches: { main: 'general', generalSub: 'branches' },
+  integrations: { main: 'general', generalSub: 'integrations' },
+  database: { main: 'general', generalSub: 'organization' },
+};
+
+function isGeneralSubTab(value: string | null | undefined): value is GeneralSubTab {
+  if (!value) return false;
+  return GENERAL_SUB_TABS.some((t) => t.id === value);
+}
+
+function buildSettingsSearchParams(
+  main: SettingsMainTab,
+  generalSub: GeneralSubTab,
+  rolesSub: RolesSubTab,
+): Record<string, string> {
+  if (main === 'notifications') return { tab: 'notifications' };
+  if (main === 'general') {
+    if (generalSub === 'organization') return {};
+    return { tab: 'general', sub: generalSub };
+  }
+  if (main === 'roles') {
+    if (rolesSub === 'staff') return { tab: 'roles' };
+    return { tab: 'roles', sub: 'permissions' };
+  }
+  return {};
+}
 
 type Ministry = {
   id: string;
@@ -64,28 +110,10 @@ type Ministry = {
   children?: Ministry[];
 };
 
-const SETTINGS_TAB_IDS: SettingsTab[] = [
-  'general',
-  'notifications',
-  'notificationsQA',
-  'staff',
-  'permissions',
-  'customFields',
-  'eventTypes',
-  'programTemplates',
-  'memberStatuses',
-  'groupTypes',
-  'integrations',
-  'branches',
-  'database',
-];
-
-function isSettingsTab(value: string): value is SettingsTab {
-  return SETTINGS_TAB_IDS.includes(value as SettingsTab);
-}
-
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [mainTab, setMainTab] = useState<SettingsMainTab>('general');
+  const [generalSub, setGeneralSub] = useState<GeneralSubTab>('organization');
+  const [rolesSub, setRolesSub] = useState<RolesSubTab>('staff');
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedBranch, setSelectedBranch, branches, refreshBranches, loading: branchLoading } = useBranch();
   const { currentOrganization, setCurrentOrganization } = useApp();
@@ -167,14 +195,58 @@ export default function Settings() {
   };
 
   useEffect(() => {
-    const raw = searchParams.get('tab');
-    if (raw && isSettingsTab(raw)) setActiveTab(raw);
-    else if (!raw) setActiveTab('general');
-  }, [searchParams]);
+    const rawTab = searchParams.get('tab');
+    const rawSub = searchParams.get('sub');
 
-  const goSettingsTab = (tab: SettingsTab) => {
-    setActiveTab(tab);
-    setSearchParams(tab === 'general' ? {} : { tab }, { replace: true });
+    if (!rawTab) {
+      setMainTab('general');
+      setGeneralSub('organization');
+      setRolesSub('staff');
+      return;
+    }
+
+    if (rawTab === 'notifications') {
+      setMainTab('notifications');
+      return;
+    }
+
+    if (rawTab === 'general') {
+      setMainTab('general');
+      setGeneralSub(isGeneralSubTab(rawSub) ? rawSub : 'organization');
+      return;
+    }
+
+    if (rawTab === 'roles') {
+      setMainTab('roles');
+      setRolesSub(rawSub === 'permissions' ? 'permissions' : 'staff');
+      return;
+    }
+
+    const legacy = LEGACY_SETTINGS_TAB_TO_STATE[rawTab];
+    if (legacy) {
+      setMainTab(legacy.main);
+      if (legacy.generalSub) setGeneralSub(legacy.generalSub);
+      if (legacy.rolesSub) setRolesSub(legacy.rolesSub);
+      return;
+    }
+
+    setMainTab('general');
+    setGeneralSub('organization');
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const navigateSettings = (next: {
+    main: SettingsMainTab;
+    generalSub?: GeneralSubTab;
+    rolesSub?: RolesSubTab;
+  }) => {
+    const m = next.main;
+    const gResolved = m === 'general' ? (next.generalSub !== undefined ? next.generalSub : generalSub) : generalSub;
+    const rResolved = m === 'roles' ? (next.rolesSub !== undefined ? next.rolesSub : rolesSub) : rolesSub;
+    setMainTab(m);
+    if (next.generalSub !== undefined) setGeneralSub(next.generalSub);
+    if (next.rolesSub !== undefined) setRolesSub(next.rolesSub);
+    setSearchParams(buildSettingsSearchParams(m, gResolved, rResolved), { replace: true });
   };
 
   const fetchNotificationPrefs = useCallback(async () => {
@@ -209,10 +281,10 @@ export default function Settings() {
   }, [selectedBranch?.id, token]);
 
   useEffect(() => {
-    if (activeTab === 'notifications' && token) {
+    if (mainTab === 'notifications' && token) {
       void fetchNotificationPrefs();
     }
-  }, [activeTab, fetchNotificationPrefs, token]);
+  }, [mainTab, fetchNotificationPrefs, token]);
 
   const updateNotificationPref = async (key: string, value: boolean) => {
     if (!token) return;
@@ -274,6 +346,12 @@ export default function Settings() {
   };
 
   const [apiRoles, setApiRoles] = useState<ApiRoleRow[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [permDraft, setPermDraft] = useState<Set<string>>(new Set());
+  const [savingRole, setSavingRole] = useState(false);
+  const [staffRoleUpdating, setStaffRoleUpdating] = useState<string | null>(null);
   const [notificationPrefs, setNotificationPrefs] = useState<{
     mute_all: boolean;
     tasks_enabled: boolean;
@@ -290,43 +368,6 @@ export default function Settings() {
   const [expandedNotificationSections, setExpandedNotificationSections] = useState<Set<string>>(
     () => new Set(['tasks_enabled', 'events_enabled']),
   );
-  const [notificationQaTypes, setNotificationQaTypes] = useState<
-    {
-      type: string;
-      category: string;
-      severity: 'low' | 'medium' | 'high';
-      title: string;
-      message: string;
-      entity_type: string;
-      action_path: string;
-    }[]
-  >([]);
-  const [notificationQaLoading, setNotificationQaLoading] = useState(false);
-  const [notificationQaSending, setNotificationQaSending] = useState<string | null>(null);
-  const [notificationQaActorId, setNotificationQaActorId] = useState('');
-  const [notificationQaRecipientId, setNotificationQaRecipientId] = useState('');
-  const [notificationQaRecipientFeed, setNotificationQaRecipientFeed] = useState<
-    {
-      id: string;
-      type: string;
-      category: string;
-      title: string;
-      message: string;
-      read_at: string | null;
-      created_at: string;
-      action_path: string | null;
-    }[]
-  >([]);
-  const [notificationQaUnreadCount, setNotificationQaUnreadCount] = useState(0);
-  const [notificationQaLastStatusByType, setNotificationQaLastStatusByType] = useState<Record<string, string>>({});
-  const [notificationQaForceSend, setNotificationQaForceSend] = useState(false);
-  const [rolesLoading, setRolesLoading] = useState(false);
-  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [newRoleName, setNewRoleName] = useState('');
-  const [permDraft, setPermDraft] = useState<Set<string>>(new Set());
-  const [savingRole, setSavingRole] = useState(false);
-  const [staffRoleUpdating, setStaffRoleUpdating] = useState<string | null>(null);
-  const canUseNotificationQa = canAccessNotificationQa(can);
 
   const selectedRole = apiRoles.find((r) => r.id === selectedRoleId) ?? null;
 
@@ -335,9 +376,9 @@ export default function Settings() {
 
   const canConfigureGroupTypes = canConfigureGroupTypeOptions(can);
 
-  const memberStatusesTabActive = activeTab === 'memberStatuses';
-  const groupTypesTabActive = activeTab === 'groupTypes';
-  const customFieldsTabActive = activeTab === 'customFields';
+  const memberStatusesTabActive = mainTab === 'general' && generalSub === 'memberStatuses';
+  const groupTypesTabActive = mainTab === 'general' && generalSub === 'groupTypes';
+  const customFieldsTabActive = mainTab === 'general' && generalSub === 'customFields';
   const {
     options: memberStatusOptions,
     loading: memberStatusOptionsLoading,
@@ -740,8 +781,8 @@ export default function Settings() {
   }, [selectedRoleId, apiRoles]);
 
   useEffect(() => {
-    if (activeTab === 'permissions' && token && canAnyRoleAdmin(can)) void fetchOrgRoles();
-  }, [activeTab, token, fetchOrgRoles, can]);
+    if (mainTab === 'roles' && rolesSub === 'permissions' && token && canAnyRoleAdmin(can)) void fetchOrgRoles();
+  }, [mainTab, rolesSub, token, fetchOrgRoles, can]);
 
   const persistRolePermissions = async () => {
     if (!token || !selectedRoleId) return;
@@ -769,6 +810,16 @@ export default function Settings() {
   const applyAllPermissionsToDraft = () => {
     const full = new Set(validatePermissionIds(ALL_PERMISSION_IDS));
     setPermDraft(new Set(resolveImpliedPermissions(full)));
+  };
+
+  const applySectionPermissionsToDraft = (sectionId: string) => {
+    const sectionIds = getMatrixSectionPermissionIds(sectionId);
+    if (sectionIds.length === 0) return;
+    setPermDraft((prev) => {
+      const next = new Set(prev);
+      for (const id of sectionIds) next.add(id);
+      return new Set(resolveImpliedPermissions(next));
+    });
   };
 
   const nextDuplicateRoleName = (sourceName: string, existing: ApiRoleRow[]) => {
@@ -1125,26 +1176,6 @@ export default function Settings() {
   const [bulkModalSearch, setBulkModalSearch] = useState('');
   const [bulkModalSelected, setBulkModalSelected] = useState<Set<string>>(new Set());
   const [bulkModalSubmitting, setBulkModalSubmitting] = useState(false);
-  const qaActors = useMemo(
-    () =>
-      staffList.map((row) => ({
-        id: row.id,
-        name: [row.first_name || '', row.last_name || ''].join(' ').trim() || row.email || 'Staff user',
-        email: row.email || '',
-      })),
-    [staffList],
-  );
-
-  const notificationQaTypeGroups = useMemo(() => {
-    const byCategory = new Map<string, typeof notificationQaTypes>();
-    for (const item of notificationQaTypes) {
-      const list = byCategory.get(item.category) || [];
-      list.push(item);
-      byCategory.set(item.category, list);
-    }
-    return [...byCategory.entries()];
-  }, [notificationQaTypes]);
-
   const fetchStaffProfileGroups = useCallback(async () => {
     if (!token) return;
     setStaffGroupsLoading(true);
@@ -1191,99 +1222,8 @@ export default function Settings() {
     }
   }, [token, selectedBranch?.id]);
 
-  const fetchNotificationQaTypes = useCallback(async () => {
-    if (!token || !canUseNotificationQa) return;
-    setNotificationQaLoading(true);
-    try {
-      const data = (await notificationsApi.listTestTypes()) as {
-        types?: {
-          type: string;
-          category: string;
-          severity: 'low' | 'medium' | 'high';
-          title: string;
-          message: string;
-          entity_type: string;
-          action_path: string;
-        }[];
-      };
-      const list = Array.isArray(data.types) ? data.types : [];
-      setNotificationQaTypes(list);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load notification QA types');
-      setNotificationQaTypes([]);
-    } finally {
-      setNotificationQaLoading(false);
-    }
-  }, [token, canUseNotificationQa]);
-
-  const fetchNotificationQaPreview = useCallback(async () => {
-    if (!token || !canUseNotificationQa || !notificationQaRecipientId) {
-      setNotificationQaRecipientFeed([]);
-      setNotificationQaUnreadCount(0);
-      return;
-    }
-    try {
-      const [feedRes, unreadRes] = await Promise.all([
-        notificationsApi.testPreview(notificationQaRecipientId, 25) as Promise<{ notifications?: Record<string, unknown>[] }>,
-        notificationsApi.testPreviewUnreadCount(notificationQaRecipientId) as Promise<{ unread_count?: number }>,
-      ]);
-      const rows = Array.isArray(feedRes.notifications) ? feedRes.notifications : [];
-      setNotificationQaRecipientFeed(
-        rows.map((n) => ({
-          id: String(n.id || ''),
-          type: String(n.type || ''),
-          category: String(n.category || ''),
-          title: String(n.title || ''),
-          message: String(n.message || ''),
-          read_at: typeof n.read_at === 'string' ? n.read_at : null,
-          created_at: typeof n.created_at === 'string' ? n.created_at : new Date().toISOString(),
-          action_path: typeof n.action_path === 'string' ? n.action_path : null,
-        })),
-      );
-      setNotificationQaUnreadCount(Number(unreadRes.unread_count || 0));
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load recipient preview');
-    }
-  }, [token, canUseNotificationQa, notificationQaRecipientId]);
-
-  const sendNotificationQaType = useCallback(
-    async (type: string) => {
-      if (!token || !canUseNotificationQa || !notificationQaRecipientId) {
-        toast.error('Choose recipient first');
-        return;
-      }
-      setNotificationQaSending(type);
-      try {
-        const data = (await notificationsApi.testSend({
-          type,
-          recipient_profile_id: notificationQaRecipientId,
-          actor_profile_id: notificationQaActorId || undefined,
-          force: notificationQaForceSend || undefined,
-        })) as { status?: string; delivered?: boolean; inserted?: boolean };
-        const inserted = data.inserted !== false;
-        const status = typeof data.status === 'string' ? data.status : data.delivered ? 'delivered' : 'sent';
-        setNotificationQaLastStatusByType((prev) => ({ ...prev, [type]: status }));
-        if (inserted) {
-          toast.success(`Test sent: ${type} (${status})`);
-        } else {
-          toast.message(
-            `Skipped ${type}: same QA type for this recipient was sent in the last 60 minutes. Enable "Force send" to insert another row.`,
-          );
-        }
-        await fetchNotificationQaPreview();
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : 'Failed to send test notification';
-        setNotificationQaLastStatusByType((prev) => ({ ...prev, [type]: 'failed' }));
-        toast.error(msg);
-      } finally {
-        setNotificationQaSending(null);
-      }
-    },
-    [token, canUseNotificationQa, notificationQaRecipientId, notificationQaActorId, notificationQaForceSend, fetchNotificationQaPreview],
-  );
-
   useEffect(() => {
-    if (activeTab !== 'staff' || !token) return;
+    if (mainTab !== 'roles' || rolesSub !== 'staff' || !token) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -1307,7 +1247,7 @@ export default function Settings() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, token, selectedBranch?.id]);
+  }, [mainTab, rolesSub, token, selectedBranch?.id]);
 
   const openMinistryScopeModal = useCallback(
     async (profileId: string) => {
@@ -1428,51 +1368,37 @@ export default function Settings() {
 
   useEffect(() => {
     if (
-      activeTab === 'staff' &&
+      mainTab === 'roles' &&
+      rolesSub === 'staff' &&
       token &&
       canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchStaffList();
     }
-  }, [activeTab, token, fetchStaffList, can]);
+  }, [mainTab, rolesSub, token, fetchStaffList, can]);
 
   useEffect(() => {
     if (
-      activeTab === 'staff' &&
+      mainTab === 'roles' &&
+      rolesSub === 'staff' &&
       token &&
       canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchOrgRoles();
     }
-  }, [activeTab, token, can, fetchOrgRoles]);
+  }, [mainTab, rolesSub, token, can, fetchOrgRoles]);
 
   useEffect(() => {
     if (
-      activeTab === 'staff' &&
+      mainTab === 'roles' &&
+      rolesSub === 'staff' &&
       token &&
       canAccessStaffOrRoleAdmin(can)
     ) {
       void fetchStaffProfileGroups();
     }
-  }, [activeTab, token, can, fetchStaffProfileGroups]);
+  }, [mainTab, rolesSub, token, can, fetchStaffProfileGroups]);
 
-  useEffect(() => {
-    if (activeTab === 'notificationsQA' && token && canUseNotificationQa) {
-      void fetchStaffList();
-      void fetchNotificationQaTypes();
-    }
-  }, [activeTab, token, canUseNotificationQa, fetchStaffList, fetchNotificationQaTypes]);
-
-  useEffect(() => {
-    if (!canUseNotificationQa) return;
-    if (!notificationQaActorId && qaActors.length > 0) setNotificationQaActorId(qaActors[0].id);
-    if (!notificationQaRecipientId && qaActors.length > 0) setNotificationQaRecipientId(qaActors[0].id);
-  }, [canUseNotificationQa, qaActors, notificationQaActorId, notificationQaRecipientId]);
-
-  useEffect(() => {
-    if (activeTab !== 'notificationsQA' || !canUseNotificationQa) return;
-    void fetchNotificationQaPreview();
-  }, [activeTab, canUseNotificationQa, fetchNotificationQaPreview]);
 
   const handleCreateGroupLeader = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1709,10 +1635,10 @@ export default function Settings() {
   }, [token]);
 
   useEffect(() => {
-    if (activeTab === 'branches') {
+    if (mainTab === 'general' && generalSub === 'branches') {
       void fetchBranches();
     }
-  }, [activeTab, fetchBranches]);
+  }, [mainTab, generalSub, fetchBranches]);
 
   const handleSaveBranch = async (branchData: any) => {
     if (!token) return;
@@ -1775,173 +1701,115 @@ export default function Settings() {
 
   return (
     <div className="space-y-8">
-      {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-gray-200">
-        <button
-          type="button"
-          onClick={() => goSettingsTab('general')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'general'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          General Settings
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('notifications')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'notifications'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Bell className="w-4 h-4 inline mr-2" />
-          Notifications
-        </button>
-        {canUseNotificationQa && (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-b border-gray-200">
           <button
             type="button"
-            onClick={() => goSettingsTab('notificationsQA')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-              activeTab === 'notificationsQA'
+            onClick={() => navigateSettings({ main: 'general' })}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+              mainTab === 'general'
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <CheckSquare className="w-4 h-4 inline mr-2" />
-            Notification QA
+            <Settings2 className="w-4 h-4 inline mr-2 shrink-0" />
+            General settings
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => goSettingsTab('staff')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'staff'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <User className="w-4 h-4 inline mr-2" />
-          Staff / Leaders
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('permissions')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'permissions'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Users className="w-4 h-4 inline mr-2" />
-          Roles & Permissions
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('customFields')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'customFields'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Type className="w-4 h-4 inline mr-2" />
-          Custom Fields
-        </button>
-        {canViewOrEditEventTypesUi(can) && (
-        <button
+          <button
             type="button"
-            onClick={() => goSettingsTab('eventTypes')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'eventTypes'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Tag className="w-4 h-4 inline mr-2" />
-          Event Types
-        </button>
-        )}
-        {canViewOrEditProgramTemplatesUi(can) && (
-        <button
-            type="button"
-            onClick={() => goSettingsTab('programTemplates')}
-            className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-              activeTab === 'programTemplates'
+            onClick={() => navigateSettings({ main: 'notifications' })}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+              mainTab === 'notifications'
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            <ClipboardList className="w-4 h-4 inline mr-2" />
-            Program templates
+            <Bell className="w-4 h-4 inline mr-2" />
+            Notifications
           </button>
+          <button
+            type="button"
+            onClick={() => navigateSettings({ main: 'roles' })}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-all ${
+              mainTab === 'roles'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Shield className="w-4 h-4 inline mr-2" />
+            Roles and permissions
+          </button>
+        </div>
+
+        {mainTab === 'general' && (
+          <div
+            className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 -mb-1"
+            role="tablist"
+            aria-label="General settings sections"
+          >
+            {GENERAL_SUB_TABS.filter((t) => {
+              if (t.id === 'eventTypes' && !canViewOrEditEventTypesUi(can)) return false;
+              if (t.id === 'programTemplates' && !canViewOrEditProgramTemplatesUi(can)) return false;
+              return true;
+            }).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={generalSub === t.id}
+                onClick={() => navigateSettings({ main: 'general', generalSub: t.id })}
+                className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
+                  generalSub === t.id
+                    ? 'border-gray-900 bg-gray-900 text-white'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         )}
-        <button
-          type="button"
-          onClick={() => goSettingsTab('memberStatuses')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'memberStatuses'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <UserCircle2 className="w-4 h-4 inline mr-2" />
-          Member statuses
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('groupTypes')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'groupTypes'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Layers className="w-4 h-4 inline mr-2" />
-          Group types
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('integrations')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'integrations'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <MessageSquare className="w-4 h-4 inline mr-2" />
-          Integrations
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('branches')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'branches'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Building2 className="w-4 h-4 inline mr-2" />
-          Branch Selection
-        </button>
-        <button
-          type="button"
-          onClick={() => goSettingsTab('database')}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-            activeTab === 'database'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Database className="w-4 h-4 inline mr-2" />
-          Database
-        </button>
+
+        {mainTab === 'roles' && (
+          <div
+            className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 -mb-1"
+            role="tablist"
+            aria-label="Roles and permissions"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rolesSub === 'staff'}
+              onClick={() => navigateSettings({ main: 'roles', rolesSub: 'staff' })}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all inline-flex items-center gap-1.5 ${
+                rolesSub === 'staff'
+                  ? 'border-gray-900 bg-gray-900 text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              Staff / Leaders
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rolesSub === 'permissions'}
+              onClick={() => navigateSettings({ main: 'roles', rolesSub: 'permissions' })}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all inline-flex items-center gap-1.5 ${
+                rolesSub === 'permissions'
+                  ? 'border-gray-900 bg-gray-900 text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Roles and permission
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* General Settings Tab */}
-      {activeTab === 'general' && (
+      {/* General → Organization name */}
+      {mainTab === 'general' && generalSub === 'organization' && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm max-w-2xl">
             <div className="flex items-start gap-3">
@@ -1979,7 +1847,7 @@ export default function Settings() {
                   )}
               </div>
                 {!canEditOrgName && (
-                  <p className="mt-3 text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <p className="mt-3 text-xs text-blue-900 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     You can view the name. Ask an owner or administrator to grant &quot;Edit organization name&quot; in
                     Roles &amp; permissions if you need to change it.
                   </p>
@@ -1990,7 +1858,7 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'notifications' && (
+      {mainTab === 'notifications' && (
         <div className="space-y-6 max-w-3xl">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
             <h2 className="text-base font-semibold text-gray-900">Notification Settings</h2>
@@ -2168,168 +2036,11 @@ export default function Settings() {
         </div>
       )}
 
-      {activeTab === 'notificationsQA' && (
-        <div className="space-y-6">
-          {!canUseNotificationQa ? (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
-              You do not have permission to use Notification QA. Ask an owner or user with manage permissions access.
-            </div>
-          ) : (
-            <>
-              <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                <h2 className="text-base font-semibold text-gray-900">Notification QA Console</h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  Test sender/admin and recipient/user flows with all implemented notification types.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Acting as (sender/admin)</label>
-                    <select
-                      value={notificationQaActorId}
-                      onChange={(e) => setNotificationQaActorId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                    >
-                      {qaActors.map((actor) => (
-                        <option key={actor.id} value={actor.id}>
-                          {actor.name}
-                          {actor.email ? ` (${actor.email})` : ''}
-                        </option>
-                      ))}
-                    </select>
-            </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Receiving as (recipient/user)</label>
-                    <select
-                      value={notificationQaRecipientId}
-                      onChange={(e) => setNotificationQaRecipientId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                    >
-                      {qaActors.map((actor) => (
-                        <option key={actor.id} value={actor.id}>
-                          {actor.name}
-                          {actor.email ? ` (${actor.email})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <label className="mt-4 flex items-center gap-2 cursor-pointer text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={notificationQaForceSend}
-                    onChange={(e) => setNotificationQaForceSend(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span>Force send (bypass 60-minute dedupe; creates a new DB row each time)</span>
-                </label>
-              </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-                <div className="xl:col-span-3 space-y-4">
-                  <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900">Send test notifications</h3>
-                      {notificationQaLoading && <span className="text-xs text-gray-500">Loading types...</span>}
-                    </div>
-                    <div className="space-y-4 mt-4">
-                      {notificationQaTypeGroups.length === 0 ? (
-                        <p className="text-sm text-gray-500">No test types loaded.</p>
-                      ) : (
-                        notificationQaTypeGroups.map(([category, items]) => (
-                          <div key={category} className="rounded-xl border border-gray-200 p-4">
-                            <p className="text-xs font-semibold text-gray-600 mb-3">{category}</p>
-                            <div className="space-y-2">
-                              {items.map((item) => {
-                                const status = notificationQaLastStatusByType[item.type];
-                                return (
-                                  <div
-                                    key={item.type}
-                                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2"
-                                  >
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-gray-900">{item.type}</p>
-                                      <p className="text-xs text-gray-500">{item.title}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      {status ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700">
-                                          {status}
-                                        </span>
-                                      ) : null}
-            <button
-                                        type="button"
-                                        onClick={() => void sendNotificationQaType(item.type)}
-                                        disabled={!notificationQaRecipientId || notificationQaSending === item.type}
-                                        className="px-3 py-1.5 bg-gray-900 text-white rounded-md text-xs font-medium disabled:opacity-50"
-                                      >
-                                        {notificationQaSending === item.type ? 'Sending...' : 'Send'}
-            </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-          </div>
-
-                <div className="xl:col-span-2">
-                  <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900">Recipient preview</h3>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                        Unread: {notificationQaUnreadCount}
-                      </span>
-                </div>
-                <button
-                      type="button"
-                      onClick={() => void fetchNotificationQaPreview()}
-                      disabled={!notificationQaRecipientId}
-                      className="px-3 py-1.5 border border-gray-200 rounded-md text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Refresh preview
-                </button>
-                    <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                      {notificationQaRecipientFeed.length === 0 ? (
-                        <p className="text-sm text-gray-500">No notifications yet for selected recipient.</p>
-                      ) : (
-                        notificationQaRecipientFeed.map((n) => (
-                          <div key={n.id} className="rounded-lg border border-gray-100 px-3 py-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-xs font-medium text-gray-900">{n.type}</p>
-                              <span
-                                className={`text-[11px] px-2 py-0.5 rounded-full ${
-                                  n.read_at ? 'bg-gray-100 text-gray-600' : 'bg-blue-50 text-blue-700'
-                                }`}
-                              >
-                                {n.read_at ? 'read' : 'unread'}
-                              </span>
-              </div>
-                            <p className="text-xs text-gray-800 mt-1">{n.title}</p>
-                            <p className="text-xs text-gray-500 mt-1">{n.message}</p>
-                            <p className="text-[11px] text-gray-400 mt-1">
-                              {formatNotificationDateTime(n.created_at)}
-                              {n.action_path ? ` • ${n.action_path}` : ''}
-                            </p>
-            </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'staff' && (
+      {mainTab === 'roles' && rolesSub === 'staff' && (
         <div className="space-y-8 max-w-3xl">
           {!canAccessStaffOrRoleAdmin(can) ? (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900">
               You do not have permission to view staff accounts. Ask an administrator.
             </div>
           ) : (
@@ -2485,7 +2196,7 @@ export default function Settings() {
                                 {g.member_count} member{g.member_count === 1 ? '' : 's'}
                               </span>
                               {g.suspended === true && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200">
                                   Suspended
                                 </span>
                               )}
@@ -2517,7 +2228,7 @@ export default function Settings() {
                                 <button
                                   type="button"
                                   onClick={() => void deleteStaffProfileGroup(g.id)}
-                                  className="text-xs text-red-600 hover:underline"
+                                  className="text-xs text-blue-600 hover:underline"
                                 >
                                   Delete group
                                 </button>
@@ -2583,7 +2294,7 @@ export default function Settings() {
                                         <button
                                           type="button"
                                           onClick={() => void removeStaffFromProfileGroup(g.id, m.profile_id)}
-                                          className="text-red-600 hover:underline shrink-0"
+                                          className="text-blue-600 hover:underline shrink-0"
                                         >
                                           Remove
                         </button>
@@ -2640,7 +2351,7 @@ export default function Settings() {
                           <span className="inline-flex items-center gap-2 flex-wrap">
                             {[row.first_name, row.last_name].filter(Boolean).join(' ') || '—'}
                             {row.is_org_owner === true && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 border border-blue-200">
                                 Owner
                         </span>
                             )}
@@ -2785,7 +2496,7 @@ export default function Settings() {
                             <span>
                               <span className="font-medium text-gray-900">{g.name}</span>
                               {g.system_kind === 'all_members' ? (
-                                <span className="ml-2 text-xs text-amber-700">Full branch</span>
+                                <span className="ml-2 text-xs text-blue-700">Full branch</span>
                               ) : null}
                             </span>
                           </label>
@@ -2960,10 +2671,10 @@ export default function Settings() {
       )}
 
       {/* Permissions Tab */}
-      {activeTab === 'permissions' && (
+      {mainTab === 'roles' && rolesSub === 'permissions' && (
         <div className="space-y-6">
           {!canAnyRoleAdmin(can) ? (
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900">
               You do not have permission to manage roles. Ask an organization administrator.
                 </div>
           ) : rolesLoading ? (
@@ -3000,7 +2711,7 @@ export default function Settings() {
                   <p className="text-xs font-semibold text-gray-500">Roles</p>
                   <ul className="rounded-2xl border border-gray-200 bg-white divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
                     {apiRoles.map((r) => (
-                      <li key={r.id} className="flex items-stretch">
+                      <li key={r.id} className="group/role-row flex items-stretch">
                         <button
                           type="button"
                           onClick={() => setSelectedRoleId(r.id)}
@@ -3022,7 +2733,7 @@ export default function Settings() {
                             e.stopPropagation();
                             void duplicateOrgRole(r);
                           }}
-                          className="shrink-0 px-3 border-l border-gray-100 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50"
+                          className="shrink-0 border-l border-gray-100 px-3 text-gray-500 transition-opacity hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 opacity-0 group-hover/role-row:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-gray-400"
                         >
                           <Copy className="w-4 h-4" />
                         </button>
@@ -3057,14 +2768,15 @@ export default function Settings() {
                           <button
                             type="button"
                             onClick={() => void deleteOrgRole(selectedRole.id)}
-                            className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                            className="px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
                           >
                             Delete role
                           </button>
               </div>
                 </div>
                       <p className="text-xs text-gray-500">
-                        Assign staff to roles from the <strong>Staff / Leaders</strong> tab.
+                        Assign staff to roles from <strong>Roles and permissions</strong> →{' '}
+                        <strong>Staff / Leaders</strong>.
                       </p>
 
                       <div className="max-h-[min(70vh,720px)] overflow-y-auto pr-1">
@@ -3072,6 +2784,7 @@ export default function Settings() {
                           permDraft={permDraft}
                           impliedByOther={impliedByOther}
                           onToggle={togglePermDraft}
+                          onApplySection={applySectionPermissionsToDraft}
                           disabled={savingRole}
                         />
                       </div>
@@ -3091,16 +2804,16 @@ export default function Settings() {
       )}
 
       {/* Custom Fields Tab */}
-      {activeTab === 'customFields' && (
+      {mainTab === 'general' && generalSub === 'customFields' && (
         <div className="space-y-6">
           {customFieldsSchemaHint ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <p className="font-semibold text-amber-900">Database setup required</p>
-              <p className="mt-2 leading-relaxed text-amber-900/90">{customFieldsSchemaHint}</p>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+              <p className="font-semibold text-blue-900">Database setup required</p>
+              <p className="mt-2 leading-relaxed text-blue-900/90">{customFieldsSchemaHint}</p>
               <button
                 type="button"
                 onClick={() => void fetchCustomFieldDefinitions()}
-                className="mt-3 text-sm font-semibold text-amber-900 underline decoration-amber-700/60 hover:decoration-amber-900"
+                className="mt-3 text-sm font-semibold text-blue-900 underline decoration-blue-700/60 hover:decoration-blue-900"
               >
                 Retry after running the migration
               </button>
@@ -3427,27 +3140,29 @@ export default function Settings() {
       )}
 
       {/* Event Types Tab */}
-      {activeTab === 'eventTypes' &&
+      {mainTab === 'general' &&
+        generalSub === 'eventTypes' &&
         (canViewOrEditEventTypesUi(can) ? (
           <EventTypes embedded />
         ) : (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900">
             You do not have permission to manage event types.
           </div>
         ))}
 
       {/* Program templates Tab */}
-      {activeTab === 'programTemplates' &&
+      {mainTab === 'general' &&
+        generalSub === 'programTemplates' &&
         (canViewOrEditProgramTemplatesUi(can) ? (
           <EventOutlineTemplates embedded />
         ) : (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-900">
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900">
             You do not have permission to manage program templates.
           </div>
         ))}
 
       {/* Member statuses Tab */}
-      {activeTab === 'memberStatuses' && (
+      {mainTab === 'general' && generalSub === 'memberStatuses' && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -3471,7 +3186,7 @@ export default function Settings() {
           </div>
 
           {!canConfigureMemberStatuses && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
               You can view status labels below. Adding or editing requires <strong>System settings</strong>,{' '}
               <strong>Manage staff</strong>, <strong>Manage roles &amp; permissions</strong>, or{' '}
               <strong>Manage member statuses</strong> (configure under Roles &amp; Permissions).
@@ -3606,7 +3321,7 @@ export default function Settings() {
                             type="button"
                             onClick={() => void deleteMemberStatusOption(row.id)}
                             disabled={memberStatusBusy}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
                             aria-label="Delete status"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -3637,7 +3352,7 @@ export default function Settings() {
       )}
 
       {/* Group types Tab */}
-      {activeTab === 'groupTypes' && (
+      {mainTab === 'general' && generalSub === 'groupTypes' && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -3662,31 +3377,31 @@ export default function Settings() {
           </div>
 
           {groupTypeTableMissing && !groupTypeOptionsLoading && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
               <p className="font-semibold">Database table missing</p>
-              <p className="mt-2 text-red-900">
-                The <code className="rounded bg-red-100 px-1 py-0.5 text-xs">group_type_options</code> table is not in
+              <p className="mt-2 text-blue-900">
+                The <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">group_type_options</code> table is not in
                 your Supabase project yet.
               </p>
-              <ol className="mt-3 list-decimal list-inside space-y-1 text-red-900">
+              <ol className="mt-3 list-decimal list-inside space-y-1 text-blue-900">
                 <li>
                   Open <strong>Supabase → SQL Editor</strong>, paste the contents of{' '}
-                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">migrations/group_type_options.sql</code>, and
+                  <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">migrations/group_type_options.sql</code>, and
                   run it.
                 </li>
                 <li>
                   Or from the project folder run{' '}
-                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">npm run migrate:group-type-options</code>{' '}
-                  with <code className="rounded bg-red-100 px-1 py-0.5 text-xs">DATABASE_URL</code> (or{' '}
-                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">SUPABASE_DB_URL</code>) in{' '}
-                  <code className="rounded bg-red-100 px-1 py-0.5 text-xs">.env</code>.
+                  <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">npm run migrate:group-type-options</code>{' '}
+                  with <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">DATABASE_URL</code> (or{' '}
+                  <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">SUPABASE_DB_URL</code>) in{' '}
+                  <code className="rounded bg-blue-100 px-1 py-0.5 text-xs">.env</code>.
                 </li>
               </ol>
               <p className="mt-3">
                 <button
                   type="button"
                   onClick={() => void refreshGroupTypeOptions()}
-                  className="text-sm font-medium text-red-900 underline underline-offset-2 hover:text-red-700"
+                  className="text-sm font-medium text-blue-900 underline underline-offset-2 hover:text-blue-700"
                 >
                   Retry after installing
                 </button>
@@ -3695,7 +3410,7 @@ export default function Settings() {
           )}
 
           {!canConfigureGroupTypes && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
               You can view group types below. Adding or editing requires <strong>Manage groups</strong>,{' '}
               <strong>System settings</strong>, <strong>Manage staff</strong>, or{' '}
               <strong>Manage roles &amp; permissions</strong>.
@@ -3793,7 +3508,7 @@ export default function Settings() {
                             type="button"
                             onClick={() => void deleteGroupTypeOption(row.id)}
                             disabled={groupTypeBusy}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
                             aria-label="Delete group type"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -3823,7 +3538,7 @@ export default function Settings() {
       )}
 
       {/* Integrations Tab */}
-      {activeTab === 'integrations' && (
+      {mainTab === 'general' && generalSub === 'integrations' && (
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -4386,9 +4101,9 @@ export default function Settings() {
                     </div>
 
                     {/* Info Box */}
-                    <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-4 mt-4">
-                      <h5 className="text-sm font-medium text-yellow-900 mb-2">⚠️ Important Notes</h5>
-                      <ul className="text-xs text-yellow-800 space-y-1">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-4">
+                      <h5 className="text-sm font-medium text-blue-900 mb-2">Important notes</h5>
+                      <ul className="text-xs text-blue-800 space-y-1">
                         <li>• Test your configuration before sending to members</li>
                         <li>• Ensure your domain is verified with your email provider</li>
                         <li>��� Configure SPF and DKIM records for better deliverability</li>
@@ -4411,7 +4126,7 @@ export default function Settings() {
       )}
 
       {/* Branches Tab */}
-      {activeTab === 'branches' && (
+      {mainTab === 'general' && generalSub === 'branches' && (
         <div className="space-y-6 max-w-4xl">
           {/* Active branch (scope for the whole app) */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -4592,10 +4307,10 @@ export default function Settings() {
                         </button>
                         <button
                           onClick={() => handleDeleteBranch(branch.id, String(branch.name || ''))}
-                          className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 hover:bg-blue-50 rounded-lg transition-colors"
                           title="Delete branch"
                         >
-                          <Trash2 className="w-4 h-4 text-red-600" />
+                          <Trash2 className="w-4 h-4 text-blue-600" />
                         </button>
                       </div>
                     </div>
@@ -4620,33 +4335,6 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Database Tab */}
-      {activeTab === 'database' && (
-        <div className="space-y-6 max-w-3xl">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-base font-semibold text-gray-900">Database Configuration</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Test and verify your Supabase database connection and configuration.
-            </p>
-          </div>
-
-          <DatabaseConnectionTest />
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h5 className="text-xs font-semibold text-blue-900 mb-2 flex items-center">
-              <Database className="w-3.5 h-3.5 mr-1.5" />
-              Database Information
-            </h5>
-            <ul className="text-xs text-blue-800 space-y-1">
-              <li>• Your Supabase project is connected and ready to use</li>
-              <li>• All tables have been created with proper Row Level Security policies</li>
-              <li>• Real-time subscriptions are enabled for live data updates</li>
-              <li>• Run the connection test above to verify everything is working</li>
-            </ul>
-          </div>
-        </div>
-      )}
-      
       {/* Assign Leader Modal */}
       {showAssignLeaderModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -4683,7 +4371,7 @@ export default function Settings() {
               {/* Member Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Member <span className="text-red-500">*</span>
+                  Select Member <span className="text-blue-600">*</span>
                 </label>
                 <select
                   value={selectedMember}
@@ -4724,7 +4412,7 @@ export default function Settings() {
               {/* Role Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Leadership Role <span className="text-red-500">*</span>
+                  Leadership Role <span className="text-blue-600">*</span>
                 </label>
                 <div className="grid grid-cols-3 gap-3">
                   {[
@@ -4750,7 +4438,7 @@ export default function Settings() {
               {/* Ministry Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Assign to Ministries <span className="text-red-500">*</span>
+                  Assign to Ministries <span className="text-blue-600">*</span>
                 </label>
                 <p className="text-xs text-gray-500 mb-3">Select one or more ministries this leader will manage</p>
                 <div className="space-y-1 max-h-64 overflow-y-auto p-1">

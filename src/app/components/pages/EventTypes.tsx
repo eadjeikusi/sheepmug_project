@@ -245,7 +245,7 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
                           <button
                             type="button"
                             onClick={() => void handleDelete(r)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Delete

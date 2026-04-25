@@ -41,7 +41,7 @@ AS $f$
     WHEN 'track_attendance' THEN
       ARRAY['view_event_attendance','record_event_attendance']::text[]
     WHEN 'manage_notifications' THEN
-      ARRAY['send_notifications','configure_notifications']::text[]
+      ARRAY['configure_notifications']::text[]
     WHEN 'manage_branches' THEN
       ARRAY['add_branches','edit_branches','delete_branches']::text[]
     WHEN 'manage_member_statuses' THEN
