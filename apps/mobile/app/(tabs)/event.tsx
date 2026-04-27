@@ -938,7 +938,7 @@ export default function EventScreen() {
         )}
       </FormModalShell>
 
-      {loading ? (
+      {loading && events.length === 0 ? (
         <View style={styles.skeletonListFill}>
           <EventListSkeleton count={7} />
         </View>

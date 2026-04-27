@@ -82,7 +82,6 @@ export function SettingsSubscription({ activeSub, onSubChange, organization, mem
     <div className="space-y-8">
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Subscription</h2>
-        <p className="text-sm text-gray-500 mt-1">Plan, usage, and billing. Live payment processing is coming soon.</p>
       </div>
 
       <div

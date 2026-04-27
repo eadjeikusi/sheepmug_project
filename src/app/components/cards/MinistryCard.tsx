@@ -49,7 +49,7 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
   const leaderName = ministry.profiles
     ? `${ministry.profiles.first_name || ''} ${ministry.profiles.last_name || ''}`.trim()
     : '';
-  const leaderLabel = leaderName || (ministry.leader_id ? 'Assigned' : 'None');
+  const leaderLabel = leaderName || (ministry.leader_id ? 'Assigned' : '');
 
   return (
     <div className="relative bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 overflow-hidden group">
@@ -98,10 +98,14 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
                 <Users className="w-3.5 h-3.5 text-blue-600" />
                 {memberCount} {memberCount === 1 ? 'member' : 'members'}
               </span>
-              <span className="text-gray-400">·</span>
-              <span className="truncate max-w-[12rem]" title={leaderLabel}>
-                Leader: {leaderLabel}
-              </span>
+              {leaderLabel ? (
+                <>
+                  <span className="text-gray-400">·</span>
+                  <span className="truncate max-w-[12rem]" title={leaderLabel}>
+                    Leader: {leaderLabel}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 shrink-0 mt-1 transition-colors" />

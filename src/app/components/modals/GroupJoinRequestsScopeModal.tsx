@@ -141,10 +141,6 @@ export default function GroupJoinRequestsScopeModal({ open, onClose }: Props) {
       <DialogContent className="max-h-[min(90vh,720px)] flex flex-col gap-0 sm:max-w-lg p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0 border-b border-gray-100">
           <DialogTitle>Group join requests</DialogTitle>
-          <DialogDescription>
-            Pending requests for ministries assigned to you (Staff & leaders → Ministry visibility). Approve,
-            decline, or ignore each request.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">

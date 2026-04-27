@@ -13,8 +13,10 @@ import MinistryCard from '../cards/MinistryCard'; // Will create this component
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { useGroupTypeOptions } from '@/hooks/useGroupTypeOptions';
 import { MinistryGridSkeleton } from '@/components/skeletons/data-skeletons';
+import { readPageCache, writePageCache } from '@/utils/pageDataCache';
 
 const PAGE_SIZE = 10;
+const CACHE_TTL_MS = 60_000;
 
 const Ministries: React.FC = () => {
   const { token, authLoading } = useAuth();
@@ -30,8 +32,12 @@ const Ministries: React.FC = () => {
     [groupTypeFilterOpts],
   );
   const [filterGroupType, setFilterGroupType] = useState('');
-  const [ministries, setMinistries] = useState<Group[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cacheKey = useMemo(
+    () => `ministries:${selectedBranch?.id || 'all'}:${filterGroupType.trim() || 'all'}`,
+    [selectedBranch?.id, filterGroupType],
+  );
+  const [ministries, setMinistries] = useState<Group[]>(() => readPageCache<Group[]>(cacheKey, CACHE_TTL_MS) || []);
+  const [isLoading, setIsLoading] = useState(() => readPageCache<Group[]>(cacheKey, CACHE_TTL_MS) === null);
   const [error, setError] = useState<string | null>(null);
   const [isAddMinistryModalOpen, setIsAddMinistryModalOpen] = useState(false);
   const [ministryToEdit, setMinistryToEdit] = useState<Group | null>(null);
@@ -90,7 +96,7 @@ const Ministries: React.FC = () => {
       return;
     }
     if (reset) {
-      setIsLoading(true);
+      setIsLoading(loadedMinistriesCountRef.current === 0);
       setError(null);
       setHasMore(true);
     } else {
@@ -120,7 +126,11 @@ const Ministries: React.FC = () => {
       }
       const data = await response.json();
       const rows = Array.isArray(data) ? data : Array.isArray(data?.groups) ? data.groups : [];
-      setMinistries((prev) => (reset ? rows : [...prev, ...rows]));
+      setMinistries((prev) => {
+        const next = reset ? rows : [...prev, ...rows];
+        writePageCache(cacheKey, next);
+        return next;
+      });
       setHasMore(rows.length === PAGE_SIZE);
     } catch (err: any) {
       if (reset) {
@@ -134,7 +144,7 @@ const Ministries: React.FC = () => {
         setLoadingMore(false);
       }
     }
-  }, [token, authLoading, selectedBranch, filterGroupType]);
+  }, [token, authLoading, selectedBranch, filterGroupType, cacheKey]);
 
   useEffect(() => {
     fetchMinistries();
@@ -212,9 +222,8 @@ const Ministries: React.FC = () => {
             </Button>
           </div>
         </div>
-        <p className="mt-2 text-gray-600">Manage all ministries and their subgroups within your organization.</p>
 
-        {isLoading ? (
+        {isLoading && ministries.length === 0 ? (
           <MinistryGridSkeleton cards={6} />
         ) : ministries.length === 0 ? (
           <div className="flex flex-col flex-1 items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 mt-8">

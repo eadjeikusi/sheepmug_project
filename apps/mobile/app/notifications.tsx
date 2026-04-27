@@ -55,7 +55,7 @@ export default function NotificationsScreen() {
         }}
         onEndReachedThreshold={0.35}
         ListEmptyComponent={
-          loading ? (
+          loading && notifications.length === 0 ? (
             <NotificationListSkeleton count={8} />
           ) : (
             <Text style={styles.muted}>No notifications yet.</Text>

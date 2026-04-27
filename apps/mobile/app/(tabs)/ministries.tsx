@@ -254,7 +254,7 @@ export default function MinistriesScreen() {
           onClearAll={clearAppliedFilters}
         />
 
-        {loading ? (
+        {loading && groups.length === 0 ? (
           <MinistryListSkeleton count={5} />
         ) : filteredGroups.length === 0 ? (
           <Text style={styles.helper}>

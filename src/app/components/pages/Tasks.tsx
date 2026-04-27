@@ -902,20 +902,21 @@ export default function Tasks() {
                     </span>
                   </div>
                   {!expanded && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {checklist.length === 0
-                        ? 'No checklist steps — click to expand'
-                        : `${checklist.length} checklist items — click to expand`}
-                    </p>
+                    null
                   )}
                 </div>
               </div>
             </div>
-            {t.description ? (
-              <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap pl-7">
-                {capitalizeSentencesForUi(t.description)}
-              </p>
-            ) : null}
+            {(() => {
+              const desc = String(t.description ?? '').trim();
+              if (!desc) return null;
+              if (/seeded\s+demo\s+task/i.test(desc) || /replace\s+or\s+delete\s+in\s+production/i.test(desc)) return null;
+              return (
+                <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap pl-7">
+                  {capitalizeSentencesForUi(desc)}
+                </p>
+              );
+            })()}
             <p className="text-xs text-gray-500 mt-1 pl-7">
               {groupTask ? (
                 <>
@@ -1038,16 +1039,102 @@ export default function Tasks() {
 
   return (
     <div className="w-full min-w-0 max-w-4xl space-y-10">
-      <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
           <ListTodo className="w-7 h-7 text-blue-600" />
           Tasks
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {isElevatedTaskViewer
-            ? 'As organization owner, you see all follow-up tasks across every branch. Filter by type, status, dates, and people.'
-            : 'Your assignments and follow-ups for the selected branch (based on your permissions).'}
-        </p>
+
+        {permissionsResolved && canBranch ? (
+          <div
+            className="relative flex w-full min-w-0 flex-col gap-2 sm:shrink-0 sm:ml-0 sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:gap-2"
+            ref={createMenuRef}
+          >
+            <div className="relative flex min-h-11 w-full min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm sm:min-w-[16rem] md:min-w-[20rem]">
+              <motion.span
+                animate={branchSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                transition={{ duration: 0.45, repeat: branchSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
+                className="text-gray-400 shrink-0 mr-2"
+              >
+                <Search className="w-4 h-4" aria-hidden />
+              </motion.span>
+              <input
+                type="search"
+                placeholder="Search tasks..."
+                value={branchSearch}
+                onChange={(e) => setBranchSearch(e.target.value)}
+                onFocus={() => setBranchSearchFocus(true)}
+                onBlur={() => setBranchSearchFocus(false)}
+                className="min-w-0 flex-1 text-base sm:text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
+                aria-label="Search tasks"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setBranchFiltersOpen((v) => !v)}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
+                branchFiltersOpen
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
+            </button>
+            {(canManageMember || canManageGroup) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCreateMenuOpen((o) => !o)}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700"
+                  aria-expanded={createMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create task
+                  <ChevronDown className="w-4 h-4 opacity-90" aria-hidden />
+                </button>
+                {createMenuOpen ? (
+                  <div
+                    className="absolute right-0 top-full z-20 mt-1.5 min-w-[13rem] rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+                    role="menu"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canManageMember}
+                      title={!canManageMember ? 'No permission to create member tasks' : undefined}
+                      onClick={() => {
+                        if (!canManageMember) return;
+                        setCreateMemberOpen(true);
+                        setCreateMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Users className="w-4 h-4 text-slate-500 shrink-0" aria-hidden />
+                      Member task
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canManageGroup}
+                      title={!canManageGroup ? 'No permission to create group tasks' : undefined}
+                      onClick={() => {
+                        if (!canManageGroup) return;
+                        setCreateGroupOpen(true);
+                        setCreateMenuOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Building2 className="w-4 h-4 text-blue-600 shrink-0" aria-hidden />
+                      Group task
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {!permissionsResolved && user && (
@@ -1056,109 +1143,6 @@ export default function Tasks() {
 
       {permissionsResolved && canBranch && (
         <section className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">
-                {isElevatedTaskViewer ? 'All organization tasks' : 'Follow-ups in this branch'}
-              </h2>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {isElevatedTaskViewer
-                  ? 'Every branch — filter by member vs group, status, dates, assignee, and creator.'
-                  : `Filter by status, dates, assignee, and type${
-                      canManageMember || canManageGroup ? '' : ' (read-only)'
-                    }.`}
-              </p>
-            </div>
-            <div
-              className="relative flex w-full min-w-0 flex-col gap-2 sm:shrink-0 sm:ml-0 sm:w-auto sm:flex sm:flex-row sm:flex-wrap sm:items-center sm:gap-2"
-              ref={createMenuRef}
-            >
-                <div className="relative flex min-h-11 w-full min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm sm:min-w-[16rem] md:min-w-[20rem]">
-                  <motion.span
-                    animate={branchSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.45, repeat: branchSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
-                    className="text-gray-400 shrink-0 mr-2"
-                  >
-                    <Search className="w-4 h-4" aria-hidden />
-                  </motion.span>
-                  <input
-                    type="search"
-                    placeholder="Search tasks..."
-                    value={branchSearch}
-                    onChange={(e) => setBranchSearch(e.target.value)}
-                    onFocus={() => setBranchSearchFocus(true)}
-                    onBlur={() => setBranchSearchFocus(false)}
-                    className="min-w-0 flex-1 text-base sm:text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
-                    aria-label="Search tasks"
-                  />
-                </div>
-              <button
-                type="button"
-                onClick={() => setBranchFiltersOpen((v) => !v)}
-                className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
-                  branchFiltersOpen
-                    ? 'bg-blue-50 border-blue-200 text-blue-700'
-                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-                Filters
-              </button>
-                {(canManageMember || canManageGroup) && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setCreateMenuOpen((o) => !o)}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700"
-                      aria-expanded={createMenuOpen}
-                      aria-haspopup="menu"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Create task
-                      <ChevronDown className="w-4 h-4 opacity-90" aria-hidden />
-                    </button>
-                    {createMenuOpen ? (
-                      <div
-                        className="absolute right-0 top-full z-20 mt-1.5 min-w-[13rem] rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
-                        role="menu"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={!canManageMember}
-                          title={!canManageMember ? 'No permission to create member tasks' : undefined}
-                          onClick={() => {
-                            if (!canManageMember) return;
-                            setCreateMemberOpen(true);
-                            setCreateMenuOpen(false);
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Users className="w-4 h-4 text-slate-500 shrink-0" aria-hidden />
-                          Member task
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={!canManageGroup}
-                          title={!canManageGroup ? 'No permission to create group tasks' : undefined}
-                          onClick={() => {
-                            if (!canManageGroup) return;
-                            setCreateGroupOpen(true);
-                            setCreateMenuOpen(false);
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Building2 className="w-4 h-4 text-blue-600 shrink-0" aria-hidden />
-                          Group task
-                        </button>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-          </div>
-
           {branchFiltersOpen && (
             <div className="relative z-10 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
@@ -1332,7 +1316,7 @@ export default function Tasks() {
             <FilterResultChips chips={branchFilterChips} onClearAll={clearAllBranchFilters} />
           ) : null}
 
-          {branchLoading ? (
+          {branchLoading && branchTasks.length === 0 ? (
             <TaskListSkeleton rows={6} />
           ) : branchLoadError ? (
             <p className="text-sm text-red-600">{branchLoadError}</p>
@@ -1638,7 +1622,7 @@ export default function Tasks() {
           {mineFilterChips.length > 0 ? (
             <FilterResultChips chips={mineFilterChips} onClearAll={clearAllMineFilters} />
           ) : null}
-          {mineLoading ? (
+          {mineLoading && mineTasks.length === 0 ? (
             <TaskListSkeleton rows={6} />
           ) : mineLoadError ? (
             <p className="text-sm text-red-600">{mineLoadError}</p>

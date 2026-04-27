@@ -1478,27 +1478,29 @@ const MinistryDetail: React.FC = () => {
                     const photo = photoFromGroupProfile(row.profile);
                     const ini = memberInitials(displayName);
                     return (
-                      <li key={row.id} className="shrink-0 w-[9.75rem] flex flex-col items-stretch">
+                      <li key={row.id} className="shrink-0 flex w-[9.75rem] flex-col items-center">
                         <button
                           type="button"
                           onClick={() => setLeaderPreviewRow(row)}
-                          className="flex flex-col items-center text-center gap-2 rounded-xl border border-blue-100/90 bg-white/70 px-3 pt-3 pb-2.5 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-400 hover:bg-white/90 transition-colors w-full"
+                          className="inline-flex items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-blue-400 rounded-full"
+                          aria-label={displayName}
+                          title={displayName}
                         >
                           {photo ? (
                             <img
                               src={photo}
                               alt=""
-                              className="w-14 h-14 rounded-full object-cover border-4 border-white shadow pointer-events-none"
+                              className="w-14 h-14 rounded-full object-cover pointer-events-none"
                             />
                           ) : (
-                            <div className="w-14 h-14 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-base font-bold border-4 border-white shadow pointer-events-none">
+                            <div className="w-14 h-14 rounded-full bg-blue-200 text-blue-800 flex items-center justify-center text-base font-bold pointer-events-none">
                               {ini}
                             </div>
                           )}
-                          <p className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 w-full">
-                            {displayName}
-                          </p>
                         </button>
+                        <p className="mt-2 w-full text-center text-sm font-semibold text-gray-900 leading-snug line-clamp-2">
+                          {displayName}
+                        </p>
                       </li>
                     );
                   })}
@@ -2262,51 +2264,7 @@ const MinistryDetail: React.FC = () => {
                       className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Announcements</label>
-                    <textarea
-                      value={group.announcements_content || ''}
-                      onChange={(e) =>
-                        setGroup((prev) => (prev ? { ...prev, announcements_content: e.target.value } : null))
-                      }
-                      rows={3}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Program outline</label>
-                    <textarea
-                      value={group.program_outline_content || ''}
-                      onChange={(e) =>
-                        setGroup((prev) => (prev ? { ...prev, program_outline_content: e.target.value } : null))
-                      }
-                      rows={3}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Contact email</label>
-                      <input
-                        type="email"
-                        value={group.contact_email || ''}
-                        onChange={(e) =>
-                          setGroup((prev) => (prev ? { ...prev, contact_email: e.target.value } : null))
-                        }
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <PhoneCountryInput
-                        label="Contact phone"
-                        countryIso={pubContactCountryIso}
-                        onCountryChange={setPubContactCountryIso}
-                        national={pubContactNational}
-                        onNationalChange={setPubContactNational}
-                        className="[&_label]:text-xs [&_label]:font-medium [&_label]:text-gray-500 [&_label]:mb-1 [&_p]:text-[10px] [&_select]:py-2 [&_select]:text-sm [&_input]:py-2 [&_input]:text-sm"
-                      />
-                    </div>
-                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3" />
                 </div>
               {groupCustomFieldDefs.length > 0 ? (
                 <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-5 mb-4">
@@ -2689,6 +2647,7 @@ const MinistryDetail: React.FC = () => {
             id: group.id,
             name: groupDisplayName,
             memberCount: dedupedGroupMembers.length,
+            subgroupCount: subgroups.length,
           }}
         />
       )}

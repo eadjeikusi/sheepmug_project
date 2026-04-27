@@ -867,7 +867,7 @@ export default function TaskScreen() {
             </Pressable>
           </Modal>
 
-          {loading ? (
+          {loading && tasks.length === 0 ? (
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.listContent}

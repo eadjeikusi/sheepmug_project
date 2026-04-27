@@ -17,7 +17,7 @@ export interface BulkSmsComposeModalProps {
   onClose: () => void;
   mode: BulkSmsComposeMode;
   /** Ministry / group page */
-  lockedGroup?: { id: string; name: string; memberCount?: number };
+  lockedGroup?: { id: string; name: string; memberCount?: number; subgroupCount?: number };
   /** Member profile panel */
   lockedMember?: { id: string; name: string; email?: string };
   onSaved?: () => void;
@@ -226,7 +226,14 @@ export default function BulkSmsComposeModal({
                     <Smartphone className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-semibold text-white">Bulk SMS</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-white">Bulk SMS</h2>
+                      {mode === 'group' && lockedGroup?.memberCount != null ? (
+                        <span className="inline-flex items-center rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold text-white">
+                          {lockedGroup.memberCount} {lockedGroup.memberCount === 1 ? 'member' : 'members'}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-sm text-white/80">
                       {mode === 'member' && lockedMember
                         ? `To: ${lockedMember.name}`
@@ -350,16 +357,20 @@ export default function BulkSmsComposeModal({
 
                 {mode === 'group' && lockedGroup && (
                   <div className="rounded-xl border border-gray-200 p-4 bg-gray-50">
-                    <p className="text-sm text-gray-600 mb-2">Recipients: this ministry and its members.</p>
-                    <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeSubgroups}
-                        onChange={(e) => setIncludeSubgroups(e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600"
-                      />
-                      Include subgroups (nested ministries under {lockedGroup.name})
-                    </label>
+                    <p className="text-sm text-gray-700">
+                      Note: this message will be sent to <span className="font-semibold">this ministry</span> and{" "}
+                      <span className="font-semibold">all subgroups</span> under it.
+                      {lockedGroup.memberCount != null ? (
+                        <>
+                          {" "}
+                          <span className="text-gray-500">
+                            ({lockedGroup.memberCount} {lockedGroup.memberCount === 1 ? 'member' : 'members'}
+                            {lockedGroup.subgroupCount != null ? `, ${lockedGroup.subgroupCount} subgroups` : ''}
+                            )
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
                   </div>
                 )}
 

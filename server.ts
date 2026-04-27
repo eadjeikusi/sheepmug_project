@@ -3117,8 +3117,16 @@ app.post("/api/auth/complete-cms-onboarding", async (req, res) => {
       .update({ cms_onboarding_completed_at: nowIso })
       .eq("id", user.id);
     if (upErr) {
-      const msg = String(upErr.message || "").toLowerCase();
-      if (msg.includes("column") && msg.includes("cms_onboarding")) {
+      const msg = String((upErr as any)?.message || "").toLowerCase();
+      const details = String((upErr as any)?.details || "").toLowerCase();
+      const hint = String((upErr as any)?.hint || "").toLowerCase();
+      const code = String((upErr as any)?.code || "").toLowerCase();
+      const combined = `${msg}\n${details}\n${hint}`;
+      if (
+        (combined.includes("column") && combined.includes("cms_onboarding")) ||
+        combined.includes("cms_onboarding_completed_at") ||
+        code.includes("function_invocation_failed")
+      ) {
         return res.status(503).json({
           error: "Database migration required: run migrations/profiles_cms_onboarding.sql",
         });

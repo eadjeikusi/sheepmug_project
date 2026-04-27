@@ -270,7 +270,7 @@ export default function MembersScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      setLoading(true);
+      const hadCached = members.length > 0;
       try {
         const cached = await getOfflineResourceCache<{ members: Member[]; total_count: number }>(
           MEMBERS_CACHE_KEY
@@ -280,6 +280,9 @@ export default function MembersScreen() {
           setMembers(cachedList);
           setMembersTotalCount(Number(cached.data.total_count || 0));
           setHasMoreMembers(false);
+        }
+        if (mounted && !hadCached && !(cached?.data?.members && Array.isArray(cached.data.members) && cached.data.members.length > 0)) {
+          setLoading(true);
         }
         try {
           const { members: list, total_count } = await fetchAllMembersForOffline();
@@ -1051,7 +1054,7 @@ export default function MembersScreen() {
           ) : null}
         </View>
 
-        {loading ? (
+        {loading && members.length === 0 ? (
           <MemberListSkeleton count={10} />
         ) : (
           <FlatList

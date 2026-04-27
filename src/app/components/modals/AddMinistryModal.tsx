@@ -119,9 +119,6 @@ const AddMinistryModal: React.FC<AddMinistryModalProps> = ({ isOpen, onClose, on
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>{ministryToEdit ? 'Edit Ministry' : 'Create New Ministry'}</DialogTitle>
-          <DialogDescription>
-            {ministryToEdit ? 'Make changes to this ministry here.' : 'Add a new ministry to your organization.'}
-          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
