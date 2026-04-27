@@ -119,6 +119,7 @@ export default function Settings() {
   const [mainTab, setMainTab] = useState<SettingsMainTab>('general');
   const [generalSub, setGeneralSub] = useState<GeneralSubTab>('organization');
   const [rolesSub, setRolesSub] = useState<RolesSubTab>('staff');
+  const [subscriptionSub, setSubscriptionSub] = useState<SubscriptionSubTab>('overview');
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedBranch, setSelectedBranch, branches, refreshBranches, loading: branchLoading } = useBranch();
   const { currentOrganization, setCurrentOrganization } = useApp();
@@ -126,6 +127,7 @@ export default function Settings() {
   const canSwitchBranch = user?.is_org_owner === true;
   const { can } = usePermissions();
   const canEditOrgName = can('edit_organization_name');
+  const canManageSubscription = user?.is_org_owner === true || can('system_settings') || can('manage_subscription');
 
   const [orgNameDraft, setOrgNameDraft] = useState('');
   const [orgNameLoading, setOrgNameLoading] = useState(false);
@@ -1703,18 +1705,20 @@ export default function Settings() {
             <Bell className="w-4 h-4 inline mr-2" />
             Notifications
           </button>
-          <button
-            type="button"
-            onClick={() => navigateSettings({ main: 'subscription' })}
-            className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
-              mainTab === 'subscription'
-                ? 'border-gray-900 text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <CreditCard className="w-4 h-4 inline mr-2 shrink-0" />
-            Subscription
-          </button>
+          {canManageSubscription ? (
+            <button
+              type="button"
+              onClick={() => navigateSettings({ main: 'subscription' })}
+              className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
+                mainTab === 'subscription'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <CreditCard className="w-4 h-4 inline mr-2 shrink-0" />
+              Subscription
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => navigateSettings({ main: 'roles' })}
@@ -2020,7 +2024,7 @@ export default function Settings() {
         </div>
       )}
 
-      {mainTab === 'subscription' && (
+      {mainTab === 'subscription' && canManageSubscription && (
         <div className="max-w-5xl">
           <SettingsSubscription
             activeSub={subscriptionSub}

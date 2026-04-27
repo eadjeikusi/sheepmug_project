@@ -43,6 +43,7 @@ export function canAccessStaffOrRoleAdmin(can: CanFn): boolean {
 /** Root / sidebar: who may open Settings */
 export function canOpenSettings(can: CanFn): boolean {
   if (can("system_settings") || can("edit_organization_name")) return true;
+  if (can("manage_subscription")) return true;
   if (canAnyRoleAdmin(can) || canAnyStaffSettings(can)) return true;
   if (some(can, ["view_event_types", "add_event_types", "edit_event_types", "delete_event_types"])) return true;
   if (some(can, ["add_program_templates", "edit_program_templates", "delete_program_templates"])) return true;

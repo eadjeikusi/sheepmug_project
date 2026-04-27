@@ -57,9 +57,23 @@ export function CmsOnboardingModal() {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json().catch(() => ({}));
+      const raw = await res.text().catch(() => '');
+      const data = (() => {
+        if (!raw) return {};
+        try {
+          return JSON.parse(raw) as any;
+        } catch {
+          return {};
+        }
+      })();
       if (!res.ok) {
-        throw new Error(typeof data?.error === 'string' ? data.error : 'Could not save onboarding status');
+        const msg =
+          typeof data?.error === 'string'
+            ? data.error
+            : raw && raw.trim()
+              ? raw.trim()
+              : `Could not save onboarding status (${res.status})`;
+        throw new Error(msg);
       }
       await refreshUser();
     } catch (e: unknown) {

@@ -316,6 +316,11 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
         label: 'Organization name',
         cells: { edit: 'edit_organization_name' },
       },
+      {
+        rowId: 'subscription',
+        label: 'Subscription',
+        cells: { edit: 'manage_subscription' },
+      },
     ],
   },
   {

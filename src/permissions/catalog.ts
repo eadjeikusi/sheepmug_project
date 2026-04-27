@@ -481,6 +481,12 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
         description: "Change the organization display name in Settings (organization owners always can)",
         actionKinds: ["edit"],
       },
+      {
+        id: "manage_subscription",
+        name: "Manage subscription",
+        description: "View and manage subscription/billing settings for the organization",
+        actionKinds: ["manage", "view", "edit"],
+      },
     ],
   },
   {
