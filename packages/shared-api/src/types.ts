@@ -102,6 +102,8 @@ export interface EventTypeRow {
   id: string;
   name: string;
   slug: string;
+  /** When deleting another type, events/templates are reassigned to the default. */
+  is_default?: boolean;
   [key: string]: unknown;
 }
 
@@ -181,6 +183,7 @@ export interface MemberEventItem {
   event_type?: string | null;
   status?: string | null;
   start_time?: string | null;
+  start_date?: string | null;
   end_time?: string | null;
   group_name?: string | null;
   attendance_status?: string | null;
@@ -273,4 +276,152 @@ export interface NotificationPreferences {
   member_care_enabled: boolean;
   leader_updates_enabled: boolean;
   granular_preferences: Record<string, boolean>;
+}
+
+export interface ReportKpiSummary {
+  total_members: number;
+  active_members: number;
+  active_groups: number;
+  events_in_range: number;
+  open_tasks: number;
+}
+
+export interface ReportTrendPoint {
+  bucket: string;
+  count: number;
+}
+
+export interface ReportBreakdownPoint {
+  label: string;
+  count: number;
+}
+
+export interface ReportGroupPoint {
+  group_id: string;
+  group_name: string;
+  member_count: number;
+}
+
+export interface ReportDrilldownMember {
+  member_id: string;
+  member_name: string;
+  status: string;
+  created_at: string | null;
+}
+
+export interface ReportSummaryResponse {
+  kpis: ReportKpiSummary;
+  trend_members: ReportTrendPoint[];
+  breakdown_member_status: ReportBreakdownPoint[];
+  groups_top: ReportGroupPoint[];
+  drilldown_members: ReportDrilldownMember[];
+}
+
+export type ReportType = "group" | "membership" | "leader";
+
+export interface ReportFilterPayload {
+  range_days?: number;
+  /** Inclusive YYYY-MM-DD; when set with `range_end`, the API uses an explicit window instead of rolling `range_days`. */
+  range_start?: string;
+  range_end?: string;
+  /**
+   * Inclusive local calendar window as absolute instants (use with `range_start` + `range_end`).
+   * When set, the server uses these for event/task filtering so the report matches the UI calendar.
+   */
+  range_start_utc?: string;
+  range_end_utc?: string;
+  /** Browser clock (ISO) so server can align rolling 12m profile metrics with the member UI. */
+  client_clock_iso?: string;
+  group_ids?: string[];
+  member_ids?: string[];
+  member_id?: string;
+  leader_id?: string;
+  event_types?: string[];
+  event_ids?: string[];
+  event_search?: string;
+  select_all_members?: boolean;
+  /** Lowercase member `status` values to include (membership report). */
+  member_statuses?: string[];
+  attendance_statuses?: Array<"present" | "absent" | "unsure" | "not_marked" | "all">;
+}
+
+export interface ReportGeneratedPayload extends ReportSummaryResponse {
+  report_type: ReportType;
+  filters_applied: {
+    range_days: number;
+    range_start?: string | null;
+    range_end?: string | null;
+    report_window_mode?: "local_iso" | "ymd_utc" | "rolling";
+    event_range_start?: string;
+    event_range_end?: string;
+    group_ids: string[];
+    member_ids: string[];
+    event_types?: string[];
+    member_statuses?: string[];
+    leader_id: string | null;
+    attendance_statuses: string[];
+  };
+  kpis: ReportKpiSummary & {
+    completed_tasks: number;
+    attendance_total: number;
+    attendance_present: number;
+    attendance_absent: number;
+    attendance_unsure: number;
+    attendance_not_marked: number;
+    attendance_rate_pct: number;
+    task_completion_rate_pct: number;
+    action_logs_in_range: number;
+  };
+  takeaways: string[];
+  raw_preview_rows?: Array<Record<string, unknown>>;
+  member_ministries_joined?: Array<{ member_id: string; groups: string[] }>;
+}
+
+export interface ReportDefinition {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  created_by: string;
+  updated_by: string;
+  name: string;
+  description?: string | null;
+  report_type: ReportType;
+  filter_payload: ReportFilterPayload;
+  output_payload: Record<string, unknown>;
+  is_shared: boolean;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportRun {
+  id: string;
+  definition_id: string | null;
+  report_type: string;
+  report_name?: string | null;
+  report_description?: string | null;
+  filters_summary?: string | null;
+  generated_at: string;
+}
+
+export interface ReportExportResponse {
+  format: "csv" | "pdf";
+  filename: string;
+  content: string;
+  message: string;
+  file_url?: string;
+}
+
+export interface ReportHistoryTableRow {
+  run_id: string;
+  report_name: string;
+  description: string;
+  date: string | null;
+  data_filtered: string;
+  export: {
+    csv_url: string | null;
+    pdf_url: string | null;
+    /** @deprecated No longer created; always null. */
+    graph_url: string | null;
+  };
 }

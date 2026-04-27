@@ -6,6 +6,7 @@ import { CalendarRange } from "lucide-react";
 import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
+import { PickerDropdownCard, pickerPopoverContentClassName } from "./PickerDropdownCard";
 import { CALENDAR_FROM_FALLBACK, CALENDAR_TO_FALLBACK } from "./calendarConstraints";
 import { formatMonthYear, parseYearMonth, toYearMonthString } from "./dateTimeFormat";
 
@@ -58,24 +59,30 @@ export function MonthPickerField({
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto border p-0 shadow-md" align="start">
-          <Calendar
-            mode="single"
-            captionLayout="dropdown-buttons"
-            fromDate={CALENDAR_FROM_FALLBACK}
-            toDate={CALENDAR_TO_FALLBACK}
-            fromYear={CALENDAR_FROM_FALLBACK.getFullYear()}
-            toYear={CALENDAR_TO_FALLBACK.getFullYear()}
-            month={month}
-            onMonthChange={setMonth}
-            selected={selected}
-            onSelect={(d) => {
-              if (d) {
-                onChange(toYearMonthString(d));
-                setOpen(false);
-              }
-            }}
-          />
+        <PopoverContent
+          className={cn(pickerPopoverContentClassName, "w-auto")}
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <PickerDropdownCard>
+            <Calendar
+              mode="single"
+              captionLayout="dropdown-buttons"
+              fromDate={CALENDAR_FROM_FALLBACK}
+              toDate={CALENDAR_TO_FALLBACK}
+              fromYear={CALENDAR_FROM_FALLBACK.getFullYear()}
+              toYear={CALENDAR_TO_FALLBACK.getFullYear()}
+              month={month}
+              onMonthChange={setMonth}
+              selected={selected}
+              onSelect={(d) => {
+                if (d) {
+                  onChange(toYearMonthString(d));
+                  setOpen(false);
+                }
+              }}
+            />
+          </PickerDropdownCard>
         </PopoverContent>
       </Popover>
     </div>

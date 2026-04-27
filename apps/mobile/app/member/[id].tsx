@@ -19,15 +19,17 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type {
-  CustomFieldDefinition,
-  Group,
-  Member,
-  MemberEventItem,
-  MemberImportantDate,
-  MemberNote,
-  MemberStatusOption,
-  TaskItem,
+import {
+  type CustomFieldDefinition,
+  type Group,
+  type Member,
+  type MemberEventItem,
+  type MemberImportantDate,
+  type MemberNote,
+  type MemberStatusOption,
+  type TaskItem,
+  gateAttendanceRecording,
+  eventStartMsFromRow,
 } from "@sheepmug/shared-api";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
 import { FilterTriggerButton } from "../../components/FilterTriggerButton";
@@ -291,7 +293,7 @@ export default function MemberProfileScreen() {
   const params = useLocalSearchParams<{ id: string | string[] }>();
   const memberId = normalizeRouteId(params.id);
   const { can } = usePermissions();
-  const { isOnline, queueMemberNoteCreate, queueMemberNoteUpdate, queueMemberNoteDelete } =
+  const { isOnline, queueAttendanceUpdate, queueMemberNoteCreate, queueMemberNoteUpdate, queueMemberNoteDelete } =
     useOfflineSync();
 
   const [member, setMember] = useState<Member | null>(null);
@@ -311,6 +313,7 @@ export default function MemberProfileScreen() {
   const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
   const [attendancePickEventId, setAttendancePickEventId] = useState<string | null>(null);
   const [savingAttendanceEventId, setSavingAttendanceEventId] = useState<string | null>(null);
+  const [memberAttClock, setMemberAttClock] = useState(0);
   const [memberEventSearch, setMemberEventSearch] = useState("");
   const [memberEventWhenFilter, setMemberEventWhenFilter] = useState<"all" | "upcoming" | "past">("all");
   const [memberEventAttendanceFilter, setMemberEventAttendanceFilter] = useState<"all" | AttendanceStatus>("all");
@@ -470,6 +473,11 @@ export default function MemberProfileScreen() {
       mounted = false;
     };
   }, [memberId]);
+
+  useEffect(() => {
+    const t = setInterval(() => setMemberAttClock((n) => n + 1), 10_000);
+    return () => clearInterval(t);
+  }, []);
 
   const imageUri = useMemo(
     () => normalizeImageUri(member ? firstValidImageUri(member) : null),
@@ -799,8 +807,29 @@ export default function MemberProfileScreen() {
 
   async function saveMemberAttendance(eventId: string, status: AttendanceStatus) {
     if (!memberId) return;
+    const ev = events.find((e) => e.id === eventId);
+    const startIso =
+      (ev?.start_time && String(ev.start_time).trim()) || (ev?.start_date && String(ev.start_date).trim()) || null;
+    const gate = gateAttendanceRecording(
+      eventStartMsFromRow({
+        start_time: ev?.start_time ?? null,
+        start_date: ev?.start_date ?? null,
+      }),
+      Date.now()
+    );
+    if (!gate.allowed) {
+      Alert.alert("Attendance not open yet", gate.userMessage);
+      return;
+    }
     setSavingAttendanceEventId(eventId);
     try {
+      if (!isOnline) {
+        await queueAttendanceUpdate(eventId, [{ member_id: memberId, status }], { event_start_iso: startIso });
+        setEvents((prev) => prev.map((row) => (row.id === eventId ? { ...row, attendance_status: status } : row)));
+        setAttendancePickEventId(null);
+        Alert.alert("Saved offline", "Attendance will sync when you are back online.");
+        return;
+      }
       await api.events.attendance.update(eventId, [{ member_id: memberId, status }]);
       const fresh = await api.members.events(memberId).catch(() => [] as MemberEventItem[]);
       setEvents(fresh);
@@ -1606,9 +1635,18 @@ export default function MemberProfileScreen() {
               ) : (
                 <View style={styles.eventListStack}>
                   {filteredMemberEvents.map((event) => {
+                void memberAttClock;
                 const title = displayMemberWords(String(event.title || event.name || "Untitled event"));
-                const start = event.start_time ? new Date(event.start_time) : null;
+                const startRaw = event.start_time || event.start_date;
+                const start = startRaw ? new Date(String(startRaw)) : null;
                 const hasValidStart = Boolean(start && !Number.isNaN(start.getTime()));
+                const attGate = gateAttendanceRecording(
+                  eventStartMsFromRow({
+                    start_time: event.start_time ?? null,
+                    start_date: event.start_date ?? null,
+                  }),
+                  Date.now()
+                );
                 const isPast = hasValidStart ? start!.getTime() < Date.now() : false;
                 const typeKey = normalizeEventTypeKey(event.event_type || undefined);
                 const typeColors = eventTypeChipColors(typeKey);
@@ -1669,17 +1707,17 @@ export default function MemberProfileScreen() {
                           can("record_event_attendance") ? "Change attendance" : "Attendance (view only)"
                         }
                         onPress={() => {
-                          if (can("record_event_attendance")) setAttendancePickEventId(event.id);
+                          if (can("record_event_attendance") && attGate.allowed) setAttendancePickEventId(event.id);
                         }}
-                        disabled={saving || !can("record_event_attendance")}
+                        disabled={saving || !can("record_event_attendance") || !attGate.allowed}
                         style={({ pressed }) => [
                           styles.eventAttendanceTag,
                           {
                             backgroundColor: attColors.bg,
                             borderColor: attColors.border,
                           },
-                          !can("record_event_attendance") && { opacity: 0.55 },
-                          pressed && !saving && can("record_event_attendance") && { opacity: 0.88 },
+                          (!can("record_event_attendance") || !attGate.allowed) && { opacity: 0.55 },
+                          pressed && !saving && can("record_event_attendance") && attGate.allowed && { opacity: 0.88 },
                           saving && { opacity: 0.7 },
                         ]}
                       >

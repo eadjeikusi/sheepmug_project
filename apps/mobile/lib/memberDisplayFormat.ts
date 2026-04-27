@@ -158,6 +158,13 @@ export function capitalizeLeadingChar(s: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+/** Title-style caps for each word (report cards, table cells). */
+export function toTitleCaseWords(input: string): string {
+  const t = String(input || "").trim();
+  if (!t) return t;
+  return t.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 /** For placeholders like "—" / "N/A", return as-is; otherwise format words. */
 export function displayMemberField(raw: string, emptyPlaceholder: string): string {
   const t = raw.trim();

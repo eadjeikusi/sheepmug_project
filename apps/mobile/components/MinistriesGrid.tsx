@@ -118,6 +118,11 @@ function MemberFacesRow({ group }: { group: Group }) {
         ) : (
           <Text style={styles.noMembers}>No members yet</Text>
         )}
+        {total > 0 ? (
+          <Text style={styles.memberCountText}>
+            {total} {total === 1 ? "member" : "members"}
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -152,9 +157,11 @@ export function MinistriesGrid({ groups, onPressItem, maxItems }: Props) {
               {title}
             </Text>
 
-            <Text style={styles.cardDesc} numberOfLines={4}>
-              {desc || displayMemberWords("No description provided.")}
-            </Text>
+            {desc ? (
+              <Text style={styles.cardDesc} numberOfLines={2}>
+                {desc}
+              </Text>
+            ) : null}
 
             <View style={styles.cardFooter}>
               <MemberFacesRow group={g} />
@@ -216,6 +223,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-start",
+    gap: 8,
   },
   faceStack: {
     flexDirection: "row",
@@ -284,5 +292,11 @@ const styles = StyleSheet.create({
     fontSize: type.caption.size,
     color: "#94a3b8",
     fontStyle: "italic",
+  },
+  memberCountText: {
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
+    color: "#475569",
+    fontWeight: "600",
   },
 });

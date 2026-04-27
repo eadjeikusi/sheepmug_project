@@ -35,6 +35,7 @@ import {
 } from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
+import { MemberListSkeleton } from "../../components/DataSkeleton";
 
 function firstValidImageUri(member: Member): string | null {
   const candidates = [
@@ -378,7 +379,7 @@ export default function DashboardScreen() {
   const { can } = usePermissions();
   const { selectedBranch } = useBranch();
   const { unreadCount } = useNotifications();
-  const { isOnline, syncing, checkConnectivity, lastSyncAt, downloadRunning, downloadProgressText } = useOfflineSync();
+  const { isOnline, checkConnectivity, lastSyncAt, downloadRunning, downloadProgressText } = useOfflineSync();
   const [, setClockTick] = useState(0);
 
   const [members, setMembers] = useState<Member[]>([]);
@@ -393,7 +394,7 @@ export default function DashboardScreen() {
     "group_assignments"
   );
   const [spotlightLoading, setSpotlightLoading] = useState(false);
-  const [activeTag, setActiveTag] = useState<"members" | "families" | "ministries" | "event">("members");
+  const [activeTag, setActiveTag] = useState<"members" | "families" | "reports">("members");
   const [lastSeen, setLastSeen] = useState<DashboardLastSeenCounts>({});
   const [groupRequestRows, setGroupRequestRows] = useState<Record<string, unknown>[]>([]);
   const [memberRequestRows, setMemberRequestRows] = useState<Record<string, unknown>[]>([]);
@@ -496,8 +497,7 @@ export default function DashboardScreen() {
   const canViewGroupRequests = can("view_group_requests") || can("approve_group_requests");
   const canViewTasks = can("view_member_tasks") || can("view_group_tasks");
   const canViewFamilies = can("view_families");
-  const canViewMinistries = can("view_groups");
-  const canViewEventsTab = can("view_events");
+  const canViewReports = can("report_view") || can("view_analytics");
 
   const userAvatarUri = useMemo(() => {
     const raw = user?.profile_image;
@@ -679,7 +679,7 @@ export default function DashboardScreen() {
 
   const membersSpotlightHint = useMemo(() => {
     if (recentSpotlightMode === "new_members") {
-      return "Newest people added to this branch (org owners see everyone).";
+      return "";
     }
     return "Newest people added to ministries in your scope — or groups you lead when you have full-branch access.";
   }, [recentSpotlightMode]);
@@ -727,8 +727,8 @@ export default function DashboardScreen() {
         <View style={styles.dashHeader}>
           <View style={styles.dashGreeting}>
             <Pressable
-              onPress={() => router.push("/(tabs)/menu")}
-              accessibilityLabel="Open settings"
+              onPress={() => router.push("/profile-details")}
+              accessibilityLabel="Open profile"
               style={styles.profileImageBtn}
             >
               {userAvatarUri ? (
@@ -766,15 +766,10 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.headerActions}>
             <HeaderIconCircleButton
-              disabled={syncing || refreshing}
-              onPress={() => void onRefresh()}
-              accessibilityLabel="Reload dashboard"
+              onPress={() => router.push("/(tabs)/menu")}
+              accessibilityLabel="Open settings"
             >
-              <Ionicons
-                name={syncing || refreshing ? "sync-outline" : "refresh-outline"}
-                size={sizes.headerIcon}
-                color={colors.textPrimary}
-              />
+              <Ionicons name="settings-outline" size={sizes.headerIcon} color={colors.textPrimary} />
             </HeaderIconCircleButton>
             <HeaderIconCircleButton onPress={() => router.push("/notifications")} accessibilityLabel="Notifications">
               <Ionicons name="notifications-outline" size={sizes.headerIcon} color={colors.textPrimary} />
@@ -810,25 +805,22 @@ export default function DashboardScreen() {
               ...(canViewFamilies
                 ? [{ id: "families" as const, label: "Families", icon: "home-outline" as const, href: "/families" as const }]
                 : []),
-              ...(canViewMinistries
+              ...(canViewReports
                 ? [
                     {
-                      id: "ministries" as const,
-                      label: "Ministries",
-                      icon: "layers-outline" as const,
-                      href: "/(tabs)/ministries" as const,
+                      id: "reports" as const,
+                      label: "Reports",
+                      icon: "bar-chart-outline" as const,
+                      href: "/reports" as const,
                     },
                   ]
-                : []),
-              ...(canViewEventsTab
-                ? [{ id: "event" as const, label: "Event", icon: "calendar-outline" as const, href: "/(tabs)/event" as const }]
                 : []),
             ] as const
           ).map((tag) => {
             const selected = activeTag === tag.id;
             const addMemberChip = tag.id === "members" && canAddMembers;
-            const displayLabel = addMemberChip ? "+ Member" : tag.label;
-            const displayIcon = addMemberChip ? ("add-outline" as const) : tag.icon;
+            const displayLabel = addMemberChip ? "Add Member" : tag.label;
+            const displayIcon = tag.icon;
             return (
               <Pressable
                 key={tag.id}
@@ -871,7 +863,7 @@ export default function DashboardScreen() {
               <View style={styles.requestCardTopRow}>
                 <View style={styles.requestTitleBlock}>
                   <Text style={styles.requestCardTitle} numberOfLines={2}>
-                    Group Join Requests
+                    Group Requests
                   </Text>
                   {groupJoinNewDelta > 0 ? (
                     <View
@@ -904,7 +896,7 @@ export default function DashboardScreen() {
               <View style={styles.requestCardTopRow}>
                 <View style={styles.requestTitleBlock}>
                   <Text style={styles.requestCardTitle} numberOfLines={2}>
-                    Member Join Requests
+                    Member Request
                   </Text>
                   {memberJoinNewDelta > 0 ? (
                     <View
@@ -1001,19 +993,16 @@ export default function DashboardScreen() {
           <View style={styles.spotlightHeader}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.spotlightTitle}>Recent members</Text>
-              {!spotlightLoading && !countsLoading ? (
-                <Text style={styles.spotlightModeTag}>
-                  {recentSpotlightMode === "new_members" ? "Branch newcomers" : "Ministry activity"}
-                </Text>
-              ) : null}
             </View>
             <Pressable onPress={() => router.push("/(tabs)/members")} hitSlop={8}>
               <Text style={styles.viewAllText}>View all</Text>
             </Pressable>
           </View>
-          <Text style={styles.spotlightHint}>{membersSpotlightHint}</Text>
+          {membersSpotlightHint ? <Text style={styles.spotlightHint}>{membersSpotlightHint}</Text> : null}
           {spotlightLoading || membersLoading || countsLoading ? (
-            <ActivityIndicator color={colors.accent} style={{ marginVertical: 16 }} />
+            <View style={styles.spotlightList}>
+              <MemberListSkeleton count={5} />
+            </View>
           ) : recentSpotlightMembers.length === 0 ? (
             <Text style={styles.homeMembersEmpty}>
               {recentSpotlightMode === "new_members"
@@ -1039,7 +1028,9 @@ export default function DashboardScreen() {
                       <Text style={styles.spotlightName}>
                         {displayMemberWords(`${m.first_name || ""} ${m.last_name || ""}`.trim() || "Member")}
                       </Text>
-                      <Text style={styles.spotlightBadge}>Member</Text>
+                      <Text style={styles.spotlightStatus}>
+                        {displayMemberWords(String(m.status || "active").replace(/_/g, " "))}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -1132,7 +1123,7 @@ const styles = StyleSheet.create({
     fontSize: type.pageTitle.size,
     lineHeight: type.pageTitle.lineHeight,
     color: colors.textPrimary,
-    fontWeight: type.body.weight,
+    fontWeight: type.title.weight,
   },
   hiName: { fontWeight: type.title.weight },
   searchRow: {
@@ -1163,13 +1154,18 @@ const styles = StyleSheet.create({
   tagRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    minWidth: "100%",
+    flexGrow: 1,
     gap: 6,
     paddingBottom: 4,
     marginBottom: 4,
   },
   tagChip: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -1237,9 +1233,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   summaryCardRequest: {
-    minHeight: 190,
     borderRadius: 20,
-    borderColor: "#9dcc70",
+    borderWidth: 0,
+    borderColor: "transparent",
     backgroundColor: "#b9e68c",
     justifyContent: "flex-start",
     gap: 8,
@@ -1444,17 +1440,19 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.2)",
   },
   spotlightSection: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    padding: 12,
+    marginTop: 8,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderColor: "transparent",
+    backgroundColor: "transparent",
+    padding: 0,
     gap: 8,
   },
   spotlightHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
+    paddingHorizontal: 14,
     gap: 8,
   },
   spotlightTitle: {
@@ -1551,13 +1549,13 @@ const styles = StyleSheet.create({
     fontWeight: type.bodyStrong.weight,
     color: colors.textPrimary,
   },
-  spotlightBadge: {
+  spotlightStatus: {
     marginTop: 2,
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
     color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    fontWeight: type.caption.weight,
+    textTransform: "capitalize",
   },
   homeMembersEmpty: {
     fontSize: type.body.size,

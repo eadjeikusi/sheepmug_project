@@ -3,8 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   Linking,
+  Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,7 +20,15 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import type { EventAttendanceRow, EventItem, EventTypeRow, Group, Member } from "@sheepmug/shared-api";
+import {
+  type EventAttendanceRow,
+  type EventItem,
+  type EventTypeRow,
+  type Group,
+  type Member,
+  gateAttendanceRecording,
+  eventStartMsFromRow,
+} from "@sheepmug/shared-api";
 import type { AnchorRect } from "../../components/FilterPickerModal";
 import { FilterPickerModal } from "../../components/FilterPickerModal";
 import { FilterTriggerButton } from "../../components/FilterTriggerButton";
@@ -241,7 +253,12 @@ export default function EventDetailScreen() {
   const statusTriggerRef = useRef<View>(null);
   const groupTriggerRef = useRef<View>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [attClock, setAttClock] = useState(0);
   const [eventTypeRows, setEventTypeRows] = useState<EventTypeRow[]>([]);
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
+  const [attendanceSearchOpen, setAttendanceSearchOpen] = useState(false);
+  const attendanceSearchAnim = useRef(new Animated.Value(0)).current;
+  const coverPreviewDragY = useRef(new Animated.Value(0)).current;
 
   const initialTabFromParams = useMemo((): EventTab | null => {
     const raw = Array.isArray(tabParam) ? tabParam[0] : tabParam;
@@ -258,6 +275,11 @@ export default function EventDetailScreen() {
     if (!id || tab !== "attendance") return;
     void markAttendanceTabVisitedForEvent(String(id));
   }, [id, tab]);
+
+  useEffect(() => {
+    const t = setInterval(() => setAttClock((n) => n + 1), 10_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -393,6 +415,10 @@ export default function EventDetailScreen() {
       : null;
   const start = (event?.start_time as string) || (event?.start_date as string) || null;
   const end = (event?.end_time as string) || (event?.end_date as string) || null;
+  const recordingGate = useMemo(() => {
+    const ms = eventStartMsFromRow({ start_time: start, start_date: null });
+    return gateAttendanceRecording(ms, Date.now());
+  }, [start, attClock]);
   const startCountdown = start ? formatCalendarCountdown(start) : "";
   const heroDateTimeLine = start ? formatDateTimePrimaryLine(start, end) : "";
   const locationMode = event ? normalizeLocationTypeInput(event.location_type) : null;
@@ -402,6 +428,14 @@ export default function EventDetailScreen() {
   const physicalLocation = physicalLocationLine(event);
   const meetingUrl =
     event && typeof event.online_meeting_url === "string" ? event.online_meeting_url.trim() : "";
+  const heroDateLocationLine = useMemo(() => {
+    const datePart = heroDateTimeLine.trim();
+    const locationPart = physicalLocation.trim();
+    if (datePart && locationPart) return `${datePart} • ${locationPart}`;
+    if (datePart) return datePart;
+    if (locationPart) return locationPart;
+    return "";
+  }, [heroDateTimeLine, physicalLocation]);
 
   const statusOptions = useMemo(
     () => [
@@ -437,13 +471,29 @@ export default function EventDetailScreen() {
     });
   }
 
+  function toggleAttendanceSearch() {
+    const nextOpen = !attendanceSearchOpen;
+    setAttendanceSearchOpen(nextOpen);
+    Animated.timing(attendanceSearchAnim, {
+      toValue: nextOpen ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    if (!nextOpen) setSearch("");
+  }
+
   async function applyStatusToSelected(status: AttendanceStatus) {
     if (!id || selected.size === 0 || saving) return;
+    if (!recordingGate.allowed) {
+      Alert.alert("Attendance not open yet", recordingGate.userMessage);
+      return;
+    }
     setSaving(true);
     try {
       const updates = Array.from(selected).map((member_id) => ({ member_id, status }));
       if (!isOnline) {
-        await queueAttendanceUpdate(id, updates);
+        await queueAttendanceUpdate(id, updates, { event_start_iso: start });
         setAttendanceRows((prev) => {
           const next = [...prev];
           for (const memberId of selected) {
@@ -513,6 +563,57 @@ export default function EventDetailScreen() {
   const coverUri = useMemo(() => {
     return eventCoverImageFromItem(event);
   }, [event]);
+  const closeCoverPreview = useCallback(() => {
+    setCoverPreviewOpen(false);
+    coverPreviewDragY.setValue(0);
+  }, [coverPreviewDragY]);
+  const resetCoverPreviewDrag = useCallback(() => {
+    Animated.spring(coverPreviewDragY, {
+      toValue: 0,
+      useNativeDriver: true,
+      speed: 26,
+      bounciness: 4,
+    }).start();
+  }, [coverPreviewDragY]);
+  const dismissCoverPreviewByDrag = useCallback(() => {
+    Animated.timing(coverPreviewDragY, {
+      toValue: 420,
+      duration: 150,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      setCoverPreviewOpen(false);
+      coverPreviewDragY.setValue(0);
+    });
+  }, [coverPreviewDragY]);
+  const coverPreviewPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          coverPreviewOpen &&
+          Math.abs(gesture.dy) > 8 &&
+          Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy >= 0) {
+            coverPreviewDragY.setValue(gesture.dy);
+          } else {
+            // Resist upward movement; only downward swipe should dismiss.
+            coverPreviewDragY.setValue(gesture.dy * 0.2);
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 120 || gesture.vy > 1.2) {
+            dismissCoverPreviewByDrag();
+            return;
+          }
+          resetCoverPreviewDrag();
+        },
+        onPanResponderTerminate: () => {
+          resetCoverPreviewDrag();
+        },
+      }),
+    [coverPreviewOpen, coverPreviewDragY, dismissCoverPreviewByDrag, resetCoverPreviewDrag]
+  );
 
   async function reloadDetail() {
     if (!id) return;
@@ -612,11 +713,14 @@ export default function EventDetailScreen() {
       />
       <ScrollView
         contentContainerStyle={[styles.container, selected.size > 0 && styles.containerWithDock]}
+        stickyHeaderIndices={[2]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
       >
         <View style={styles.coverWrap}>
           {coverUri ? (
-            <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+            <Pressable onPress={() => setCoverPreviewOpen(true)} accessibilityRole="button" accessibilityLabel="Open event cover image">
+              <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+            </Pressable>
           ) : (
             <View style={styles.coverPlaceholder}>
               <Ionicons name="image-outline" size={48} color="#94a3b8" />
@@ -663,69 +767,61 @@ export default function EventDetailScreen() {
             ) : null}
           </View>
           <Text style={styles.heroTitle}>{eventTitle(event)}</Text>
-          {heroDateTimeLine ? (
-            <Text style={styles.heroDateTimeLine}>{heroDateTimeLine}</Text>
+          {heroDateLocationLine ? (
+            <Text style={styles.heroDateTimeLine}>{heroDateLocationLine}</Text>
           ) : (
             <Text style={styles.heroDateTimeLineMuted}>No date scheduled</Text>
           )}
-          {physicalLocation.trim() || meetingUrl ? (
+          {meetingUrl ? (
             <View
               style={[
                 styles.heroLocationRow,
-                !physicalLocation.trim() && meetingUrl ? styles.heroLocationRowLinkOnly : null,
+                styles.heroLocationRowLinkOnly,
               ]}
             >
-              {physicalLocation.trim() ? (
-                <Text style={styles.heroLocation} numberOfLines={4}>
-                  {physicalLocation}
-                </Text>
-              ) : null}
-              {meetingUrl ? (
-                <Pressable
-                  style={({ pressed }) => [styles.heroMeetingLinkBtn, pressed && styles.heroMeetingLinkBtnPressed]}
-                  onPress={() => void Linking.openURL(meetingUrlOpenable(meetingUrl))}
-                  onLongPress={() => {
-                    void Clipboard.setStringAsync(meetingUrl).then(() => Alert.alert("Link copied"));
-                  }}
-                  delayLongPress={380}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open meeting link"
-                  accessibilityHint="Opens in browser. Long press to copy the link."
-                >
-                  <Ionicons name="link" size={24} color={colors.accent} />
-                </Pressable>
-              ) : null}
+              <Pressable
+                style={({ pressed }) => [styles.heroMeetingLinkBtn, pressed && styles.heroMeetingLinkBtnPressed]}
+                onPress={() => void Linking.openURL(meetingUrlOpenable(meetingUrl))}
+                onLongPress={() => {
+                  void Clipboard.setStringAsync(meetingUrl).then(() => Alert.alert("Link copied"));
+                }}
+                delayLongPress={380}
+                accessibilityRole="button"
+                accessibilityLabel="Open meeting link"
+                accessibilityHint="Opens in browser. Long press to copy the link."
+              >
+                <Ionicons name="link" size={24} color={colors.accent} />
+              </Pressable>
             </View>
           ) : null}
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmentBar}>
-          {tabs.map((t) => {
-            const active = tab === t;
-            return (
-              <Pressable key={t} onPress={() => setTab(t)} style={[styles.segmentItem, active && styles.segmentItemActive]}>
-                <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]} numberOfLines={1}>
-                  {t[0].toUpperCase() + t.slice(1)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <View style={styles.stickyTabsWrap}>
+          <View style={styles.segmentBar}>
+            {tabs.map((t) => {
+              const active = tab === t;
+              return (
+                <Pressable key={t} onPress={() => setTab(t)} style={[styles.segmentItem, active && styles.segmentItemActive]}>
+                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]} numberOfLines={1}>
+                    {t[0].toUpperCase() + t.slice(1)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
 
         {loading ? (
           <Text style={styles.helper}>Loading event...</Text>
         ) : tab === "details" ? (
-            <View style={styles.card}>
+            <View style={styles.detailsPanel}>
               <Text style={styles.sectionTitle}>Details</Text>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>About Event</Text>
-                <Text style={styles.infoValue}>{String((event?.notes as string) || "No description added yet.")}</Text>
-              </View>
+              <Text style={styles.detailsBodyText}>{String((event?.notes as string) || "No description added yet.")}</Text>
               {customFields && Object.keys(customFields).length > 0
                 ? Object.entries(customFields).map(([k, v]) => (
-                    <View key={k} style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>{customFieldLabelFromKey(k)}</Text>
-                      <Text style={styles.infoValue}>
+                    <View key={k} style={styles.detailsFieldRow}>
+                      <Text style={styles.detailsFieldLabel}>{customFieldLabelFromKey(k)}</Text>
+                      <Text style={styles.detailsFieldValue}>
                         {v != null && typeof v === "string" ? displayMemberWords(v) : String(v)}
                       </Text>
                     </View>
@@ -814,25 +910,75 @@ export default function EventDetailScreen() {
             </View>
         ) : tab === "attendance" ? (
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Attendance</Text>
-              <Text style={styles.bodyText}>Roster members: {audienceMembers.length}</Text>
-              <View style={styles.statsRow}>
-                <Text style={styles.statPill}>Present {summary.present}</Text>
-                <Text style={styles.statPill}>Absent {summary.absent}</Text>
-                <Text style={styles.statPill}>Not sure {summary.unsure}</Text>
-                <Text style={styles.statPill}>Not marked {summary.notMarked}</Text>
+              {!recordingGate.allowed ? (
+                <View
+                  style={{
+                    marginBottom: 12,
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: "#fde68a",
+                    backgroundColor: "#fffbeb",
+                  }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: "#78350f" }}>Attendance not open yet</Text>
+                  <Text style={{ marginTop: 4, fontSize: 13, color: "#92400e" }}>{recordingGate.userMessage}</Text>
+                </View>
+              ) : null}
+              <View style={styles.attendanceTopRow}>
+                <View style={styles.attendanceTitleWrap}>
+                  <Text style={styles.sectionTitle}>Attendance</Text>
+                  <Text style={styles.attendanceCountText}>({audienceMembers.length})</Text>
+                </View>
+                <View style={styles.attendanceSearchHost}>
+                  <Pressable
+                    style={({ pressed }) => [styles.attendanceSearchIconBtn, pressed && { opacity: 0.82 }]}
+                    onPress={toggleAttendanceSearch}
+                    accessibilityRole="button"
+                    accessibilityLabel={attendanceSearchOpen ? "Close attendance search" : "Open attendance search"}
+                  >
+                    <Ionicons name={attendanceSearchOpen ? "close-outline" : "search-outline"} size={18} color={colors.textPrimary} />
+                  </Pressable>
+                  <Animated.View
+                    style={[
+                      styles.attendanceSearchAnimatedWrap,
+                      {
+                        width: attendanceSearchAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 188],
+                        }),
+                        opacity: attendanceSearchAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 1],
+                        }),
+                      },
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.attendanceSearchInput}
+                      value={search}
+                      onChangeText={setSearch}
+                      placeholder="Search roster"
+                      placeholderTextColor={colors.textSecondary}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </Animated.View>
+                </View>
               </View>
-              <View style={styles.searchWrap}>
-                <Ionicons name="search" size={16} color={colors.textSecondary} />
-                <TextInput
-                  style={styles.searchInput}
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder="Search roster"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+              <View style={styles.statsRow}>
+                <View style={[styles.statPill, styles.statPillPresent]}>
+                  <Text style={[styles.statPillText, styles.statPillTextPresent]}>Present {summary.present}</Text>
+                </View>
+                <View style={[styles.statPill, styles.statPillAbsent]}>
+                  <Text style={[styles.statPillText, styles.statPillTextAbsent]}>Absent {summary.absent}</Text>
+                </View>
+                <View style={[styles.statPill, styles.statPillUnsure]}>
+                  <Text style={[styles.statPillText, styles.statPillTextUnsure]}>Not sure {summary.unsure}</Text>
+                </View>
+                <View style={[styles.statPill, styles.statPillNotMarked]}>
+                  <Text style={[styles.statPillText, styles.statPillTextNotMarked]}>Not marked {summary.notMarked}</Text>
+                </View>
               </View>
               <View style={styles.filterRow}>
                 <FilterTriggerButton
@@ -933,6 +1079,32 @@ export default function EventDetailScreen() {
         ) : null}
       </ScrollView>
 
+      <Modal visible={coverPreviewOpen} transparent animationType="fade" onRequestClose={closeCoverPreview}>
+        <Animated.View
+          style={[styles.coverPreviewBackdrop, { transform: [{ translateY: coverPreviewDragY }] }]}
+          {...coverPreviewPanResponder.panHandlers}
+        >
+          <ScrollView
+            style={styles.coverPreviewScroll}
+            contentContainerStyle={styles.coverPreviewContent}
+            minimumZoomScale={1}
+            maximumZoomScale={4}
+            bouncesZoom
+            centerContent
+          >
+            {coverUri ? <Image source={{ uri: coverUri }} style={styles.coverPreviewImage} resizeMode="contain" /> : null}
+          </ScrollView>
+          <HeaderIconCircleButton
+            onPress={closeCoverPreview}
+            hitSlop={10}
+            accessibilityLabel="Close full image"
+            style={[styles.coverPreviewCloseBtn, { top: insets.top + 12 }]}
+          >
+            <Ionicons name="close" size={sizes.headerIcon} color={colors.textPrimary} />
+          </HeaderIconCircleButton>
+        </Animated.View>
+      </Modal>
+
       {selected.size > 0 ? (
         <View style={styles.bottomDock}>
           <Text style={styles.bottomDockTitle}>{selected.size} selected</Text>
@@ -948,8 +1120,11 @@ export default function EventDetailScreen() {
             ).map(([status, label]) => (
               <Pressable
                 key={status}
-                style={[styles.bottomActionBtn, saving && styles.bottomActionBtnDisabled]}
-                disabled={saving}
+                style={[
+                  styles.bottomActionBtn,
+                  (saving || !recordingGate.allowed) && styles.bottomActionBtnDisabled,
+                ]}
+                disabled={saving || !recordingGate.allowed}
                 onPress={() => {
                   void applyStatusToSelected(status);
                 }}
@@ -1086,7 +1261,7 @@ const styles = StyleSheet.create({
   heroLocation: {
     fontSize: type.body.size,
     lineHeight: type.body.lineHeight,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
     letterSpacing: type.body.letterSpacing,
     flex: 1,
     minWidth: 0,
@@ -1107,9 +1282,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  stickyTabsWrap: {
+    backgroundColor: colors.bg,
+    paddingBottom: 2,
+    zIndex: 5,
+  },
   segmentBar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
     padding: 4,
     gap: 3,
     backgroundColor: colors.accentSurface,
@@ -1118,11 +1300,13 @@ const styles = StyleSheet.create({
     borderColor: colors.accentBorder,
   },
   segmentItem: {
+    flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     borderRadius: radius.sm - 2,
     minHeight: 44,
     justifyContent: "center",
+    alignItems: "center",
   },
   segmentItemActive: {
     backgroundColor: colors.accent,
@@ -1147,8 +1331,31 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
+  detailsPanel: {
+    gap: 10,
+  },
   sectionTitle: { fontSize: type.bodyStrong.size, fontWeight: type.bodyStrong.weight, color: colors.textPrimary },
   bodyText: { fontSize: type.body.size, color: colors.textSecondary },
+  detailsBodyText: {
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+    color: colors.textPrimary,
+  },
+  detailsFieldRow: {
+    gap: 2,
+  },
+  detailsFieldLabel: {
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
+    color: colors.textSecondary,
+    fontWeight: type.caption.weight,
+  },
+  detailsFieldValue: {
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+    color: colors.textPrimary,
+    fontWeight: type.bodyStrong.weight,
+  },
   block: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -1174,17 +1381,21 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: type.caption.size, color: colors.textSecondary },
   statsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   statPill: {
-    fontSize: type.caption.size,
-    color: colors.accent,
     borderWidth: 1,
-    borderColor: colors.accentBorder,
-    backgroundColor: colors.accentSurface,
     borderRadius: radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 4,
     overflow: "hidden",
-    fontWeight: type.bodyStrong.weight,
   },
+  statPillText: { fontSize: type.caption.size, fontWeight: type.bodyStrong.weight },
+  statPillPresent: { borderColor: "#86efac", backgroundColor: "#ecfdf5" },
+  statPillTextPresent: { color: "#166534" },
+  statPillAbsent: { borderColor: "#fca5a5", backgroundColor: "#fef2f2" },
+  statPillTextAbsent: { color: "#991b1b" },
+  statPillUnsure: { borderColor: "#fcd34d", backgroundColor: "#fffbeb" },
+  statPillTextUnsure: { color: "#92400e" },
+  statPillNotMarked: { borderColor: "#cbd5e1", backgroundColor: "#f8fafc" },
+  statPillTextNotMarked: { color: "#475569" },
   infoRow: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -1231,6 +1442,55 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  attendanceTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  attendanceTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  attendanceCountText: {
+    fontSize: type.bodyStrong.size,
+    lineHeight: type.bodyStrong.lineHeight,
+    color: colors.textSecondary,
+    fontWeight: type.bodyStrong.weight,
+  },
+  attendanceSearchHost: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 6,
+    minWidth: 40,
+  },
+  attendanceSearchIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attendanceSearchAnimatedWrap: {
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+  },
+  attendanceSearchInput: {
+    height: 34,
+    minWidth: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
+    fontSize: type.body.size,
+    color: colors.textPrimary,
+  },
   attendanceHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1334,4 +1594,28 @@ const styles = StyleSheet.create({
   bottomActionText: { fontSize: type.caption.size, color: colors.textPrimary, fontWeight: type.bodyStrong.weight },
   clearSelectionBtn: { alignItems: "center", paddingVertical: 6 },
   clearSelectionText: { fontSize: type.caption.size, color: colors.textSecondary, fontWeight: type.bodyStrong.weight },
+  coverPreviewBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverPreviewScroll: {
+    width: "100%",
+    height: "100%",
+  },
+  coverPreviewContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverPreviewCloseBtn: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+  },
 });

@@ -11,18 +11,28 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  captionLayout,
   ...props
 }: React.ComponentProps<typeof DayPicker>) {
+  const hideCaptionLabel =
+    typeof captionLayout === "string" && captionLayout.includes("dropdown");
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      captionLayout={captionLayout}
       className={cn("p-3", className)}
       classNames={{
-        months: "flex flex-col sm:flex-row gap-2",
-        month: "flex flex-col gap-4",
-        caption: "flex justify-center pt-1 relative items-center w-full",
-        caption_label: "text-sm font-medium",
-        caption_dropdowns: "flex items-center justify-center gap-2 px-1",
+        months: "flex flex-col sm:flex-row gap-4 sm:gap-6 lg:gap-8",
+        month: "flex min-w-0 flex-col gap-4",
+        caption: cn(
+          "flex justify-center pt-1 relative w-full min-h-9 items-center",
+          hideCaptionLabel ? "px-10 sm:px-12" : "px-1",
+        ),
+        caption_label: hideCaptionLabel
+          ? "sr-only"
+          : "text-sm font-medium",
+        caption_dropdowns: "flex items-center justify-center gap-2 px-0",
         dropdown: "h-8 rounded-md border border-input bg-background px-2 text-sm shadow-xs",
         dropdown_month: "rounded-md",
         dropdown_year: "rounded-md",
@@ -32,8 +42,10 @@ function Calendar({
           buttonVariants({ variant: "outline" }),
           "size-7 bg-transparent p-0 opacity-50 hover:opacity-100",
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
+        nav_button_previous:
+          "absolute left-1.5 top-1/2 z-10 -translate-y-1/2",
+        nav_button_next:
+          "absolute right-1.5 top-1/2 z-10 -translate-y-1/2",
         table: "w-full border-collapse space-x-1",
         head_row: "flex",
         head_cell:

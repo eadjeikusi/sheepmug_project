@@ -36,6 +36,30 @@ export function toIsoDateOnly(date: Date): string {
   return `${y}-${mo}-${da}`;
 }
 
+/** Inclusive number of local calendar days from `ymdA` to `ymdB` (both `YYYY-MM-DD`). 0 if invalid or end before start. */
+export function inclusiveLocalDayCount(ymdA: string, ymdB: string): number {
+  const a = parseIsoDateOnly(ymdA);
+  const b = parseIsoDateOnly(ymdB);
+  if (!a || !b) return 0;
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  if (d1.getTime() < d0.getTime()) return 0;
+  return Math.floor((d1.getTime() - d0.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+/**
+ * Inclusive local calendar [start, end] as instants, for server-side event filtering
+ * (matches how users interpret the date range in the report UI).
+ */
+export function localDayBoundsToIso(ymdStart: string, ymdEnd: string): { start: string; end: string } | null {
+  const a = parseIsoDateOnly(ymdStart);
+  const b = parseIsoDateOnly(ymdEnd);
+  if (!a || !b) return null;
+  const s = new Date(a.getFullYear(), a.getMonth(), a.getDate(), 0, 0, 0, 0);
+  const e = new Date(b.getFullYear(), b.getMonth(), b.getDate(), 23, 59, 59, 999);
+  return { start: s.toISOString(), end: e.toISOString() };
+}
+
 export function formatDateLong(date: Date): string {
   return formatLongWeekdayDate(date);
 }

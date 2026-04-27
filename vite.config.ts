@@ -28,6 +28,10 @@ export default defineConfig({
         find: /^@\/lib\/(.+)$/,
         replacement: path.resolve(__dirname, './src/lib/$1'),
       },
+      {
+        find: '@sheepmug/shared-api',
+        replacement: path.resolve(__dirname, './packages/shared-api/src/index.ts'),
+      },
       { find: '@', replacement: path.resolve(__dirname, './src/app') },
     ],
   },

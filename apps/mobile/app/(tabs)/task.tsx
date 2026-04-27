@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Calendar } from "lucide-react-native";
 import {
   FilterResultsChips,
   HeaderCountTile,
@@ -25,13 +24,14 @@ import { FormModalShell } from "../../components/FormModalShell";
 import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { GroupCreateTaskModal } from "../../components/GroupCreateTaskModal";
 import { MemberCreateTaskModal } from "../../components/MemberCreateTaskModal";
+import { TaskListSkeleton } from "../../components/DataSkeleton";
 import { TaskAssignmentList } from "../../components/TaskAssignmentList";
-import type { TaskItem } from "@sheepmug/shared-api";
+import type { Group, TaskItem } from "@sheepmug/shared-api";
 import { api } from "../../lib/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { usePermissions } from "../../hooks/usePermissions";
-import { displayMemberWords } from "../../lib/memberDisplayFormat";
+import { buildGroupTreeSelection, buildMinistryTreeRows } from "../../lib/ministryGroupTree";
 import {
   getOfflineResourceCache,
   setDashboardLastSeenCounts,
@@ -39,26 +39,10 @@ import {
 } from "../../lib/storage";
 import { colors, radius, sizes, type } from "../../theme";
 
-type StatusScope = "open" | "all";
+type StatusScope = "all" | "pending" | "completed";
 type TaskTypeFilter = "all" | "member" | "group";
-type DueMonthMode = "single" | "range";
 const PAGE_SIZE = 10;
 const TASKS_CACHE_KEY = "tasks:list";
-
-type StaffRow = {
-  id: string;
-  email: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  branch_id: string | null;
-};
-
-function staffLabel(s: StaffRow): string {
-  const n = [s.first_name, s.last_name].filter(Boolean).join(" ").trim();
-  if (n) return n;
-  if (s.email?.trim()) return s.email.trim();
-  return s.id.slice(0, 8);
-}
 
 function taskSearchBlob(t: TaskItem): string {
   const r = t as Record<string, unknown>;
@@ -77,11 +61,46 @@ function isGroupTask(t: TaskItem): boolean {
   return Boolean(r.group_id);
 }
 
+function taskStatusValue(t: TaskItem): "pending" | "completed" | "other" {
+  const s = String(t.status || "").trim().toLowerCase();
+  if (s === "completed") return "completed";
+  if (s === "pending") return "pending";
+  return "other";
+}
+
+function taskAssignedToViewer(t: TaskItem, viewerId: string | null): boolean {
+  if (!viewerId) return false;
+  const row = t as { assignee_profile_ids?: unknown; assignee_profile_id?: unknown };
+  if (Array.isArray(row.assignee_profile_ids)) {
+    return row.assignee_profile_ids.some((x) => String(x ?? "").trim() === viewerId);
+  }
+  const one = String(row.assignee_profile_id ?? "").trim();
+  if (one) return one === viewerId;
+  return true;
+}
+
+function taskGroupIds(t: TaskItem): string[] {
+  const row = t as {
+    group_id?: unknown;
+    groups?: { id?: unknown }[] | unknown;
+  };
+  const out = new Set<string>();
+  const one = String(row.group_id ?? "").trim();
+  if (one) out.add(one);
+  if (Array.isArray(row.groups)) {
+    for (const g of row.groups) {
+      const id = String((g as { id?: unknown })?.id ?? "").trim();
+      if (id) out.add(id);
+    }
+  }
+  return [...out];
+}
+
 function monthOptions(): { value: string; label: string }[] {
   const out: { value: string; label: string }[] = [{ value: "", label: "Any month" }];
   const now = new Date();
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  for (let i = 0; i < 36; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
     const value = `${y}-${String(m).padStart(2, "0")}`;
@@ -115,6 +134,28 @@ function monthEndIso(value: string): string | undefined {
   return new Date(year, month, 0, 23, 59, 59, 999).toISOString();
 }
 
+function taskDueMonthValue(task: TaskItem): string | null {
+  const row = task as Record<string, unknown>;
+  const dueRaw = row.due_date ?? row.due_at ?? row.due_on ?? row.due_month;
+  if (typeof dueRaw === "string" && dueRaw.trim()) {
+    const raw = dueRaw.trim();
+    const ym = /^(\d{4})-(\d{2})/.exec(raw);
+    if (ym) {
+      const monthNum = Number(ym[2]);
+      if (monthNum >= 1 && monthNum <= 12) {
+        return `${ym[1]}-${ym[2]}`;
+      }
+    }
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return null;
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
+  if (typeof dueRaw !== "number") return null;
+  const date = new Date(dueRaw);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function TaskScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -134,24 +175,18 @@ export default function TaskScreen() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusScope, setStatusScope] = useState<StatusScope>("open");
+  const [statusScope, setStatusScope] = useState<StatusScope>("pending");
   const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>("all");
+  const [groupFilterId, setGroupFilterId] = useState("");
 
-  const [branchMonth, setBranchMonth] = useState("");
-  const [dueFromMonth, setDueFromMonth] = useState("");
-  const [dueToMonth, setDueToMonth] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
-  const [createdById, setCreatedById] = useState("");
-  const [draftStatusScope, setDraftStatusScope] = useState<StatusScope>("open");
+  const [dueMonths, setDueMonths] = useState<string[]>([]);
+  const [draftStatusScope, setDraftStatusScope] = useState<StatusScope>("pending");
   const [draftTypeFilter, setDraftTypeFilter] = useState<TaskTypeFilter>("all");
-  const [draftBranchMonth, setDraftBranchMonth] = useState("");
-  const [draftDueMode, setDraftDueMode] = useState<DueMonthMode>("single");
-  const [duePickerOpen, setDuePickerOpen] = useState(false);
-  const [draftDueFromMonth, setDraftDueFromMonth] = useState("");
-  const [draftDueToMonth, setDraftDueToMonth] = useState("");
-  const [draftAssigneeId, setDraftAssigneeId] = useState("");
-  const [draftCreatedById, setDraftCreatedById] = useState("");
-  const [staffOptions, setStaffOptions] = useState<StaffRow[]>([]);
+  const [draftGroupFilterId, setDraftGroupFilterId] = useState("");
+  const [draftDueMonths, setDraftDueMonths] = useState<string[]>([]);
+  const [dueMonthPickerOpen, setDueMonthPickerOpen] = useState(false);
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [groups, setGroups] = useState<Group[]>([]);
 
   const [showSearch, setShowSearch] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -164,20 +199,54 @@ export default function TaskScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const months = useMemo(() => monthOptions(), []);
+  const groupsById = useMemo(() => {
+    const m = new Map<string, Group>();
+    for (const g of groups) m.set(String(g.id), g);
+    return m;
+  }, [groups]);
+  const groupTree = useMemo(() => buildGroupTreeSelection(groups), [groups]);
+  const ministryTreeRows = useMemo(() => buildMinistryTreeRows(groups), [groups]);
+
+  const assignedGroupIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const t of tasks) {
+      if (!isGroupTask(t) || !taskAssignedToViewer(t, user?.id ?? null)) continue;
+      for (const gid of taskGroupIds(t)) out.add(gid);
+    }
+    return out;
+  }, [tasks, user?.id]);
+
+  const assignedGroupRows = useMemo(
+    () => ministryTreeRows.filter((row) => assignedGroupIds.has(row.id)),
+    [ministryTreeRows, assignedGroupIds]
+  );
+  const groupFilterName = useMemo(() => {
+    if (!groupFilterId) return "";
+    return String(groupsById.get(groupFilterId)?.name || "").trim() || "Selected group";
+  }, [groupFilterId, groupsById]);
+  const selectedGroupWithDescendants = useMemo(() => {
+    if (!groupFilterId) return new Set<string>();
+    const out = new Set<string>([groupFilterId]);
+    for (const childId of groupTree.descendantsByGroupId.get(groupFilterId) ?? []) {
+      out.add(childId);
+    }
+    return out;
+  }, [groupFilterId, groupTree]);
 
   const fetchTaskPage = useCallback(
     async (offset: number) => {
       if (!canSeeTaskList) return { tasks: [] as TaskItem[], total_count: 0 };
-      const wantAll = statusScope === "all" || pendingOnly;
+      const wantAll = statusScope !== "pending" || pendingOnly;
+      const normalizedDueMonths = [...new Set(dueMonths.filter((m) => m.trim()))].sort();
+      const dueFromMonth = normalizedDueMonths[0] ?? "";
+      const dueToMonth = normalizedDueMonths[normalizedDueMonths.length - 1] ?? "";
       if (isElevatedTaskViewer) {
         return api.tasks.branch({
           status: wantAll ? "all" : "open",
           orgWide: true,
-          month: branchMonth.trim() || undefined,
+          month: undefined,
           dueFromIso: monthStartIso(dueFromMonth.trim()),
           dueToIso: monthEndIso(dueToMonth.trim()),
-          assigneeProfileId: assigneeId.trim() || undefined,
-          createdByProfileId: createdById.trim() || undefined,
           offset,
           limit: PAGE_SIZE,
         });
@@ -185,12 +254,8 @@ export default function TaskScreen() {
       return api.tasks.mine({ status: wantAll ? "all" : "open", offset, limit: PAGE_SIZE });
     },
     [
-      assigneeId,
-      branchMonth,
       canSeeTaskList,
-      createdById,
-      dueFromMonth,
-      dueToMonth,
+      dueMonths,
       isElevatedTaskViewer,
       pendingOnly,
       statusScope,
@@ -207,7 +272,7 @@ export default function TaskScreen() {
     }
     let hasCachedRows = false;
     try {
-      const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;
+      const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}`;
       const cached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(cacheKey);
       const fallbackCached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(
         "tasks:list:bootstrap"
@@ -240,6 +305,7 @@ export default function TaskScreen() {
     fetchTaskPage,
     pendingOnly,
     statusScope,
+    dueMonths,
   ]);
 
   const loadMoreTasks = useCallback(async () => {
@@ -251,7 +317,7 @@ export default function TaskScreen() {
       const { tasks: next, total_count } = payload;
       setTasks((prev) => {
         const merged = [...prev, ...next];
-        const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${branchMonth}:${dueFromMonth}:${dueToMonth}:${assigneeId}:${createdById}:${pendingOnly ? "pending" : "all"}`;
+        const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}`;
         void setOfflineResourceCache(cacheKey, { tasks: merged, total_count });
         return merged;
       });
@@ -260,7 +326,7 @@ export default function TaskScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [canSeeTaskList, fetchTaskPage, hasMore, loading, loadingMore, refreshing, tasks.length]);
+  }, [canSeeTaskList, dueMonths, fetchTaskPage, hasMore, isElevatedTaskViewer, loading, loadingMore, pendingOnly, refreshing, statusScope, tasks.length]);
 
   useEffect(() => {
     let mounted = true;
@@ -283,31 +349,29 @@ export default function TaskScreen() {
   }, [canSeeTaskList, loadTasks]);
 
   useEffect(() => {
-    if (!canSeeTaskList) {
-      setStaffOptions([]);
-      return;
-    }
-    let c = false;
-    void (async () => {
-      const staff = await api.org.staff().catch(() => []);
-      if (!c) setStaffOptions(staff as StaffRow[]);
+    let cancelled = false;
+    (async () => {
+      const rows = await api.groups.list({ tree: true, limit: 100 }).catch(() => [] as Group[]);
+      if (!cancelled) setGroups(rows);
     })();
     return () => {
-      c = true;
+      cancelled = true;
     };
-  }, [canSeeTaskList]);
+  }, []);
 
   useEffect(() => {
     if (!filtersOpen) return;
     setDraftStatusScope(statusScope);
     setDraftTypeFilter(typeFilter);
-    setDraftBranchMonth(branchMonth);
-    setDraftDueMode(dueToMonth.trim() ? "range" : "single");
-    setDraftDueFromMonth(dueFromMonth);
-    setDraftDueToMonth(dueToMonth);
-    setDraftAssigneeId(assigneeId);
-    setDraftCreatedById(createdById);
-  }, [filtersOpen, statusScope, typeFilter, branchMonth, dueFromMonth, dueToMonth, assigneeId, createdById]);
+    setDraftGroupFilterId(groupFilterId);
+    setDraftDueMonths(dueMonths);
+  }, [filtersOpen, statusScope, typeFilter, groupFilterId, dueMonths]);
+
+  useEffect(() => {
+    if (draftTypeFilter !== "group" && draftGroupFilterId) {
+      setDraftGroupFilterId("");
+    }
+  }, [draftTypeFilter, draftGroupFilterId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -326,33 +390,77 @@ export default function TaskScreen() {
     }, [canSeeTaskList, pendingOnly, tasks])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setFiltersOpen(false);
+        setDueMonthPickerOpen(false);
+        setGroupPickerOpen(false);
+      };
+    }, [])
+  );
+
   const filteredTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = tasks;
     if (pendingOnly) {
-      list = list.filter((t) => String(t.status || "").toLowerCase() === "pending");
+      list = list.filter((t) => taskStatusValue(t) === "pending");
+    }
+    if (statusScope !== "all") {
+      list = list.filter((t) => taskStatusValue(t) === statusScope);
     }
     if (typeFilter !== "all") {
       list = list.filter((t) =>
         typeFilter === "group" ? isGroupTask(t) : !isGroupTask(t)
       );
     }
+    if (typeFilter === "group" && selectedGroupWithDescendants.size > 0) {
+      list = list.filter((t) =>
+        taskGroupIds(t).some((gid) => selectedGroupWithDescendants.has(gid))
+      );
+    }
+    if (dueMonths.length > 0) {
+      const selectedMonths = new Set(dueMonths);
+      list = list.filter((t) => {
+        const dueMonth = taskDueMonthValue(t);
+        return dueMonth ? selectedMonths.has(dueMonth) : false;
+      });
+    }
     if (!q) return list;
     return list.filter((t) => taskSearchBlob(t).includes(q));
-  }, [tasks, search, typeFilter, pendingOnly]);
+  }, [tasks, search, statusScope, typeFilter, pendingOnly, selectedGroupWithDescendants, dueMonths]);
 
   const taskHeaderCount = useMemo(() => {
     if (!canSeeTaskList) return 0;
-    if (search.trim() || typeFilter !== "all" || pendingOnly) return filteredTasks.length;
+    if (
+      search.trim() ||
+      statusScope !== "all" ||
+      typeFilter !== "all" ||
+      groupFilterId ||
+      pendingOnly ||
+      dueMonths.length > 0
+    ) {
+      return filteredTasks.length;
+    }
     return tasksTotalCount;
-  }, [canSeeTaskList, search, typeFilter, pendingOnly, filteredTasks.length, tasksTotalCount]);
+  }, [
+    canSeeTaskList,
+    search,
+    statusScope,
+    typeFilter,
+    groupFilterId,
+    pendingOnly,
+    dueMonths.length,
+    filteredTasks.length,
+    tasksTotalCount,
+  ]);
 
   const filterChips = useMemo((): FilterResultChip[] => {
     const chips: FilterResultChip[] = [];
-    if (statusScope === "all") {
+    if (statusScope !== "all") {
       chips.push({
         key: "status",
-        label: "All tasks",
+        label: statusScope === "pending" ? "Pending" : "Completed",
         onLabelPress: () => setFiltersOpen(true),
       });
     }
@@ -363,40 +471,22 @@ export default function TaskScreen() {
         onLabelPress: () => setFiltersOpen(true),
       });
     }
-    if (isElevatedTaskViewer && branchMonth.trim()) {
+    if (typeFilter === "group" && groupFilterId) {
       chips.push({
-        key: "month",
-        label: months.find((o) => o.value === branchMonth.trim())?.label ?? branchMonth,
+        key: "group",
+        label: groupFilterName,
         onLabelPress: () => setFiltersOpen(true),
       });
     }
-    if (isElevatedTaskViewer && assigneeId.trim()) {
-      const s = staffOptions.find((x) => x.id === assigneeId);
+    if (dueMonths.length > 0) {
+      const preview = dueMonths
+        .slice(0, 2)
+        .map((m) => monthLabelFromValue(m))
+        .join(", ");
+      const extraCount = dueMonths.length - 2;
       chips.push({
-        key: "assignee",
-        label: `Assignee: ${displayMemberWords(s ? staffLabel(s) : assigneeId.slice(0, 8))}`,
-        onLabelPress: () => setFiltersOpen(true),
-      });
-    }
-    if (isElevatedTaskViewer && createdById.trim()) {
-      const s = staffOptions.find((x) => x.id === createdById);
-      chips.push({
-        key: "createdBy",
-        label: `By: ${displayMemberWords(s ? staffLabel(s) : createdById.slice(0, 8))}`,
-        onLabelPress: () => setFiltersOpen(true),
-      });
-    }
-    if (isElevatedTaskViewer && dueFromMonth.trim()) {
-      chips.push({
-        key: "dueFrom",
-        label: `Due from ${monthLabelFromValue(dueFromMonth)}`,
-        onLabelPress: () => setFiltersOpen(true),
-      });
-    }
-    if (isElevatedTaskViewer && dueToMonth.trim()) {
-      chips.push({
-        key: "dueTo",
-        label: `Due to ${monthLabelFromValue(dueToMonth)}`,
+        key: "dueMonths",
+        label: extraCount > 0 ? `${preview} +${extraCount}` : preview,
         onLabelPress: () => setFiltersOpen(true),
       });
     }
@@ -407,48 +497,31 @@ export default function TaskScreen() {
   }, [
     statusScope,
     typeFilter,
-    isElevatedTaskViewer,
-    branchMonth,
-    assigneeId,
-    createdById,
-    dueFromMonth,
-    dueToMonth,
-    months,
-    staffOptions,
+    groupFilterId,
+    groupFilterName,
+    dueMonths,
     pendingOnly,
     router,
   ]);
 
   const clearAppliedFilters = useCallback(() => {
-    setStatusScope("open");
+    setStatusScope("all");
     setTypeFilter("all");
-    setBranchMonth("");
-    setDueFromMonth("");
-    setDueToMonth("");
-    setAssigneeId("");
-    setCreatedById("");
+    setGroupFilterId("");
+    setDueMonths([]);
     router.setParams({ pending: undefined });
   }, [router]);
 
   const removeFilterByKey = useCallback(
     (key: string) => {
-      if (key === "status") setStatusScope("open");
+      if (key === "status") setStatusScope("all");
       else if (key === "type") setTypeFilter("all");
-      else if (key === "month") setBranchMonth("");
-      else if (key === "assignee") setAssigneeId("");
-      else if (key === "createdBy") setCreatedById("");
-      else if (key === "dueFrom") setDueFromMonth("");
-      else if (key === "dueTo") setDueToMonth("");
+      else if (key === "group") setGroupFilterId("");
+      else if (key === "dueMonths") setDueMonths([]);
       else if (key === "pending") router.setParams({ pending: undefined });
     },
     [router]
   );
-
-  const staffPickerOptions = useMemo(() => {
-    const o = [{ value: "", label: "Anyone" }];
-    for (const s of staffOptions) o.push({ value: s.id, label: displayMemberWords(staffLabel(s)) });
-    return o;
-  }, [staffOptions]);
 
   function toggleSearch() {
     if (showSearch) {
@@ -488,33 +561,21 @@ export default function TaskScreen() {
   }
 
   function clearDraftFilters() {
-    setDraftStatusScope("open");
+    setDraftStatusScope("all");
     setDraftTypeFilter("all");
-    setDraftBranchMonth("");
-    setDraftDueMode("single");
-    setDuePickerOpen(false);
-    setDraftDueFromMonth("");
-    setDraftDueToMonth("");
-    setDraftAssigneeId("");
-    setDraftCreatedById("");
+    setDraftGroupFilterId("");
+    setDraftDueMonths([]);
+    setDueMonthPickerOpen(false);
+    setGroupPickerOpen(false);
   }
 
   function applyDraftFilters() {
-    const from = draftDueFromMonth.trim();
-    const to = draftDueMode === "range" ? draftDueToMonth.trim() : "";
-    const validRange = from && to && from > to;
-    if (validRange) {
-      Alert.alert("Invalid due range", "From month cannot be later than To month.");
-      return;
-    }
     setStatusScope(draftStatusScope);
     setTypeFilter(draftTypeFilter);
-    setBranchMonth(draftBranchMonth);
-    setDueFromMonth(from);
-    setDueToMonth(to);
-    setAssigneeId(draftAssigneeId);
-    setCreatedById(draftCreatedById);
-    setDuePickerOpen(false);
+    setGroupFilterId(draftTypeFilter === "group" ? draftGroupFilterId : "");
+    setDueMonths([...new Set(draftDueMonths)].sort());
+    setDueMonthPickerOpen(false);
+    setGroupPickerOpen(false);
     setFiltersOpen(false);
   }
 
@@ -606,8 +667,7 @@ export default function TaskScreen() {
           <FormModalShell
             visible={filtersOpen}
             onClose={() => setFiltersOpen(false)}
-            title="Filters"
-            subtitle="Refine task list"
+            title={`Filters (${taskHeaderCount})`}
             variant="compact"
             footer={
               <View style={styles.filterFooter}>
@@ -623,7 +683,7 @@ export default function TaskScreen() {
             <View style={styles.filterBlock}>
               <Text style={styles.filterLabel}>Status</Text>
               <View style={styles.choiceRow}>
-                {(["open", "all"] as StatusScope[]).map((val) => {
+                {(["all", "pending", "completed"] as StatusScope[]).map((val) => {
                   const active = draftStatusScope === val;
                   return (
                     <Pressable
@@ -632,7 +692,7 @@ export default function TaskScreen() {
                       onPress={() => setDraftStatusScope(val)}
                     >
                       <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
-                        {val === "open" ? "Open" : "All"}
+                        {val === "all" ? "All" : val === "pending" ? "Pending" : "Completed"}
                       </Text>
                     </Pressable>
                   );
@@ -660,164 +720,146 @@ export default function TaskScreen() {
               </View>
             </View>
 
-            {isElevatedTaskViewer ? (
-              <>
-                <View style={styles.filterBlock}>
-                  <Text style={styles.filterLabel}>Due month</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
-                    {months.map((opt) => {
-                      const active = draftBranchMonth === opt.value;
-                      return (
-                        <Pressable
-                          key={opt.value || "any"}
-                          style={[styles.choiceChip, active && styles.choiceChipActive]}
-                          onPress={() => setDraftBranchMonth(opt.value)}
-                        >
-                          <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
-                            {opt.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.filterBlock}>
-                  <Text style={styles.filterLabel}>Assignee</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
-                    {staffPickerOptions.map((opt) => {
-                      const active = draftAssigneeId === opt.value;
-                      return (
-                        <Pressable
-                          key={`assignee-${opt.value || "any"}`}
-                          style={[styles.choiceChip, active && styles.choiceChipActive]}
-                          onPress={() => setDraftAssigneeId(opt.value)}
-                        >
-                          <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
-                            {opt.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.filterBlock}>
-                  <Text style={styles.filterLabel}>Assigned by</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
-                    {staffPickerOptions.map((opt) => {
-                      const active = draftCreatedById === opt.value;
-                      return (
-                        <Pressable
-                          key={`creator-${opt.value || "any"}`}
-                          style={[styles.choiceChip, active && styles.choiceChipActive]}
-                          onPress={() => setDraftCreatedById(opt.value)}
-                        >
-                          <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
-                            {opt.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.filterBlock}>
-                  <Text style={styles.filterLabel}>Due date</Text>
-                  <Pressable style={styles.duePickerTrigger} onPress={() => setDuePickerOpen(true)}>
-                    <Calendar size={sizes.headerIcon} color={colors.textSecondary} strokeWidth={2} />
-                    <Text style={styles.duePickerTriggerText} numberOfLines={1}>
-                      {draftDueFromMonth.trim()
-                        ? draftDueMode === "range" && draftDueToMonth.trim()
-                          ? `${monthLabelFromValue(draftDueFromMonth)} → ${monthLabelFromValue(draftDueToMonth)}`
-                          : monthLabelFromValue(draftDueFromMonth)
-                        : "Any month"}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
-                  </Pressable>
-                </View>
-              </>
+            {draftTypeFilter === "group" ? (
+              <View style={styles.filterBlock}>
+                <Text style={styles.filterLabel}>Group</Text>
+                <Pressable style={styles.duePickerTrigger} onPress={() => setGroupPickerOpen(true)}>
+                  <Text style={styles.duePickerTriggerText} numberOfLines={1}>
+                    {draftGroupFilterId
+                      ? String(groupsById.get(draftGroupFilterId)?.name || "").trim() || "Selected group"
+                      : "Any group"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.textSecondary} />
+                </Pressable>
+                <Text style={styles.filterHint}>Only groups assigned to you are shown.</Text>
+              </View>
             ) : null}
-          </FormModalShell>
 
-          <Modal visible={duePickerOpen} transparent animationType="fade" onRequestClose={() => setDuePickerOpen(false)}>
-            <Pressable style={styles.dueModalBackdrop} onPress={() => setDuePickerOpen(false)}>
-              <Pressable style={styles.dueModalCard} onPress={(e) => e.stopPropagation()}>
-                <Text style={styles.dueModalTitle}>Due date</Text>
-                <Text style={styles.filterHint}>Pick one month or switch to range</Text>
-
-                <View style={styles.dueModeRow}>
-                  <Pressable
-                    style={[styles.choiceChip, draftDueMode === "single" && styles.choiceChipActive]}
-                    onPress={() => {
-                      setDraftDueMode("single");
-                      setDraftDueToMonth("");
-                    }}
-                  >
-                    <Text style={[styles.choiceChipText, draftDueMode === "single" && styles.choiceChipTextActive]}>
-                      One way
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.choiceChip, draftDueMode === "range" && styles.choiceChipActive]}
-                    onPress={() => setDraftDueMode("range")}
-                  >
-                    <Text style={[styles.choiceChipText, draftDueMode === "range" && styles.choiceChipTextActive]}>
-                      Round trip
-                    </Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.filterBlock}>
-                  <Text style={styles.dueLab}>From</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
-                    {months.map((opt) => {
-                      const active = draftDueFromMonth === opt.value;
-                      return (
-                        <Pressable
-                          key={`duefrom-popup-${opt.value || "any"}`}
-                          style={[styles.choiceChip, active && styles.choiceChipActive]}
-                          onPress={() => setDraftDueFromMonth(opt.value)}
-                        >
-                          <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{opt.label}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-
-                {draftDueMode === "range" ? (
-                  <View style={styles.filterBlock}>
-                    <Text style={styles.dueLab}>To</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>
-                      {months.map((opt) => {
-                        const active = draftDueToMonth === opt.value;
+            <View style={styles.filterBlock}>
+              <Text style={styles.filterLabel}>Due month</Text>
+              <Pressable
+                style={styles.duePickerTrigger}
+                onPress={() => setDueMonthPickerOpen((prev) => !prev)}
+              >
+                <Text style={styles.duePickerTriggerText} numberOfLines={1}>
+                  {draftDueMonths.length > 0
+                    ? `${draftDueMonths.length} selected`
+                    : "Any month"}
+                </Text>
+                <Ionicons
+                  name={dueMonthPickerOpen ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+              {dueMonthPickerOpen ? (
+                <>
+                  <Text style={styles.filterHint}>Select one or more months</Text>
+                  <ScrollView style={styles.inlineMonthList} contentContainerStyle={styles.monthListContent}>
+                    {months
+                      .filter((opt) => opt.value.trim().length > 0)
+                      .map((opt) => {
+                        const active = draftDueMonths.includes(opt.value);
                         return (
                           <Pressable
-                            key={`dueto-popup-${opt.value || "any"}`}
-                            style={[styles.choiceChip, active && styles.choiceChipActive]}
-                            onPress={() => setDraftDueToMonth(opt.value)}
+                            key={`due-month-inline-${opt.value}`}
+                            style={({ pressed }) => [
+                              styles.monthListRow,
+                              active && styles.monthListRowActive,
+                              pressed && styles.monthListRowPressed,
+                            ]}
+                            onPress={() =>
+                              setDraftDueMonths((prev) =>
+                                prev.includes(opt.value)
+                                  ? prev.filter((v) => v !== opt.value)
+                                  : [...prev, opt.value]
+                              )
+                            }
                           >
-                            <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{opt.label}</Text>
+                            <Text style={[styles.monthListLabel, active && styles.monthListLabelActive]}>
+                              {opt.label}
+                            </Text>
+                            <Ionicons
+                              name={active ? "checkbox-outline" : "square-outline"}
+                              size={18}
+                              color={active ? colors.accent : colors.textSecondary}
+                            />
                           </Pressable>
                         );
                       })}
-                    </ScrollView>
-                  </View>
-                ) : null}
+                  </ScrollView>
+                </>
+              ) : null}
+            </View>
+          </FormModalShell>
 
+          <Modal
+            visible={groupPickerOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setGroupPickerOpen(false)}
+          >
+            <Pressable style={styles.dueModalBackdrop} onPress={() => setGroupPickerOpen(false)}>
+              <Pressable style={styles.dueModalCard} onPress={(e) => e.stopPropagation()}>
+                <Text style={styles.dueModalTitle}>Group</Text>
+                <Text style={styles.filterHint}>Select one group. Child groups appear indented.</Text>
+                <ScrollView style={styles.monthList} contentContainerStyle={styles.monthListContent}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.monthListRow,
+                      !draftGroupFilterId && styles.monthListRowActive,
+                      pressed && styles.monthListRowPressed,
+                    ]}
+                    onPress={() => setDraftGroupFilterId("")}
+                  >
+                    <Text style={[styles.monthListLabel, !draftGroupFilterId && styles.monthListLabelActive]}>
+                      Any group
+                    </Text>
+                    <Ionicons
+                      name={!draftGroupFilterId ? "radio-button-on-outline" : "radio-button-off-outline"}
+                      size={18}
+                      color={!draftGroupFilterId ? colors.accent : colors.textSecondary}
+                    />
+                  </Pressable>
+                  {assignedGroupRows.map((row) => {
+                    const active = draftGroupFilterId === row.id;
+                    const depthPad = row.depth > 0 ? "  ".repeat(Math.min(row.depth, 5)) : "";
+                    return (
+                      <Pressable
+                        key={`task-group-${row.id}`}
+                        style={({ pressed }) => [
+                          styles.monthListRow,
+                          active && styles.monthListRowActive,
+                          pressed && styles.monthListRowPressed,
+                        ]}
+                        onPress={() => setDraftGroupFilterId(row.id)}
+                      >
+                        <Text style={[styles.monthListLabel, active && styles.monthListLabelActive]} numberOfLines={2}>
+                          {`${depthPad}${row.name}`}
+                        </Text>
+                        <Ionicons
+                          name={active ? "radio-button-on-outline" : "radio-button-off-outline"}
+                          size={18}
+                          color={active ? colors.accent : colors.textSecondary}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                  {assignedGroupRows.length === 0 ? (
+                    <Text style={styles.helper}>No assigned groups found.</Text>
+                  ) : null}
+                </ScrollView>
                 <View style={styles.dueModalActions}>
                   <Pressable
                     style={styles.filterClearBtn}
                     onPress={() => {
-                      setDraftDueFromMonth("");
-                      setDraftDueToMonth("");
-                      setDuePickerOpen(false);
+                      setDraftGroupFilterId("");
+                      setGroupPickerOpen(false);
                     }}
                   >
                     <Text style={styles.filterClearBtnText}>Clear</Text>
                   </Pressable>
-                  <Pressable style={styles.filterApplyBtn} onPress={() => setDuePickerOpen(false)}>
+                  <Pressable style={styles.filterApplyBtn} onPress={() => setGroupPickerOpen(false)}>
                     <Text style={styles.filterApplyBtnText}>Done</Text>
                   </Pressable>
                 </View>
@@ -826,10 +868,13 @@ export default function TaskScreen() {
           </Modal>
 
           {loading ? (
-            <View style={styles.loadingBlock}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.helper}>Loading tasks…</Text>
-            </View>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <TaskListSkeleton count={7} />
+            </ScrollView>
           ) : loadError ? (
             <Text style={styles.helper}>{loadError}</Text>
           ) : filteredTasks.length === 0 ? (
@@ -1000,9 +1045,44 @@ const styles = StyleSheet.create({
     fontWeight: type.subtitle.weight,
     color: colors.textPrimary,
   },
-  dueModeRow: {
-    flexDirection: "row",
+  monthList: {
+    maxHeight: 360,
+  },
+  inlineMonthList: {
+    maxHeight: 220,
+  },
+  monthListContent: {
     gap: 8,
+    paddingVertical: 2,
+  },
+  monthListRow: {
+    minHeight: 44,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  monthListRowActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSurface,
+  },
+  monthListRowPressed: {
+    opacity: 0.9,
+  },
+  monthListLabel: {
+    flex: 1,
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+    color: colors.textPrimary,
+    fontWeight: type.body.weight,
+  },
+  monthListLabelActive: {
+    fontWeight: type.bodyStrong.weight,
   },
   dueModalActions: {
     flexDirection: "row",
@@ -1011,8 +1091,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 4,
   },
-  dueLab: { fontSize: type.caption.size - 1, fontWeight: "600", color: colors.textSecondary, marginBottom: 2 },
-  clearDue: { fontSize: type.caption.size, color: colors.accent, fontWeight: "600", paddingVertical: 4 },
   filterHint: { fontSize: type.caption.size, lineHeight: type.caption.lineHeight, color: colors.textSecondary },
   title: {
     fontSize: type.pageTitle.size,

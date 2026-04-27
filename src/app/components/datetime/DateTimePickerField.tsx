@@ -6,6 +6,7 @@ import { Calendar as CalendarIcon, Clock } from "lucide-react";
 import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
+import { PickerDropdownCard, pickerPopoverContentClassName } from "./PickerDropdownCard";
 import {
   CALENDAR_FROM_FALLBACK,
   CALENDAR_TO_FALLBACK,
@@ -123,23 +124,29 @@ export function DateTimePickerField({
               </span>
             </button>
           </PopoverTrigger>
-          <PopoverContent className="z-[130] w-auto border p-0 shadow-md" align="start">
-            <Calendar
-              mode="single"
-              captionLayout="dropdown-buttons"
-              fromDate={fromDate}
-              toDate={toDate}
-              fromYear={fromDate.getFullYear()}
-              toYear={toDate.getFullYear()}
-              selected={dateObj}
-              disabled={disabledMatcher}
-              onSelect={(d) => {
-                if (d) {
-                  setDate(d);
-                  setOpenDate(false);
-                }
-              }}
-            />
+          <PopoverContent
+            className={cn(pickerPopoverContentClassName, "w-auto")}
+            align="start"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <PickerDropdownCard>
+              <Calendar
+                mode="single"
+                captionLayout="dropdown-buttons"
+                fromDate={fromDate}
+                toDate={toDate}
+                fromYear={fromDate.getFullYear()}
+                toYear={toDate.getFullYear()}
+                selected={dateObj}
+                disabled={disabledMatcher}
+                onSelect={(d) => {
+                  if (d) {
+                    setDate(d);
+                    setOpenDate(false);
+                  }
+                }}
+              />
+            </PickerDropdownCard>
           </PopoverContent>
         </Popover>
 
@@ -164,7 +171,12 @@ export function DateTimePickerField({
               </span>
             </button>
           </PopoverTrigger>
-          <PopoverContent className="z-[130] w-auto p-3" align="start">
+          <PopoverContent
+            className={cn(pickerPopoverContentClassName, "w-auto")}
+            align="start"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <PickerDropdownCard className="p-3">
             <div className="flex flex-wrap items-center gap-2">
               <select
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-xs"
@@ -208,6 +220,7 @@ export function DateTimePickerField({
                 Done
               </button>
             </div>
+            </PickerDropdownCard>
           </PopoverContent>
         </Popover>
       </div>

@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Search, Pencil, Trash2, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranch } from '../../contexts/BranchContext';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export interface EventTypeRow {
   id: string;
@@ -14,11 +24,22 @@ export interface EventTypeRow {
   description: string | null;
   color: string | null;
   is_active: boolean;
+  is_default?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
 
 export type EventTypesProps = { embedded?: boolean };
+
+function pickDeletionReplacement(rows: EventTypeRow[], deletingId: string): EventTypeRow | null {
+  const candidates = rows.filter((t) => t.id !== deletingId);
+  if (candidates.length === 0) return null;
+  return (
+    candidates.find((t) => Boolean(t.is_default)) ||
+    [...candidates].sort((a, b) => a.name.localeCompare(b.name))[0] ||
+    null
+  );
+}
 
 export default function EventTypes({ embedded = false }: EventTypesProps) {
   const { token } = useAuth();
@@ -32,7 +53,11 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
   const [formSlug, setFormSlug] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formColor, setFormColor] = useState('#6366f1');
+  const [formIsDefault, setFormIsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<EventTypeRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!token) {
@@ -66,6 +91,7 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
     setFormSlug('');
     setFormDescription('');
     setFormColor('#6366f1');
+    setFormIsDefault(false);
     setModalOpen(true);
   };
 
@@ -75,6 +101,7 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
     setFormSlug(r.slug);
     setFormDescription(r.description || '');
     setFormColor(r.color || '#6366f1');
+    setFormIsDefault(Boolean(r.is_default));
     setModalOpen(true);
   };
 
@@ -98,6 +125,7 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
             slug: formSlug.trim() || undefined,
             description: formDescription.trim() || null,
             color: formColor.trim() || null,
+            is_default: formIsDefault,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -115,6 +143,7 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
             slug: formSlug.trim() || undefined,
             description: formDescription.trim() || null,
             color: formColor.trim() || null,
+            is_default: formIsDefault,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -130,20 +159,40 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
     }
   };
 
-  const handleDelete = async (r: EventTypeRow) => {
-    if (!token) return;
-    if (!window.confirm(`Delete “${r.name}”? Templates using this type may block deletion.`)) return;
+  const deleteReplacement = useMemo(
+    () => (pendingDelete ? pickDeletionReplacement(rows, pendingDelete.id) : null),
+    [pendingDelete, rows],
+  );
+
+  const confirmDelete = async () => {
+    if (!token || !pendingDelete) return;
+    setDeleteBusy(true);
     try {
-      const res = await fetch(`/api/event-types/${encodeURIComponent(r.id)}`, {
+      const res = await fetch(`/api/event-types/${encodeURIComponent(pendingDelete.id)}`, {
         method: 'DELETE',
         headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as { error?: string }).error || 'Delete failed');
-      toast.success('Deleted');
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        moved_events?: number;
+        moved_templates?: number;
+        replacement_slug?: string;
+      };
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      const ev = typeof data.moved_events === 'number' ? data.moved_events : 0;
+      const tpl = typeof data.moved_templates === 'number' ? data.moved_templates : 0;
+      toast.success(
+        (tpl + ev) > 0
+          ? `Deleted. Reassigned ${tpl} program template(s) and ${ev} event(s) to the default type.`
+          : 'Event type deleted.',
+      );
+      setDeleteOpen(false);
+      setPendingDelete(null);
       void fetchRows();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -164,7 +213,8 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
           <div>
             <h1 className="text-xl font-semibold text-gray-900 md:text-2xl">Event types</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Custom labels used by events and program templates (stored as slug on each event).
+              Custom labels used by events and program templates (stored as slug on each event). One type per branch is
+              the default; deleting a type reassigns linked events and templates to that default.
             </p>
           </div>
           <button
@@ -200,18 +250,11 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/90">
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
-                      Type
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
-                      Slug
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">
-                      Description
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500">
-                      Actions
-                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">Type</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">Slug</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">Default</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500">Description</th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -229,6 +272,15 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
                       <td className="px-6 py-4 align-middle">
                         <code className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-800">{r.slug}</code>
                       </td>
+                      <td className="px-6 py-4 align-middle">
+                        {r.is_default ? (
+                          <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
+                            Default
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="max-w-xs px-6 py-4 align-middle">
                         <span className="line-clamp-2 text-sm text-gray-600">{r.description || '—'}</span>
                       </td>
@@ -244,7 +296,10 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => void handleDelete(r)}
+                            onClick={() => {
+                              setPendingDelete(r);
+                              setDeleteOpen(true);
+                            }}
                             className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -260,6 +315,50 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete event type?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-left">
+              <span className="block">
+                This action cannot be undone. The type <strong>{pendingDelete?.name}</strong> will be removed from
+                settings.
+              </span>
+              {deleteReplacement ? (
+                <span className="block text-sm text-gray-600">
+                  Events and program templates that use this type will be switched to your default type{' '}
+                  <strong>{deleteReplacement.name}</strong> (slug <code className="text-xs">{deleteReplacement.slug}</code>
+                  ).
+                </span>
+              ) : (
+                <span className="block text-sm text-amber-800">
+                  You cannot delete the only event type for this branch. Add another type first.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy || !deleteReplacement}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              {deleteBusy ? 'Deleting…' : 'Delete permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {modalOpen && (
         <>
@@ -309,6 +408,20 @@ export default function EventTypes({ embedded = false }: EventTypesProps) {
                   className="mt-1 h-10 w-full cursor-pointer rounded-xl border border-gray-200"
                 />
               </div>
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-100 bg-gray-50/80 p-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                  checked={formIsDefault}
+                  onChange={(e) => setFormIsDefault(e.target.checked)}
+                />
+                <span className="text-sm text-gray-700">
+                  <span className="font-medium text-gray-900">Default event type</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">
+                    Used when another type is deleted (events and program templates are reassigned here).
+                  </span>
+                </span>
+              </label>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button

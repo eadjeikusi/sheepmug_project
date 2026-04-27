@@ -12,6 +12,7 @@ import {
   rightAlignedMemberThumbnail,
 } from "../lib/notificationPayloadDisplay";
 import { navigateFromNotificationAction } from "../lib/notificationNavigation";
+import { NotificationListSkeleton } from "../components/DataSkeleton";
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -54,7 +55,11 @@ export default function NotificationsScreen() {
         }}
         onEndReachedThreshold={0.35}
         ListEmptyComponent={
-          loading ? <Text style={styles.muted}>Loading…</Text> : <Text style={styles.muted}>No notifications yet.</Text>
+          loading ? (
+            <NotificationListSkeleton count={8} />
+          ) : (
+            <Text style={styles.muted}>No notifications yet.</Text>
+          )
         }
         ListFooterComponent={
           loadingMore ? (

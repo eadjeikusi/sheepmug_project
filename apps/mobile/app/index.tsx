@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Redirect } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
 import { ActivityIndicator, Image, InteractionManager, StyleSheet, View } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { SHEEPMUG_LOGO } from "../lib/branding";
 import { devLog, devWarn } from "../lib/devLog";
 import { getOfflineBootstrapDone, getOnboardingCompleted, getStoredUserJson } from "../lib/storage";
 import { colors } from "../theme";
+import { safeHideSplashAsync } from "../lib/safeSplashScreen";
 
 export default function IndexScreen() {
   const { token, loading, user } = useAuth();
@@ -17,7 +17,7 @@ export default function IndexScreen() {
   useEffect(() => {
     if (!loading) {
       devLog("index: hide splash (auth ready)");
-      void SplashScreen.hideAsync().catch(() => {});
+      void safeHideSplashAsync();
     }
   }, [loading]);
 
@@ -25,7 +25,7 @@ export default function IndexScreen() {
   useEffect(() => {
     const t = setTimeout(() => {
       devWarn("index: 8s splash safety hide");
-      void SplashScreen.hideAsync().catch(() => {});
+      void safeHideSplashAsync();
     }, 8000);
     return () => clearTimeout(t);
   }, []);

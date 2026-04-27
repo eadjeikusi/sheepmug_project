@@ -51,13 +51,7 @@ function hashToPresetKey(label: string): keyof typeof PRESET {
   return pool[Math.abs(h) % pool.length];
 }
 
-function resolvePresetKey(
-  status: string,
-  opts: Pick<MemberStatusOption, "label" | "color">[]
-): keyof typeof PRESET {
-  const row = opts.find((o) => o.label === status);
-  const fromDb = (row?.color ?? "").trim().toLowerCase();
-  if (fromDb && PRESET[fromDb]) return fromDb as keyof typeof PRESET;
+function resolvePresetKey(status: string): keyof typeof PRESET {
   const inferred = inferPresetFromLabel(status);
   if (inferred) return inferred;
   return hashToPresetKey(status);
@@ -65,14 +59,14 @@ function resolvePresetKey(
 
 export function memberStatusBadgePair(
   status: string | null | undefined,
-  opts: Pick<MemberStatusOption, "label" | "color">[]
+  _opts: Pick<MemberStatusOption, "label" | "color">[]
 ): { chipBg: string; chipBorder: string; text: string; dot: string; labelColor: string } {
   const text = (status ?? "").trim() || "—";
   if (text === "—") {
     const c = PRESET.slate;
     return { chipBg: c.chipBg, chipBorder: c.chipBorder, text, dot: c.dot, labelColor: c.text };
   }
-  const key = resolvePresetKey(text, opts);
+  const key = resolvePresetKey(text);
   const c = PRESET[key] ?? PRESET.slate;
   return { chipBg: c.chipBg, chipBorder: c.chipBorder, text, dot: c.dot, labelColor: c.text };
 }

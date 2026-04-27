@@ -932,7 +932,7 @@ export function TaskAssignmentList({
                   }}
                 />
               </View>
-              {variant === "member" && canManageMemberTasks ? (
+              {variant === "member" && canWriteMember ? (
                 <Pressable
                   accessibilityLabel="Add task"
                   style={({ pressed }) => [styles.addTaskIconBtn, pressed && styles.addTaskIconBtnPressed]}
@@ -940,7 +940,7 @@ export function TaskAssignmentList({
                 >
                   <Ionicons name="add" size={22} color="#fff" />
                 </Pressable>
-              ) : variant === "group" && canManageGroupTasks ? (
+              ) : variant === "group" && canWriteGroup ? (
                 <Pressable
                   accessibilityLabel="Add group task"
                   style={({ pressed }) => [styles.addTaskIconBtn, pressed && styles.addTaskIconBtnPressed]}

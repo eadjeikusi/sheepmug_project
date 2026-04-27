@@ -9,6 +9,7 @@ import type { OrgBulkMessageRow } from '@/types';
 import BulkSmsComposeModal from '../modals/BulkSmsComposeModal';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
 import { formatNotificationDateTime } from '@/utils/dateDisplayFormat';
+import { MessagesTableBodySkeleton } from '@/components/skeletons/data-skeletons';
 
 type FilterTab = 'all' | 'pending' | 'scheduled' | 'recurring';
 
@@ -225,11 +226,7 @@ export default function Messages() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500 text-sm">
-                    Loading…
-                  </td>
-                </tr>
+                <MessagesTableBodySkeleton rows={7} />
               ) : filtered.length > 0 ? (
                 filtered.map((message, index) => (
                   <motion.tr

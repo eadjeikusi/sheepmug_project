@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Animated,
   FlatList,
   SafeAreaView,
   StyleSheet,
@@ -36,6 +35,7 @@ import { FormModalShell } from "../../components/FormModalShell";
 import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberAddModal } from "../../components/MemberAddModal";
 import { MemberJoinQrModal } from "../../components/MemberJoinQrModal";
+import { MemberListSkeleton } from "../../components/DataSkeleton";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
 import { api } from "../../lib/api";
 import { useBranch } from "../../contexts/BranchContext";
@@ -47,6 +47,13 @@ import { ymdToDueAtIso } from "../../lib/dateTimeFormat";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { getMemberJoinRegisterUrl } from "../../lib/memberJoinRegisterUrl";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
+import {
+  buildGroupTreeSelection,
+  buildMinistryTreeRows,
+  filterVisibleMinistryTreeRows,
+  toggleMinistryInSet,
+  type MinistryTreeRow,
+} from "../../lib/ministryGroupTree";
 
 function firstValidImageUri(member: Member): string | null {
   const candidates = [
@@ -218,12 +225,16 @@ export default function MembersScreen() {
   const [draftFilterStatus, setDraftFilterStatus] = useState<Set<string>>(new Set(["All"]));
   const [draftAgeMinInput, setDraftAgeMinInput] = useState("");
   const [draftAgeMaxInput, setDraftAgeMaxInput] = useState("");
-  const ageRangeAnim = useRef(new Animated.Value(0)).current;
   const [draftFilterPendingOnly, setDraftFilterPendingOnly] = useState(false);
   const [draftSelectedFilterGroupIds, setDraftSelectedFilterGroupIds] = useState<Set<string>>(
     new Set([GROUP_FILTER_ALL_TOKEN])
   );
-  const [showAllFilterGroups, setShowAllFilterGroups] = useState(false);
+  /** Ministry tree is a sub-screen inside FormModalShell (second RN Modal fails when filter sheet is open). */
+  const [membersFilterSheet, setMembersFilterSheet] = useState<"main" | "ministry">("main");
+  const [expandedMinistryFilterNodes, setExpandedMinistryFilterNodes] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [ministryFilterSearchQuery, setMinistryFilterSearchQuery] = useState("");
   const [showQrModal, setShowQrModal] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [deletedTrashCount, setDeletedTrashCount] = useState(0);
@@ -254,6 +265,7 @@ export default function MembersScreen() {
   const [hasMoreMembers, setHasMoreMembers] = useState(true);
   const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
   const [membersTotalCount, setMembersTotalCount] = useState(0);
+  const resetFiltersOnNextFocusRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -324,6 +336,10 @@ export default function MembersScreen() {
   }, [routeParams.status]);
 
   useEffect(() => {
+    if (!filterOpen) setMembersFilterSheet("main");
+  }, [filterOpen]);
+
+  useEffect(() => {
     if (!showAssignModal && !filterOpen) return;
     let mounted = true;
     (async () => {
@@ -347,19 +363,7 @@ export default function MembersScreen() {
     setDraftAgeMaxInput(filterAgeMax != null ? String(filterAgeMax) : "");
     setDraftFilterPendingOnly(filterPendingOnly);
     setDraftSelectedFilterGroupIds(new Set(selectedFilterGroupIds));
-    setShowAllFilterGroups(false);
   }, [filterOpen, statusFilter, filterAgeMin, filterAgeMax, filterPendingOnly, selectedFilterGroupIds]);
-
-  useEffect(() => {
-    const min = parseAgeBound(draftAgeMinInput);
-    const max = parseAgeBound(draftAgeMaxInput);
-    const active = min != null || max != null;
-    Animated.timing(ageRangeAnim, {
-      toValue: active ? 1 : 0,
-      duration: 220,
-      useNativeDriver: false,
-    }).start();
-  }, [draftAgeMinInput, draftAgeMaxInput, ageRangeAnim]);
 
   const toggleDraftStatus = useCallback((label: string) => {
     setDraftFilterStatus((prev) => {
@@ -373,49 +377,16 @@ export default function MembersScreen() {
     });
   }, []);
 
-  const toggleDraftGroup = useCallback((gid: string) => {
-    setDraftSelectedFilterGroupIds((prev) => {
-      if (gid === GROUP_FILTER_ALL_TOKEN) return new Set([GROUP_FILTER_ALL_TOKEN]);
-      const next = new Set(prev);
-      next.delete(GROUP_FILTER_ALL_TOKEN);
-      if (next.has(gid)) next.delete(gid);
-      else next.add(gid);
-      if (next.size === 0) return new Set([GROUP_FILTER_ALL_TOKEN]);
-      return next;
-    });
-  }, []);
-
-  const groupHierarchy = useMemo(() => {
-    const parentByChild = new Map<string, string>();
-    for (const g of groups) {
-      const id = String(g.id);
-      const parentRaw = (g.parent_group_id ?? g.parent_id ?? null) as string | null;
-      if (parentRaw && String(parentRaw).trim()) {
-        parentByChild.set(id, String(parentRaw));
-      }
-    }
-    return { parentByChild };
-  }, [groups]);
-
-  const disabledGroupIdsByParentSelection = useMemo(() => {
-    const selectedNoAll = new Set(
-      Array.from(draftSelectedFilterGroupIds).filter((x) => x !== GROUP_FILTER_ALL_TOKEN)
-    );
-    const disabled = new Set<string>();
-    for (const g of groups) {
-      const gid = String(g.id);
-      if (selectedNoAll.has(gid)) continue;
-      let p = groupHierarchy.parentByChild.get(gid);
-      while (p) {
-        if (selectedNoAll.has(p)) {
-          disabled.add(gid);
-          break;
-        }
-        p = groupHierarchy.parentByChild.get(p);
-      }
-    }
-    return disabled;
-  }, [draftSelectedFilterGroupIds, groups, groupHierarchy.parentByChild]);
+  const groupTree = useMemo(() => buildGroupTreeSelection(groups), [groups]);
+  const ministryTreeRows = useMemo(() => buildMinistryTreeRows(groups), [groups]);
+  const visibleMinistryRowsAssign = useMemo(
+    () => filterVisibleMinistryTreeRows(ministryTreeRows, expandedMinistryNodes, ministrySearchQuery),
+    [ministryTreeRows, expandedMinistryNodes, ministrySearchQuery]
+  );
+  const visibleMinistryRowsFilter = useMemo(
+    () => filterVisibleMinistryTreeRows(ministryTreeRows, expandedMinistryFilterNodes, ministryFilterSearchQuery),
+    [ministryTreeRows, expandedMinistryFilterNodes, ministryFilterSearchQuery]
+  );
 
   function parseAgeBound(input: string): number | null {
     const trimmed = input.trim();
@@ -434,62 +405,8 @@ export default function MembersScreen() {
     return min <= max ? { min, max } : { min: max, max: min };
   }
 
-  /** Descendants + parent links for ministry multi-select (parent selects whole subtree). */
-  const groupTreeSelection = useMemo(() => {
-    const childrenByParent = new Map<string, string[]>();
-    const parentByChildId = new Map<string, string>();
-    for (const g of groups) {
-      const cid = String(g.id);
-      const r = g as Record<string, unknown>;
-      const pr = r.parent_group_id ?? r.parent_id;
-      const pid = pr != null && String(pr).length > 0 ? String(pr) : null;
-      if (pid) {
-        parentByChildId.set(cid, pid);
-        if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
-        childrenByParent.get(pid)!.push(cid);
-      }
-    }
-    const descendantsByGroupId = new Map<string, string[]>();
-    function collect(gid: string): string[] {
-      if (descendantsByGroupId.has(gid)) return descendantsByGroupId.get(gid)!;
-      const kids = childrenByParent.get(gid) || [];
-      const out: string[] = [];
-      for (const k of kids) {
-        out.push(k, ...collect(k));
-      }
-      descendantsByGroupId.set(gid, out);
-      return out;
-    }
-    for (const g of groups) collect(String(g.id));
-    return { descendantsByGroupId, parentByChildId };
-  }, [groups]);
-
-  function toggleMinistryGroupSelection(row: { id: string; hasChildren: boolean }) {
-    const id = row.id;
-    const desc = groupTreeSelection.descendantsByGroupId.get(id) ?? [];
-    if (row.hasChildren) {
-      setSelectedGroupIds((prev) => {
-        const next = new Set(prev);
-        const on = next.has(id);
-        const ids = [id, ...desc];
-        if (on) ids.forEach((x) => next.delete(x));
-        else ids.forEach((x) => next.add(x));
-        return next;
-      });
-      return;
-    }
-    setSelectedGroupIds((prev) => {
-      const next = new Set(prev);
-      const on = next.has(id);
-      if (on) {
-        next.delete(id);
-        const p = groupTreeSelection.parentByChildId.get(id);
-        if (p) next.delete(p);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+  function toggleMinistryGroupSelection(row: Pick<MinistryTreeRow, "id" | "hasChildren">) {
+    setSelectedGroupIds((prev) => toggleMinistryInSet(prev, row, groupTree, {}));
   }
 
   const statusOptions = useMemo(() => {
@@ -515,105 +432,17 @@ export default function MembersScreen() {
     [statusOptions]
   );
 
-  const ministryTreeRows = useMemo(() => {
-    type TreeRow = {
-      id: string;
-      nodeKey: string;
-      name: string;
-      subtitle: string;
-      /** Lowercased name + subtitle + description + group_type for filtering */
-      searchBlob: string;
-      depth: number;
-      hasChildren: boolean;
-      ancestorKeys: string[];
-    };
-    const byId = new Map<string, Group>();
-    for (const g of groups) byId.set(String(g.id), g);
-
-    const childrenByParent = new Map<string, Group[]>();
-    const roots: Group[] = [];
-    for (const g of groups) {
-      const parentRaw = (g.parent_group_id ?? g.parent_id ?? null) as string | null;
-      const parentId = parentRaw ? String(parentRaw) : "";
-      if (!parentId || !byId.has(parentId)) {
-        roots.push(g);
-      } else {
-        const arr = childrenByParent.get(parentId) || [];
-        arr.push(g);
-        childrenByParent.set(parentId, arr);
-      }
+  const draftMinistryFilterSummary = useMemo(() => {
+    if (draftSelectedFilterGroupIds.has(GROUP_FILTER_ALL_TOKEN) || draftSelectedFilterGroupIds.size === 0) {
+      return { label: "All groups", count: 0, all: true as const };
     }
-
-    const sortByName = (a: Group, b: Group) =>
-      String(a.name || "").localeCompare(String(b.name || ""));
-    roots.sort(sortByName);
-    for (const [, arr] of childrenByParent) arr.sort(sortByName);
-
-    const memberCountLabel = (g: Group) => {
-      const count = (g.member_count ?? g.members_count ?? null) as number | null;
-      if (count != null) return `${count} member${count === 1 ? "" : "s"}`;
-      return "";
+    const ids = Array.from(draftSelectedFilterGroupIds).filter((x) => x !== GROUP_FILTER_ALL_TOKEN);
+    return {
+      label: `${ids.length} ${ids.length === 1 ? "ministry" : "ministries"} selected`,
+      count: ids.length,
+      all: false as const,
     };
-    const groupTypeLabel = (g: Group) => {
-      const gt = String(g.group_type || "ministry").toLowerCase();
-      return gt.charAt(0).toUpperCase() + gt.slice(1);
-    };
-
-    const flatRows: TreeRow[] = [];
-    const walk = (node: Group, depth: number, ancestorKeys: string[]) => {
-      const id = String(node.id);
-      const nodeKey = `group:${id}`;
-      const kids = childrenByParent.get(id) || [];
-      const parentId = (node.parent_group_id ?? node.parent_id ?? null) as string | null;
-      const parentName = parentId ? String(byId.get(String(parentId))?.name || "") : "";
-      const isSubgroup = depth > 0;
-      const parts: string[] = [];
-      if (isSubgroup) {
-        parts.push("Subgroup");
-        if (parentName) parts.push(parentName);
-      } else {
-        parts.push(groupTypeLabel(node));
-        parts.push("main group");
-      }
-      const mc = memberCountLabel(node);
-      if (mc) parts.push(mc);
-      const nameStr = String(node.name || "Ministry");
-      const subtitleStr = parts.join(" · ");
-      const descStr = String(node.description ?? "").trim();
-      const typeRaw = String(node.group_type ?? "").trim();
-      const searchBlob = `${nameStr} ${subtitleStr} ${descStr} ${typeRaw}`.toLowerCase();
-      flatRows.push({
-        id,
-        nodeKey,
-        name: nameStr,
-        subtitle: subtitleStr,
-        searchBlob,
-        depth,
-        hasChildren: kids.length > 0,
-        ancestorKeys,
-      });
-      for (const child of kids) walk(child, depth + 1, [...ancestorKeys, nodeKey]);
-    };
-    for (const root of roots) walk(root, 0, []);
-    return flatRows;
-  }, [groups]);
-
-  const visibleMinistryRows = useMemo(() => {
-    const q = ministrySearchQuery.trim().toLowerCase();
-    if (!q) {
-      return ministryTreeRows.filter(
-        (row) => row.depth === 0 || row.ancestorKeys.every((k) => expandedMinistryNodes.has(k))
-      );
-    }
-    const includeKeys = new Set<string>();
-    for (const row of ministryTreeRows) {
-      if (row.searchBlob.includes(q)) {
-        includeKeys.add(row.nodeKey);
-        for (const k of row.ancestorKeys) includeKeys.add(k);
-      }
-    }
-    return ministryTreeRows.filter((row) => includeKeys.has(row.nodeKey));
-  }, [ministryTreeRows, expandedMinistryNodes, ministrySearchQuery]);
+  }, [draftSelectedFilterGroupIds]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -671,11 +500,6 @@ export default function MembersScreen() {
     memberPendingTaskIds,
   ]);
 
-  const visibleFilterGroups = useMemo(
-    () => (showAllFilterGroups ? groups : groups.slice(0, 8)),
-    [groups, showAllFilterGroups]
-  );
-
   const activeFilterLabels = useMemo(() => {
     const labels: Array<{ key: string; label: string }> = [];
     const hasAllStatus = statusFilter.has("All") || statusFilter.size === 0;
@@ -727,6 +551,17 @@ export default function MembersScreen() {
     setSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
   }, []);
 
+  const resetMemberFilters = useCallback(() => {
+    clearAppliedFilters();
+    setDraftFilterStatus(new Set(["All"]));
+    setDraftAgeMinInput("");
+    setDraftAgeMaxInput("");
+    setDraftFilterPendingOnly(false);
+    setDraftSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
+    setMembersFilterSheet("main");
+    setMinistryFilterSearchQuery("");
+  }, [clearAppliedFilters]);
+
   const removeFilterByKey = useCallback((key: string) => {
     if (key.startsWith("status:")) {
       const label = key.slice("status:".length);
@@ -757,6 +592,18 @@ export default function MembersScreen() {
       setFilterPendingOnly(false);
     }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (resetFiltersOnNextFocusRef.current) {
+        resetMemberFilters();
+        resetFiltersOnNextFocusRef.current = false;
+      }
+      return () => {
+        resetFiltersOnNextFocusRef.current = true;
+      };
+    }, [resetMemberFilters])
+  );
 
   useEffect(() => {
     if (!showAssignModal) {
@@ -1121,7 +968,13 @@ export default function MembersScreen() {
                 color={colors.textPrimary}
               />
             </HeaderIconCircleButton>
-            <HeaderIconCircleButton active={hasAppliedFilters} onPress={() => setFilterOpen(true)}>
+            <HeaderIconCircleButton
+              active={hasAppliedFilters}
+              onPress={() => {
+                setMembersFilterSheet("main");
+                setFilterOpen(true);
+              }}
+            >
               <Ionicons
                 name={hasAppliedFilters ? "filter" : "filter-outline"}
                 size={sizes.headerIcon}
@@ -1161,7 +1014,11 @@ export default function MembersScreen() {
                 {activeFilterLabels.map((chip) => (
                   <View key={chip.key} style={[styles.filterChip, styles.filterChipActive]}>
                     <Pressable
-                      onPress={() => setFilterOpen(true)}
+                      onPress={() => {
+                        if (chip.key.startsWith("group:")) setMembersFilterSheet("ministry");
+                        else setMembersFilterSheet("main");
+                        setFilterOpen(true);
+                      }}
                       style={styles.filterChipLabelPress}
                     >
                       <Text style={[styles.filterChipText, styles.filterChipTextActive]} numberOfLines={2}>
@@ -1185,12 +1042,17 @@ export default function MembersScreen() {
                   </Text>
                 </Pressable>
               </View>
+              <View style={styles.filterResultChipRow}>
+                <View style={[styles.filterChip, styles.filterResultChip]}>
+                  <Text style={[styles.filterChipText, styles.filterResultChipText]}>Results: {headerListCount}</Text>
+                </View>
+              </View>
             </View>
           ) : null}
         </View>
 
         {loading ? (
-          <Text style={styles.helper}>Loading members...</Text>
+          <MemberListSkeleton count={10} />
         ) : (
           <FlatList
             data={filtered}
@@ -1508,7 +1370,7 @@ export default function MembersScreen() {
                         style={styles.assignOptionsList}
                         contentContainerStyle={styles.assignOptionsContent}
                       >
-                      {visibleMinistryRows.map((row) => {
+                      {visibleMinistryRowsAssign.map((row) => {
                         const selected = selectedGroupIds.has(row.id);
                         const expanded = expandedMinistryNodes.has(row.nodeKey);
                         return (
@@ -1731,9 +1593,10 @@ export default function MembersScreen() {
       <FormModalShell
         visible={filterOpen}
         onClose={() => setFilterOpen(false)}
-        title="Filters"
-        subtitle="Refine member list"
-        variant="compact"
+        title={membersFilterSheet === "ministry" ? `Ministry (${liveApplyCount})` : `Filters (${liveApplyCount})`}
+        subtitle={membersFilterSheet === "ministry" ? "Choose groups and subgroups" : undefined}
+        variant="full"
+        dynamicHeight
         footer={
           <View style={styles.filterFooter}>
             <Pressable
@@ -1744,7 +1607,6 @@ export default function MembersScreen() {
                 setDraftAgeMaxInput("");
                 setDraftFilterPendingOnly(false);
                 setDraftSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
-                setShowAllFilterGroups(false);
               }}
             >
               <Text style={styles.filterClearBtnText}>Clear</Text>
@@ -1768,10 +1630,8 @@ export default function MembersScreen() {
           </View>
         }
       >
-        <View style={styles.liveCountRow}>
-          <Text style={styles.liveCountText}>{liveApplyCount} members match current selection</Text>
-        </View>
-
+        {membersFilterSheet === "main" ? (
+          <>
         <View style={styles.filterBlock}>
           <Text style={styles.filterSectionTitle}>Member status</Text>
           <View style={styles.statusGrid}>
@@ -1783,14 +1643,6 @@ export default function MembersScreen() {
                   style={[styles.statusCard, active && styles.statusCardActive]}
                   onPress={() => toggleDraftStatus(label)}
                 >
-                  <View style={styles.statusCardTopRow}>
-                    <Ionicons name="person-outline" size={16} color={active ? colors.accent : "#6b7280"} />
-                    {active ? (
-                      <View style={styles.statusCardCheck}>
-                        <Ionicons name="checkmark" size={10} color="#fff" />
-                      </View>
-                    ) : null}
-                  </View>
                   <Text style={[styles.statusCardText, active && styles.statusCardTextActive]}>{label}</Text>
                 </Pressable>
               );
@@ -1800,124 +1652,47 @@ export default function MembersScreen() {
         <View style={styles.filterSectionDivider} />
 
         <View style={styles.filterBlock}>
-          <Text style={styles.filterSectionTitle}>Age range</Text>
-          <Text style={styles.filterHint}>Choose your own min and max age</Text>
           <View style={styles.ageRangeRow}>
-            <View style={styles.ageRangeInputCell}>
-              <Text style={styles.ageRangeLabel}>Min age</Text>
-              <TextInput
-                value={draftAgeMinInput}
-                onChangeText={(t) => setDraftAgeMinInput(t.replace(/[^\d]/g, ""))}
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
-            <View style={styles.ageRangeConnectorWrap}>
-              <Text style={styles.ageRangeConnector}>to</Text>
-            </View>
-            <View style={styles.ageRangeInputCell}>
-              <Text style={styles.ageRangeLabel}>Max age</Text>
-              <TextInput
-                value={draftAgeMaxInput}
-                onChangeText={(t) => setDraftAgeMaxInput(t.replace(/[^\d]/g, ""))}
-                placeholder="120"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
+            <Text style={styles.filterSectionTitle}>Age range</Text>
+            <TextInput
+              value={draftAgeMinInput}
+              onChangeText={(t) => setDraftAgeMinInput(t.replace(/[^\d]/g, ""))}
+              placeholder="Minimum"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="number-pad"
+              style={[styles.input, styles.ageRangeInlineInput]}
+            />
+            <Text style={styles.ageRangeConnector}>-</Text>
+            <TextInput
+              value={draftAgeMaxInput}
+              onChangeText={(t) => setDraftAgeMaxInput(t.replace(/[^\d]/g, ""))}
+              placeholder="Maximum"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="number-pad"
+              style={[styles.input, styles.ageRangeInlineInput]}
+            />
           </View>
-          <Animated.View
-            style={[
-              styles.ageRangePreview,
-              {
-                borderColor: ageRangeAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["#e5e7eb", "#3b82f6"],
-                }),
-                backgroundColor: ageRangeAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["#f8fafc", "#eff6ff"],
-                }),
-                transform: [
-                  {
-                    scale: ageRangeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [1, 1.02],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          >
-            <Text style={styles.ageRangePreviewText}>
-              {(() => {
-                const parsedMin = parseAgeBound(draftAgeMinInput);
-                const parsedMax = parseAgeBound(draftAgeMaxInput);
-                const normalized = normalizeAgeRange(parsedMin, parsedMax);
-                if (normalized.min == null && normalized.max == null) return "All ages";
-                return `${normalized.min ?? 0} - ${normalized.max ?? 120} years`;
-              })()}
-            </Text>
-          </Animated.View>
         </View>
         <View style={styles.filterSectionDivider} />
 
         <View style={styles.filterBlock}>
-          <Text style={styles.filterSectionTitle}>Groups and subgroups</Text>
-          <View style={styles.groupListWrap}>
-            {(() => {
-              const groupsAllSelected = draftSelectedFilterGroupIds.has(GROUP_FILTER_ALL_TOKEN);
-              return (
-                <Pressable
-                  key={GROUP_FILTER_ALL_TOKEN}
-                  onPress={() => toggleDraftGroup(GROUP_FILTER_ALL_TOKEN)}
-                  style={[styles.filterPill, groupsAllSelected && styles.filterPillActive]}
-                >
-                  <View style={[styles.pillDot, groupsAllSelected && styles.pillDotActive]}>
-                    {groupsAllSelected ? <Ionicons name="checkmark" size={10} color="#fff" /> : null}
-                  </View>
-                  <Text style={[styles.filterPillText, groupsAllSelected && styles.filterPillTextActive]}>
-                    All groups
-                  </Text>
-                </Pressable>
-              );
-            })()}
-            {visibleFilterGroups.map((g) => {
-              const gid = String(g.id);
-              const active = draftSelectedFilterGroupIds.has(gid);
-              const isDisabledByParent = disabledGroupIdsByParentSelection.has(gid);
-              const visuallySelected = active || isDisabledByParent;
-              return (
-                <Pressable
-                  key={gid}
-                  onPress={() => {
-                    if (isDisabledByParent) return;
-                    toggleDraftGroup(gid);
-                  }}
-                  style={[
-                    styles.filterPill,
-                    visuallySelected && styles.filterPillActive,
-                    isDisabledByParent && styles.filterOptionDisabled,
-                  ]}
-                >
-                  <View style={[styles.pillDot, visuallySelected && styles.pillDotActive]}>
-                    {visuallySelected ? <Ionicons name="checkmark" size={10} color="#fff" /> : null}
-                  </View>
-                  <Text style={[styles.filterPillText, visuallySelected && styles.filterPillTextActive]} numberOfLines={1}>
-                    {String(g.name || "Group")}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          {groups.length > 8 ? (
-            <Pressable onPress={() => setShowAllFilterGroups((v) => !v)} style={styles.showMoreBtn}>
-              <Text style={styles.showMoreText}>{showAllFilterGroups ? "Show less" : "Show more..."}</Text>
-            </Pressable>
-          ) : null}
+          <Text style={styles.filterSectionTitle}>Ministry</Text>
+          <Pressable
+            style={styles.ministryFilterTrigger}
+            onPress={() => {
+              setMinistryFilterSearchQuery("");
+              setMembersFilterSheet("ministry");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Choose ministries for filter"
+          >
+            <View style={styles.ministryFilterTriggerTextWrap}>
+              <Text style={styles.ministryFilterTriggerLabel} numberOfLines={1}>
+                {draftMinistryFilterSummary.all ? "All groups" : draftMinistryFilterSummary.label}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </Pressable>
         </View>
         <View style={styles.filterSectionDivider} />
 
@@ -1928,6 +1703,101 @@ export default function MembersScreen() {
           </View>
           <Switch value={draftFilterPendingOnly} onValueChange={setDraftFilterPendingOnly} />
         </View>
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={() => setMembersFilterSheet("main")}
+              style={styles.filterSubscreenBack}
+              accessibilityRole="button"
+              accessibilityLabel="Back to all filters"
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.accent} />
+              <Text style={styles.filterSubscreenBackText}>All filters</Text>
+            </Pressable>
+            <Text style={styles.filterHint}>
+              Select a main group to include all its subgroups, or pick individual subgroups.
+            </Text>
+            <View style={styles.assignSearchRow}>
+              <TextInput
+                value={ministryFilterSearchQuery}
+                onChangeText={setMinistryFilterSearchQuery}
+                placeholder="Search ministry name"
+                style={[styles.input, styles.assignSearchInput]}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={styles.ministryPickerListFlat}>
+              {visibleMinistryRowsFilter.map((row) => {
+                const selected = draftSelectedFilterGroupIds.has(row.id);
+                const allMode = draftSelectedFilterGroupIds.has(GROUP_FILTER_ALL_TOKEN);
+                const expanded = expandedMinistryFilterNodes.has(row.nodeKey);
+                return (
+                  <View
+                    key={row.nodeKey}
+                    style={[styles.assignOptionRow, row.depth === 0 && styles.assignOptionRowMain]}
+                  >
+                    <Pressable
+                      style={styles.assignOptionRowPress}
+                      onPress={() => {
+                        setDraftSelectedFilterGroupIds((prev) =>
+                          toggleMinistryInSet(prev, row, groupTree, { allToken: GROUP_FILTER_ALL_TOKEN })
+                        );
+                      }}
+                    >
+                      <View style={styles.assignOptionLeft}>
+                        <View style={{ width: row.depth * 20 }} />
+                        <View style={styles.ministryIconCircle}>
+                          <Ionicons name="people-outline" size={16} color={colors.accent} />
+                        </View>
+                        <View style={styles.ministryTextWrap}>
+                          <Text
+                            numberOfLines={2}
+                            style={[styles.assignOptionNameText, row.depth === 0 && styles.assignOptionMainText]}
+                          >
+                            {row.name}
+                          </Text>
+                          <Text numberOfLines={2} style={styles.assignOptionSubtext}>
+                            {row.subtitle}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.assignOptionRight}>
+                        <View style={[styles.selectCircle, selected && !allMode && styles.selectCircleActive]}>
+                          {selected && !allMode ? <Ionicons name="checkmark" size={13} color="#fff" /> : null}
+                        </View>
+                      </View>
+                    </Pressable>
+                    {row.hasChildren ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={expanded ? "Collapse subgroups" : "Expand subgroups"}
+                        style={styles.expandChevronBtn}
+                        onPress={() =>
+                          setExpandedMinistryFilterNodes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(row.nodeKey)) next.delete(row.nodeKey);
+                            else next.add(row.nodeKey);
+                            return next;
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name={expanded ? "chevron-down" : "chevron-forward"}
+                          size={18}
+                          color="#9ca3af"
+                        />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
       </FormModalShell>
     </SafeAreaView>
   );
@@ -2044,6 +1914,18 @@ const styles = StyleSheet.create({
   filterChipClearText: {
     fontSize: type.caption.size,
   },
+  filterResultChipRow: {
+    marginTop: 6,
+    flexDirection: "row",
+  },
+  filterResultChip: {
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.accentSurface,
+  },
+  filterResultChipText: {
+    color: colors.accent,
+    fontWeight: type.bodyStrong.weight,
+  },
   listContent: { paddingTop: 14, paddingBottom: 24 },
   listContentWithStickyAssign: { paddingBottom: 108 },
   filterChip: {
@@ -2133,6 +2015,93 @@ const styles = StyleSheet.create({
     fontSize: type.bodyStrong.size,
     fontWeight: type.bodyStrong.weight,
   },
+  ministryFilterTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.card,
+    gap: 10,
+  },
+  ministryFilterTriggerTextWrap: { flex: 1, minWidth: 0 },
+  ministryFilterTriggerLabel: {
+    fontSize: type.bodyStrong.size,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  ministryFilterTriggerSub: {
+    fontSize: type.caption.size,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  filterSubscreenBack: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  filterSubscreenBackText: {
+    fontSize: type.body.size,
+    fontWeight: "600",
+    color: colors.accent,
+  },
+  ministryPickerListFlat: { gap: 8, paddingBottom: 8 },
+  ministryFilterModalRoot: { flex: 1, justifyContent: "flex-end" },
+  ministryFilterModalCard: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    maxHeight: "88%",
+    paddingBottom: Platform.OS === "ios" ? 28 : 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  ministryFilterModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+  },
+  ministryFilterModalTitle: {
+    fontSize: type.pageTitle.size,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  ministryFilterModalHint: {
+    fontSize: type.body.size,
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  ministryFilterAllRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+  },
+  ministryFilterAllRowActive: {
+    backgroundColor: colors.accentSurface,
+    borderRadius: radius.sm,
+  },
+  ministryFilterAllRowText: { fontSize: type.body.size, fontWeight: "600", color: colors.textPrimary },
+  ministryFilterModalList: { maxHeight: 360 },
+  ministryFilterDoneBtn: {
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+  },
+  ministryFilterDoneBtnText: { color: "#fff", fontSize: type.bodyStrong.size, fontWeight: "700" },
   filterBlock: { marginBottom: 16, gap: 8 },
   filterLabel: {
     fontSize: type.bodyStrong.size,
@@ -2154,19 +2123,20 @@ const styles = StyleSheet.create({
   statusGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: 4,
   },
   statusCard: {
-    minWidth: "31%",
-    flexGrow: 1,
+    minWidth: "23.5%",
+    flexGrow: 0,
     borderWidth: 1,
     borderColor: "#dfe3e8",
     borderRadius: 12,
     backgroundColor: "#fff",
-    minHeight: 74,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    justifyContent: "space-between",
+    minHeight: 40,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: "center",
+    alignItems: "center",
   },
   statusCardActive: {
     borderColor: colors.accent,
@@ -2174,26 +2144,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSurface,
   },
   statusCardText: {
-    fontSize: type.body.size,
-    lineHeight: type.body.lineHeight,
+    fontSize: type.caption.size,
+    lineHeight: type.caption.lineHeight,
     color: colors.textPrimary,
     fontWeight: type.bodyStrong.weight,
   },
   statusCardTextActive: {
     color: colors.accent,
-  },
-  statusCardTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  statusCardCheck: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
   },
   filterPillWrap: {
     flexDirection: "row",
@@ -2250,45 +2207,25 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   ageRangeRow: {
-    marginTop: 8,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: 8,
   },
-  ageRangeInputCell: {
+  ageRangeInlineInput: {
     flex: 1,
-    gap: 6,
+    height: 42,
   },
-  ageRangeLabel: {
+  ageRangeInlineLabel: {
     fontSize: type.caption.size,
     lineHeight: type.caption.lineHeight,
     color: colors.textSecondary,
     fontWeight: type.caption.weight,
-  },
-  ageRangeConnectorWrap: {
-    height: 46,
-    justifyContent: "center",
-    paddingHorizontal: 2,
   },
   ageRangeConnector: {
     fontSize: type.body.size,
     lineHeight: type.body.lineHeight,
     color: colors.textSecondary,
     fontWeight: type.bodyStrong.weight,
-  },
-  ageRangePreview: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  ageRangePreviewText: {
-    fontSize: type.bodyStrong.size,
-    lineHeight: type.bodyStrong.lineHeight,
-    color: colors.textPrimary,
-    fontWeight: type.bodyStrong.weight,
-    textAlign: "center",
   },
   groupListWrap: {
     flexDirection: "row",

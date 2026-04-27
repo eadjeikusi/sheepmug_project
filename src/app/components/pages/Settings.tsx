@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
-import { User, Bell, Users, Square, Save, Plus, Trash2, GripVertical, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, MessageSquare, Phone, Mail, Key, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ArrowUp, ArrowDown, ClipboardList, Search, X, Layers, MapPin, Check, Globe, Copy, Settings2, Shield } from 'lucide-react';
+import { User, Bell, Users, Square, Save, Plus, Trash2, Type, Hash, Calendar as CalendarIcon, CheckCircle, List, FileText, Upload, Edit, Edit2, Tag, Building2, ChevronRight, ChevronDown, UserCircle2, ClipboardList, Search, X, Layers, MapPin, Check, Globe, Copy, Settings2, Shield, CreditCard } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { useBranch } from '../../contexts/BranchContext';
@@ -26,6 +26,8 @@ import { useGroupTypeOptions } from '../../hooks/useGroupTypeOptions';
 import type { MemberStatusOption, GroupTypeOption, CustomFieldDefinition, Organization } from '../../../types';
 import EventTypes from './EventTypes';
 import EventOutlineTemplates from './EventOutlineTemplates';
+import { SortableSettingsOrderList } from '../settings/SortableSettingsOrderList';
+import { SettingsSubscription, isSubscriptionSubTab, type SubscriptionSubTab } from './SettingsSubscription';
 
 type ApiRoleRow = { id: string; name: string; permissions: string[] };
 
@@ -40,8 +42,8 @@ type FieldDraft = {
   show_on_public: boolean;
 };
 
-/** Top-level settings nav: General (with sub-sections), Notifications, Roles & permissions (with sub-tabs). */
-type SettingsMainTab = 'general' | 'notifications' | 'roles';
+/** Top-level settings nav: General (with sub-sections), Notifications, Subscription, Roles & permissions (with sub-tabs). */
+type SettingsMainTab = 'general' | 'notifications' | 'subscription' | 'roles';
 
 type GeneralSubTab =
   | 'organization'
@@ -50,7 +52,6 @@ type GeneralSubTab =
   | 'programTemplates'
   | 'memberStatuses'
   | 'groupTypes'
-  | 'integrations'
   | 'branches';
 
 type RolesSubTab = 'staff' | 'permissions';
@@ -63,7 +64,6 @@ const GENERAL_SUB_TABS: { id: GeneralSubTab; label: string }[] = [
   { id: 'memberStatuses', label: 'Member status' },
   { id: 'groupTypes', label: 'Group types' },
   { id: 'branches', label: 'Branch selection' },
-  { id: 'integrations', label: 'Integrations' },
 ];
 
 const LEGACY_SETTINGS_TAB_TO_STATE: Record<
@@ -78,7 +78,7 @@ const LEGACY_SETTINGS_TAB_TO_STATE: Record<
   memberStatuses: { main: 'general', generalSub: 'memberStatuses' },
   groupTypes: { main: 'general', generalSub: 'groupTypes' },
   branches: { main: 'general', generalSub: 'branches' },
-  integrations: { main: 'general', generalSub: 'integrations' },
+  integrations: { main: 'general', generalSub: 'organization' },
   database: { main: 'general', generalSub: 'organization' },
 };
 
@@ -91,8 +91,13 @@ function buildSettingsSearchParams(
   main: SettingsMainTab,
   generalSub: GeneralSubTab,
   rolesSub: RolesSubTab,
+  subscriptionSub: SubscriptionSubTab,
 ): Record<string, string> {
   if (main === 'notifications') return { tab: 'notifications' };
+  if (main === 'subscription') {
+    if (subscriptionSub === 'overview') return { tab: 'subscription' };
+    return { tab: 'subscription', sub: subscriptionSub };
+  }
   if (main === 'general') {
     if (generalSub === 'organization') return {};
     return { tab: 'general', sub: generalSub };
@@ -202,11 +207,18 @@ export default function Settings() {
       setMainTab('general');
       setGeneralSub('organization');
       setRolesSub('staff');
+      setSubscriptionSub('overview');
       return;
     }
 
     if (rawTab === 'notifications') {
       setMainTab('notifications');
+      return;
+    }
+
+    if (rawTab === 'subscription') {
+      setMainTab('subscription');
+      setSubscriptionSub(isSubscriptionSubTab(rawSub) ? rawSub : 'overview');
       return;
     }
 
@@ -239,14 +251,18 @@ export default function Settings() {
     main: SettingsMainTab;
     generalSub?: GeneralSubTab;
     rolesSub?: RolesSubTab;
+    subscriptionSub?: SubscriptionSubTab;
   }) => {
     const m = next.main;
     const gResolved = m === 'general' ? (next.generalSub !== undefined ? next.generalSub : generalSub) : generalSub;
     const rResolved = m === 'roles' ? (next.rolesSub !== undefined ? next.rolesSub : rolesSub) : rolesSub;
+    const subResolved =
+      m === 'subscription' ? (next.subscriptionSub !== undefined ? next.subscriptionSub : subscriptionSub) : subscriptionSub;
     setMainTab(m);
     if (next.generalSub !== undefined) setGeneralSub(next.generalSub);
     if (next.rolesSub !== undefined) setRolesSub(next.rolesSub);
-    setSearchParams(buildSettingsSearchParams(m, gResolved, rResolved), { replace: true });
+    if (next.subscriptionSub !== undefined) setSubscriptionSub(next.subscriptionSub);
+    setSearchParams(buildSettingsSearchParams(m, gResolved, rResolved, subResolved), { replace: true });
   };
 
   const fetchNotificationPrefs = useCallback(async () => {
@@ -427,21 +443,7 @@ export default function Settings() {
     if (customFieldsTabActive && token) void fetchCustomFieldDefinitions();
   }, [customFieldsTabActive, token, fetchCustomFieldDefinitions]);
   const [memberStatusNewLabel, setMemberStatusNewLabel] = useState('');
-  const [memberStatusNewColor, setMemberStatusNewColor] = useState('');
   const [memberStatusBusy, setMemberStatusBusy] = useState(false);
-
-  const MEMBER_STATUS_COLOR_PRESETS: { value: string; label: string }[] = [
-    { value: '', label: 'Default' },
-    { value: 'green', label: 'Green' },
-    { value: 'blue', label: 'Blue' },
-    { value: 'indigo', label: 'Indigo' },
-    { value: 'violet', label: 'Violet' },
-    { value: 'amber', label: 'Amber' },
-    { value: 'red', label: 'Red' },
-    { value: 'rose', label: 'Rose' },
-    { value: 'gray', label: 'Gray' },
-    { value: 'slate', label: 'Slate' },
-  ];
 
   const sortedMemberStatusOptions = useMemo(() => {
     return [...memberStatusOptions].sort(
@@ -498,7 +500,6 @@ export default function Settings() {
         }),
         body: JSON.stringify({
           label,
-          color: memberStatusNewColor.trim() || null,
           sort_order: sortedMemberStatusOptions.length,
         }),
       });
@@ -506,7 +507,6 @@ export default function Settings() {
       if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Add failed');
       toast.success('Status added');
       setMemberStatusNewLabel('');
-      setMemberStatusNewColor('');
       await refreshMemberStatusOptions();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Could not add status');
@@ -515,7 +515,7 @@ export default function Settings() {
     }
   };
 
-  const patchMemberStatusOption = async (id: string, patch: Partial<Pick<MemberStatusOption, 'label' | 'color' | 'sort_order'>>) => {
+  const patchMemberStatusOption = async (id: string, patch: Partial<Pick<MemberStatusOption, 'label' | 'sort_order'>>) => {
     if (!token || !canConfigureMemberStatuses) return;
     setMemberStatusBusy(true);
     try {
@@ -559,48 +559,39 @@ export default function Settings() {
     }
   };
 
-  const swapMemberStatusSort = async (index: number, dir: -1 | 1) => {
-    if (!token) return;
-    const list = sortedMemberStatusOptions;
-    const j = index + dir;
-    if (j < 0 || j >= list.length) return;
-    const a = list[index];
-    const b = list[j];
-    const ao = a.sort_order;
-    const bo = b.sort_order;
-    setMemberStatusBusy(true);
-    try {
-      const headers = withBranchScope(selectedBranch?.id, {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      });
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/member-status-options/${a.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ sort_order: bo }),
-        }),
-        fetch(`/api/member-status-options/${b.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ sort_order: ao }),
-        }),
-      ]);
-      const d1 = await r1.json().catch(() => ({}));
-      const d2 = await r2.json().catch(() => ({}));
-      if (!r1.ok || !r2.ok) {
-        throw new Error(
-          [d1, d2].map((d) => (typeof d?.error === 'string' ? d.error : '')).filter(Boolean).join(' ') ||
-            'Reorder failed',
+  const commitMemberStatusOrder = useCallback(
+    async (next: MemberStatusOption[]) => {
+      if (!token || !canConfigureMemberStatuses) return;
+      const orderedIds = next.map((x) => x.id);
+      const prevIds = sortedMemberStatusOptions.map((x) => x.id);
+      if (orderedIds.join('\u0001') === prevIds.join('\u0001')) return;
+      setMemberStatusBusy(true);
+      try {
+        const headers = withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        });
+        await Promise.all(
+          orderedIds.map((id, i) =>
+            fetch(`/api/member-status-options/${id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({ sort_order: i }),
+            }).then(async (r) => {
+              const d = (await r.json().catch(() => ({}))) as { error?: string };
+              if (!r.ok) throw new Error(d.error || 'Reorder failed');
+            }),
+          ),
         );
+        await refreshMemberStatusOptions();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Could not reorder');
+      } finally {
+        setMemberStatusBusy(false);
       }
-      await refreshMemberStatusOptions();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Could not reorder');
-    } finally {
-      setMemberStatusBusy(false);
-    }
-  };
+    },
+    [token, canConfigureMemberStatuses, selectedBranch?.id, sortedMemberStatusOptions, refreshMemberStatusOptions],
+  );
 
   const seedGroupTypeDefaults = async () => {
     if (!token || !canConfigureGroupTypes) return;
@@ -704,48 +695,39 @@ export default function Settings() {
     }
   };
 
-  const swapGroupTypeSort = async (index: number, dir: -1 | 1) => {
-    if (!token) return;
-    const list = sortedGroupTypeOptions;
-    const j = index + dir;
-    if (j < 0 || j >= list.length) return;
-    const a = list[index];
-    const b = list[j];
-    const ao = a.sort_order;
-    const bo = b.sort_order;
-    setGroupTypeBusy(true);
-    try {
-      const headers = withBranchScope(selectedBranch?.id, {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      });
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/group-type-options/${a.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ sort_order: bo }),
-        }),
-        fetch(`/api/group-type-options/${b.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ sort_order: ao }),
-        }),
-      ]);
-      const d1 = await r1.json().catch(() => ({}));
-      const d2 = await r2.json().catch(() => ({}));
-      if (!r1.ok || !r2.ok) {
-        throw new Error(
-          [d1, d2].map((d) => (typeof (d as { error?: string }).error === 'string' ? (d as { error: string }).error : '')).filter(Boolean).join(' ') ||
-            'Reorder failed',
+  const commitGroupTypeOrder = useCallback(
+    async (next: GroupTypeOption[]) => {
+      if (!token || !canConfigureGroupTypes) return;
+      const orderedIds = next.map((x) => x.id);
+      const prevIds = sortedGroupTypeOptions.map((x) => x.id);
+      if (orderedIds.join('\u0001') === prevIds.join('\u0001')) return;
+      setGroupTypeBusy(true);
+      try {
+        const headers = withBranchScope(selectedBranch?.id, {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        });
+        await Promise.all(
+          orderedIds.map((id, i) =>
+            fetch(`/api/group-type-options/${id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({ sort_order: i }),
+            }).then(async (r) => {
+              const d = (await r.json().catch(() => ({}))) as { error?: string };
+              if (!r.ok) throw new Error(d.error || 'Reorder failed');
+            }),
+          ),
         );
+        await refreshGroupTypeOptions();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : 'Could not reorder');
+      } finally {
+        setGroupTypeBusy(false);
       }
-      await refreshGroupTypeOptions();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : 'Could not reorder');
-    } finally {
-      setGroupTypeBusy(false);
-    }
-  };
+    },
+    [token, canConfigureGroupTypes, selectedBranch?.id, sortedGroupTypeOptions, refreshGroupTypeOptions],
+  );
 
   const fetchOrgRoles = useCallback(async () => {
     if (!token) return;
@@ -1463,12 +1445,6 @@ export default function Settings() {
     show_on_public: false,
   });
 
-  // Integration states
-  const [integrationTab, setIntegrationTab] = useState<'whatsapp' | 'sms' | 'email'>('whatsapp');
-  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
-  const [smsEnabled, setSmsEnabled] = useState(false);
-  const [emailEnabled, setEmailEnabled] = useState(false);
-
   // Sample data for member selection
   const mockMembers = [
     { id: '1', name: 'Emma Thompson', email: 'emma.t@church.com', avatar: '' },
@@ -1729,6 +1705,18 @@ export default function Settings() {
           </button>
           <button
             type="button"
+            onClick={() => navigateSettings({ main: 'subscription' })}
+            className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
+              mainTab === 'subscription'
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <CreditCard className="w-4 h-4 inline mr-2 shrink-0" />
+            Subscription
+          </button>
+          <button
+            type="button"
             onClick={() => navigateSettings({ main: 'roles' })}
             className={`shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium border-b-2 transition-all sm:px-5 ${
               mainTab === 'roles'
@@ -1818,10 +1806,6 @@ export default function Settings() {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-semibold text-gray-900">Organization name</h2>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  Shown in the app header and elsewhere. Organization owners may always edit; other staff need the
-                  &quot;Edit organization name&quot; permission in Roles.
-                </p>
                 <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-end">
                   <div className="flex-1">
                     <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -2036,6 +2020,15 @@ export default function Settings() {
         </div>
       )}
 
+      {mainTab === 'subscription' && (
+        <div className="max-w-5xl">
+          <SettingsSubscription
+            activeSub={subscriptionSub}
+            onSubChange={(sub) => navigateSettings({ main: 'subscription', subscriptionSub: sub })}
+            organization={currentOrganization}
+          />
+        </div>
+      )}
 
       {mainTab === 'roles' && rolesSub === 'staff' && (
         <div className="space-y-8 max-w-3xl">
@@ -3200,7 +3193,7 @@ export default function Settings() {
               {canConfigureMemberStatuses && (
                 <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-4">
                   <h3 className="text-sm font-semibold text-gray-900">Add status</h3>
-                  <div className="flex flex-col md:flex-row gap-3 md:items-end">
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
                     <div className="flex-1">
                       <label className="block text-xs text-gray-500 mb-1">Label</label>
                       <input
@@ -3210,20 +3203,6 @@ export default function Settings() {
                         placeholder="e.g. Active, Transferred"
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                       />
-                      </div>
-                    <div className="w-full md:w-48">
-                      <label className="block text-xs text-gray-500 mb-1">Badge color</label>
-                      <select
-                        value={memberStatusNewColor}
-                        onChange={(e) => setMemberStatusNewColor(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                      >
-                        {MEMBER_STATUS_COLOR_PRESETS.map((p) => (
-                          <option key={p.value || 'default'} value={p.value}>
-                            {p.label}
-                          </option>
-                        ))}
-                      </select>
                     </div>
                     <button
                       type="button"
@@ -3245,88 +3224,48 @@ export default function Settings() {
                       ? ' Use “Load default labels” or add your own above.'
                       : ' Ask an administrator to configure statuses.'}
                   </p>
+                ) : canConfigureMemberStatuses ? (
+                  <SortableSettingsOrderList
+                    items={sortedMemberStatusOptions}
+                    disabled={memberStatusBusy}
+                    onReorder={commitMemberStatusOrder}
+                    listClassName="divide-y divide-gray-100"
+                    itemClassName="p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                    renderItem={(row, _index, dragHandle) => (
+                      <>
+                        <div className="flex items-center sm:w-10 shrink-0 justify-start">{dragHandle}</div>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            defaultValue={row.label}
+                            key={row.id + row.label}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && v !== row.label) void patchMemberStatusOption(row.id, { label: v });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void deleteMemberStatusOption(row.id)}
+                          disabled={memberStatusBusy}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
+                          aria-label="Delete status"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  />
                 ) : (
                   <ul className="divide-y divide-gray-100">
-                    {sortedMemberStatusOptions.map((row, index) => (
-                      <li key={row.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div className="flex items-center gap-2 sm:w-10 shrink-0">
-                          {canConfigureMemberStatuses && (
-                            <>
-                  <button
-                                type="button"
-                                aria-label="Move up"
-                                disabled={memberStatusBusy || index === 0}
-                                onClick={() => void swapMemberStatusSort(index, -1)}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ArrowUp className="w-4 h-4" />
-                  </button>
-                    <button
-                                type="button"
-                                aria-label="Move down"
-                                disabled={memberStatusBusy || index === sortedMemberStatusOptions.length - 1}
-                                onClick={() => void swapMemberStatusSort(index, 1)}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ArrowDown className="w-4 h-4" />
-                    </button>
-                            </>
-                  )}
-                </div>
-                        <div className="flex-1 min-w-0">
-                          {canConfigureMemberStatuses ? (
-                    <input
-                      type="text"
-                              defaultValue={row.label}
-                              key={row.id + row.label}
-                              onBlur={(e) => {
-                                const v = e.target.value.trim();
-                                if (v && v !== row.label) void patchMemberStatusOption(row.id, { label: v });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
-                            />
-                          ) : (
-                            <p className="font-medium text-gray-900">{row.label}</p>
-                          )}
-                  </div>
-                        <div className="w-full sm:w-44">
-                          {canConfigureMemberStatuses ? (
-                            <select
-                              value={
-                                MEMBER_STATUS_COLOR_PRESETS.some(
-                                  (p) => p.value === (row.color ?? '').trim().toLowerCase(),
-                                )
-                                  ? (row.color ?? '').trim().toLowerCase()
-                                  : ''
-                              }
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                void patchMemberStatusOption(row.id, { color: v || null });
-                              }}
-                              disabled={memberStatusBusy}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                            >
-                              {MEMBER_STATUS_COLOR_PRESETS.map((p) => (
-                                <option key={p.value || 'default'} value={p.value}>
-                                  {p.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <p className="text-sm text-gray-600">{(row.color || 'Default').toString()}</p>
-                          )}
-                    </div>
-                        {canConfigureMemberStatuses && (
-                  <button
-                            type="button"
-                            onClick={() => void deleteMemberStatusOption(row.id)}
-                            disabled={memberStatusBusy}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
-                            aria-label="Delete status"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                  </button>
-                        )}
+                    {sortedMemberStatusOptions.map((row) => (
+                      <li
+                        key={row.id}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                      >
+                        <p className="font-medium text-gray-900 flex-1 min-w-0">{row.label}</p>
                       </li>
                     ))}
                   </ul>
@@ -3342,8 +3281,7 @@ export default function Settings() {
                 <h4 className="text-sm font-semibold text-gray-900">About member statuses</h4>
                 <p className="text-sm text-gray-600 mt-2">
                   Each member&apos;s <strong>status</strong> field stores one of these labels. Removing a label does not
-                  change existing members; they will still show their saved value. Badge colors are hints for lists and
-                  profiles (preset names: green, red, indigo, …).
+                  change existing members; they will still show their saved value.
                 </p>
               </div>
             </div>
@@ -3459,61 +3397,48 @@ export default function Settings() {
                       ? ' Use “Load default labels” or add your own above.'
                       : ' Ask an administrator to configure types.'}
                   </p>
+                ) : canConfigureGroupTypes ? (
+                  <SortableSettingsOrderList
+                    items={sortedGroupTypeOptions}
+                    disabled={groupTypeBusy}
+                    onReorder={commitGroupTypeOrder}
+                    listClassName="divide-y divide-gray-100"
+                    itemClassName="p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                    renderItem={(row, _index, dragHandle) => (
+                      <>
+                        <div className="flex items-center sm:w-10 shrink-0 justify-start">{dragHandle}</div>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            defaultValue={row.label}
+                            key={row.id + row.label}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && v !== row.label) void patchGroupTypeOption(row.id, { label: v });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void deleteGroupTypeOption(row.id)}
+                          disabled={groupTypeBusy}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
+                          aria-label="Delete group type"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  />
                 ) : (
                   <ul className="divide-y divide-gray-100">
-                    {sortedGroupTypeOptions.map((row, index) => (
-                      <li key={row.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                        <div className="flex items-center gap-2 sm:w-10 shrink-0">
-                          {canConfigureGroupTypes && (
-                            <>
-                              <button
-                                type="button"
-                                aria-label="Move up"
-                                disabled={groupTypeBusy || index === 0}
-                                onClick={() => void swapGroupTypeSort(index, -1)}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ArrowUp className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Move down"
-                                disabled={groupTypeBusy || index === sortedGroupTypeOptions.length - 1}
-                                onClick={() => void swapGroupTypeSort(index, 1)}
-                                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                <ArrowDown className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {canConfigureGroupTypes ? (
-                            <input
-                              type="text"
-                              defaultValue={row.label}
-                              key={row.id + row.label}
-                              onBlur={(e) => {
-                                const v = e.target.value.trim();
-                                if (v && v !== row.label) void patchGroupTypeOption(row.id, { label: v });
-                              }}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium"
-                            />
-                          ) : (
-                            <p className="font-medium text-gray-900">{row.label}</p>
-                          )}
-                        </div>
-                        {canConfigureGroupTypes && (
-                          <button
-                            type="button"
-                            onClick={() => void deleteGroupTypeOption(row.id)}
-                            disabled={groupTypeBusy}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50"
-                            aria-label="Delete group type"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                    {sortedGroupTypeOptions.map((row) => (
+                      <li
+                        key={row.id}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+                      >
+                        <p className="font-medium text-gray-900 flex-1 min-w-0">{row.label}</p>
                       </li>
                     ))}
                   </ul>
@@ -3537,593 +3462,6 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Integrations Tab */}
-      {mainTab === 'general' && generalSub === 'integrations' && (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Messaging Integrations</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Connect your messaging providers to enable seamless communication with members
-              </p>
-            </div>
-          </div>
-
-          {/* Integration Tabs */}
-          <div className="flex items-center space-x-2 border-b border-gray-200">
-            <button
-              onClick={() => setIntegrationTab('whatsapp')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-                integrationTab === 'whatsapp'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4 inline mr-2" />
-              WhatsApp Business
-            </button>
-            <button
-              onClick={() => setIntegrationTab('sms')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-                integrationTab === 'sms'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Phone className="w-4 h-4 inline mr-2" />
-              SMS Provider
-            </button>
-            <button
-              onClick={() => setIntegrationTab('email')}
-              className={`px-6 py-3 text-sm font-medium border-b-2 transition-all ${
-                integrationTab === 'email'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Mail className="w-4 h-4 inline mr-2" />
-              Email Service
-            </button>
-          </div>
-
-          {/* WhatsApp Business Integration */}
-          {integrationTab === 'whatsapp' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                      <MessageSquare className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">WhatsApp Business API</h3>
-                      <p className="text-sm text-white/90">Send messages via WhatsApp Business Platform</p>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={whatsappEnabled}
-                      onChange={(e) => setWhatsappEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-white/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white/50"></div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Configuration Form */}
-              <div className="p-6">
-                {whatsappEnabled ? (
-                  <div className="space-y-5">
-                    {/* Status Indicator */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-blue-800">Integration Enabled</span>
-                      </div>
-                    </div>
-
-                    {/* Business Account Details */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          WhatsApp Business Phone Number
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="+1 234 567 8900"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
-                        <p className="mt-1 text-sm text-gray-500">Your verified WhatsApp Business number</p>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Business Account Name
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Your Church Name"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
-                        <p className="mt-1 text-sm text-gray-500">Display name for messages</p>
-                      </div>
-                    </div>
-
-                    {/* API Credentials */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
-                        <Key className="w-4 h-4 mr-2 text-gray-500" />
-                        API Credentials
-                      </h4>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Phone Number ID
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Enter your Phone Number ID"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                          <p className="mt-1 text-xs text-gray-500">Found in your WhatsApp Business API dashboard</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            WhatsApp Business Account ID
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Enter your Business Account ID"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Access Token
-                          </label>
-                          <input
-                            type="password"
-                            placeholder="Enter your Access Token"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                          <p className="mt-1 text-xs text-gray-500">Your permanent access token from Meta Business</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Webhook Verify Token
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Enter your Webhook Verify Token"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                          <p className="mt-1 text-xs text-gray-500">For receiving delivery status and replies</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                      <button
-                        onClick={() => toast.info('Testing connection...')}
-                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-xl hover:bg-blue-50 transition-all"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        onClick={() => toast.success('WhatsApp configuration saved!')}
-                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
-                      >
-                        Save Configuration
-                      </button>
-                    </div>
-
-                    {/* Info Box */}
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-4">
-                      <h5 className="text-sm font-medium text-blue-900 mb-2">Getting Started with WhatsApp Business API</h5>
-                      <ul className="text-xs text-blue-800 space-y-1">
-                        <li>• Register for WhatsApp Business API through Meta Business</li>
-                        <li>• Verify your business and phone number</li>
-                        <li>• Create message templates for approval</li>
-                        <li>• Copy your credentials from the API dashboard</li>
-                      </ul>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <MessageSquare className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-600 mb-2">WhatsApp Integration is currently disabled</p>
-                    <p className="text-sm text-gray-500">Enable it to start sending messages via WhatsApp</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* SMS Provider Integration */}
-          {integrationTab === 'sms' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                      <Phone className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">SMS Provider</h3>
-                      <p className="text-sm text-white/90">Send SMS messages through your preferred provider</p>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={smsEnabled}
-                      onChange={(e) => setSmsEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-white/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white/50"></div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Configuration Form */}
-              <div className="p-6">
-                {smsEnabled ? (
-                  <div className="space-y-5">
-                    {/* Status Indicator */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-blue-800">Integration Enabled</span>
-                      </div>
-                    </div>
-
-                    {/* Provider Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        SMS Provider
-                      </label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
-                        <option value="">Select a provider</option>
-                        <option value="twilio">Twilio</option>
-                        <option value="nexmo">Vonage (Nexmo)</option>
-                        <option value="messagebird">MessageBird</option>
-                        <option value="plivo">Plivo</option>
-                        <option value="aws-sns">AWS SNS</option>
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">Choose your SMS service provider</p>
-                    </div>
-
-                    {/* Provider Credentials */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
-                        <Key className="w-4 h-4 mr-2 text-gray-500" />
-                        Provider Credentials
-                      </h4>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Account SID / API Key
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Enter your Account SID or API Key"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Auth Token / API Secret
-                          </label>
-                          <input
-                            type="password"
-                            placeholder="Enter your Auth Token or API Secret"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Sender ID / Phone Number
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="+1 234 567 8900 or CHURCHNAME"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                          <p className="mt-1 text-xs text-gray-500">Your verified sender ID or phone number</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Advanced Settings */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4">Advanced Settings</h4>
-                      <div className="space-y-3">
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Enable delivery reports</span>
-                        </label>
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Enable Unicode (for special characters)</span>
-                        </label>
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Split long messages into multiple SMS</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                      <button
-                        onClick={() => toast.info('Sending test SMS...')}
-                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-xl hover:bg-blue-50 transition-all"
-                      >
-                        Send Test SMS
-                      </button>
-                      <button
-                        onClick={() => toast.success('SMS configuration saved!')}
-                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
-                      >
-                        Save Configuration
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Phone className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-600 mb-2">SMS Integration is currently disabled</p>
-                    <p className="text-sm text-gray-500">Enable it to start sending SMS messages</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Email Service Integration */}
-          {integrationTab === 'email' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                      <Mail className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">Email Service</h3>
-                      <p className="text-sm text-white/90">Configure your email delivery service</p>
-                    </div>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={emailEnabled}
-                      onChange={(e) => setEmailEnabled(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-white/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white/50"></div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Configuration Form */}
-              <div className="p-6">
-                {emailEnabled ? (
-                  <div className="space-y-5">
-                    {/* Status Indicator */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium text-blue-800">Integration Enabled</span>
-                      </div>
-                    </div>
-
-                    {/* Provider Selection */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Email Provider
-                      </label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
-                        <option value="">Select a provider</option>
-                        <option value="smtp">SMTP (Custom Server)</option>
-                        <option value="sendgrid">SendGrid</option>
-                        <option value="mailgun">Mailgun</option>
-                        <option value="ses">Amazon SES</option>
-                        <option value="postmark">Postmark</option>
-                        <option value="mailchimp">Mailchimp Transactional</option>
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">Choose your email service provider</p>
-                    </div>
-
-                    {/* SMTP Configuration */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4 flex items-center">
-                        <Key className="w-4 h-4 mr-2 text-gray-500" />
-                        SMTP Configuration
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            SMTP Host
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="smtp.example.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            SMTP Port
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="587"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                          <p className="mt-1 text-xs text-gray-500">Usually 587 (TLS) or 465 (SSL)</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Encryption
-                          </label>
-                          <select className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all">
-                            <option value="tls">TLS</option>
-                            <option value="ssl">SSL</option>
-                            <option value="none">None</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Username
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="your@email.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Password
-                          </label>
-                          <input
-                            type="password"
-                            placeholder="••••••••"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Sender Information */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4">Sender Information</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            From Name
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Your Church Name"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            From Email
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="noreply@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Reply-To Email
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="info@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            BCC Email (Optional)
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="admin@yourchurch.com"
-                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Advanced Settings */}
-                    <div className="border-t border-gray-200 pt-5">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-4">Advanced Settings</h4>
-                      <div className="space-y-3">
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Track email opens</span>
-                        </label>
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Track link clicks</span>
-                        </label>
-                        <label className="flex items-center space-x-3">
-                          <input type="checkbox" className="form-checkbox h-4 w-4 text-blue-600 rounded" />
-                          <span className="text-sm text-gray-700">Enable unsubscribe link</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                      <button
-                        onClick={() => toast.info('Sending test email...')}
-                        className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-xl hover:bg-blue-50 transition-all"
-                      >
-                        Send Test Email
-                      </button>
-                      <button
-                        onClick={() => toast.success('Email configuration saved!')}
-                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm"
-                      >
-                        Save Configuration
-                      </button>
-                    </div>
-
-                    {/* Info Box */}
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mt-4">
-                      <h5 className="text-sm font-medium text-blue-900 mb-2">Important notes</h5>
-                      <ul className="text-xs text-blue-800 space-y-1">
-                        <li>• Test your configuration before sending to members</li>
-                        <li>• Ensure your domain is verified with your email provider</li>
-                        <li>��� Configure SPF and DKIM records for better deliverability</li>
-                      </ul>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Mail className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-600 mb-2">Email Integration is currently disabled</p>
-                    <p className="text-sm text-gray-500">Enable it to start sending email messages</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </div>
-      )}
 
       {/* Branches Tab */}
       {mainTab === 'general' && generalSub === 'branches' && (

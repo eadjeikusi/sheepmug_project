@@ -20,6 +20,7 @@ import {
   sanitizeCountryIso,
 } from "./src/lib/phoneE164.js";
 import { assertOrgLimit, fetchOrgLimitRow, getOrgUsage } from "./src/server/orgLimits.ts";
+import { buildReportExportCsv, buildReportExportPdfBase64 } from "./src/server/reportExportBuild.ts";
 import {
   ensureAllMembersGroupForBranch,
   ensureMemberInAllMembersGroup,
@@ -40,6 +41,8 @@ import {
 import { formatLongWeekdayDateTime } from "./src/app/utils/dateDisplayFormat.ts";
 import type { Request, Response } from "express";
 import { Expo } from "expo-server-sdk";
+import { gateAttendanceRecording, eventStartMsFromRow } from "./packages/shared-api/src/attendanceRecordingWindow.ts";
+import { parseReportType } from "./packages/shared-api/src/reportColumnLabels.ts";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -387,6 +390,68 @@ function assertConfigRowInBranchScope<T extends { branch_id?: string | null }>(
   if (bid === viewerBranchId) return;
   if (bid == null && mainBranchId && viewerBranchId === mainBranchId) return;
   throw httpError(404, "Not found.");
+}
+
+type EventTypeBranchRow = { id: string; branch_id?: string | null; name?: string | null; slug?: string | null; is_default?: boolean | null };
+
+/** Two event_types rows belong to the same org-config branch bucket (matches filterRowsByBranchScope pairing). */
+function eventTypesSameConfigBranch(
+  a: { branch_id?: string | null },
+  b: { branch_id?: string | null },
+  mainBranchId: string | null,
+): boolean {
+  const eff = (r: { branch_id?: string | null }) =>
+    r.branch_id != null && String(r.branch_id).trim() ? String(r.branch_id).trim() : null;
+  const ae = eff(a);
+  const be = eff(b);
+  if (ae && be) return ae === be;
+  if (!ae && !be) return true;
+  if (!ae && be) return !!mainBranchId && be === mainBranchId;
+  if (ae && !be) return !!mainBranchId && ae === mainBranchId;
+  return false;
+}
+
+/** Ensure exactly one `is_default` per (organization_id, branch scope) among rows sharing anchor's branch bucket. */
+async function syncSingleDefaultEventTypePerScope(
+  organizationId: string,
+  viewerBranch: string,
+  mainBranchId: string | null,
+  preferDefaultId?: string | null,
+): Promise<void> {
+  const { data: all, error } = await supabaseAdmin
+    .from("event_types")
+    .select("id, branch_id, name, is_default")
+    .eq("organization_id", organizationId);
+  if (error || !all?.length) return;
+  const rows = all as EventTypeBranchRow[];
+  const anchor = filterRowsByBranchScope(rows, viewerBranch, mainBranchId)[0];
+  if (!anchor) return;
+  let defaultId: string | null =
+    preferDefaultId && rows.some((t) => t.id === preferDefaultId && eventTypesSameConfigBranch(t, anchor, mainBranchId))
+      ? preferDefaultId
+      : null;
+  const scoped = rows.filter((t) => eventTypesSameConfigBranch(t, anchor, mainBranchId));
+  if (!scoped.length) return;
+  if (!defaultId) {
+    const marked = scoped.filter((t) => Boolean(t.is_default));
+    if (marked.length === 1) defaultId = marked[0].id;
+    else if (marked.length > 1) defaultId = [...marked].sort((a, b) => a.id.localeCompare(b.id))[0].id;
+    else defaultId = [...scoped].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))[0].id;
+  }
+  if (!defaultId) return;
+  const now = new Date().toISOString();
+  for (const t of rows) {
+    if (!eventTypesSameConfigBranch(t, anchor, mainBranchId)) continue;
+    const next = t.id === defaultId;
+    if (Boolean(t.is_default) !== next) {
+      const { error: upErr } = await supabaseAdmin
+        .from("event_types")
+        .update({ is_default: next, updated_at: now })
+        .eq("id", t.id)
+        .eq("organization_id", organizationId);
+      if (upErr) throw upErr;
+    }
+  }
 }
 
 /** 32 hex digits → dashed UUID only if it matches RFC variant/version pattern. */
@@ -6515,40 +6580,59 @@ app.get("/api/members/:memberId/events", async (req, res) => {
       return res.json({ events: [] });
     }
 
-    const idList = eventIds.slice(0, 200);
-    let query = supabaseAdmin
-      .from("events")
-      .select(EVENTS_SELECT)
-      .in("id", idList)
-      .eq("organization_id", orgId)
-      .eq("branch_id", viewerBranch)
-      .order("start_time", { ascending: false });
+    const idList = eventIds;
+    const byId = new Map<string, Record<string, unknown>>();
+    let useSlimEventSelect = false;
+    for (let o = 0; o < idList.length; o += 100) {
+      const ch = idList.slice(o, o + 100);
+      if (ch.length === 0) break;
+      const slimSelect = "id, title, start_time, end_time, event_type, group_id, groups!group_id(name)";
+      let query = supabaseAdmin
+        .from("events")
+        .select(useSlimEventSelect ? slimSelect : EVENTS_SELECT)
+        .in("id", ch)
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch);
+      let { data: part, error: evErr } = await query;
 
-    let { data: evRows, error: evErr } = await query;
-
-    if (evErr) {
-      const msg = String(evErr.message || "").toLowerCase();
-      const code = (evErr as { code?: string }).code;
-      if (
-        msg.includes("cover_image_url") ||
-        msg.includes("program_outline") ||
-        msg.includes("attachments") ||
-        msg.includes("custom_fields") ||
-        code === "42703"
-      ) {
-        const retry = await supabaseAdmin
-          .from("events")
-          .select("id, title, start_time, end_time, event_type, group_id, groups!group_id(name)")
-          .in("id", idList)
-          .eq("organization_id", orgId)
-          .eq("branch_id", viewerBranch)
-          .order("start_time", { ascending: false });
-        if (retry.error) throw retry.error;
-        evRows = retry.data;
-      } else {
+      if (evErr && !useSlimEventSelect) {
+        const msg = String(evErr.message || "").toLowerCase();
+        const code = (evErr as { code?: string }).code;
+        if (
+          msg.includes("cover_image_url") ||
+          msg.includes("program_outline") ||
+          msg.includes("attachments") ||
+          msg.includes("custom_fields") ||
+          code === "42703"
+        ) {
+          useSlimEventSelect = true;
+          const retry = await supabaseAdmin
+            .from("events")
+            .select(slimSelect)
+            .in("id", ch)
+            .eq("organization_id", orgId)
+            .eq("branch_id", viewerBranch);
+          if (retry.error) throw retry.error;
+          part = retry.data;
+        } else {
+          throw evErr;
+        }
+      } else if (evErr) {
         throw evErr;
       }
+      for (const row of part || []) {
+        const eid = String((row as { id?: string }).id || "");
+        if (eid && isUuidString(eid) && !byId.has(eid)) {
+          byId.set(eid, row as Record<string, unknown>);
+        }
+      }
     }
+    const evRows = [...byId.values()];
+    evRows.sort((a, b) => {
+      const ta = new Date(String((a as { start_time?: string | null }).start_time || 0)).getTime();
+      const tb = new Date(String((b as { start_time?: string | null }).start_time || 0)).getTime();
+      return tb - ta;
+    });
 
     const evFiltered = await filterEventsRowsByMinistryScope(
       (evRows || []) as Record<string, unknown>[],
@@ -6651,7 +6735,7 @@ app.get("/api/members/:memberId/events", async (req, res) => {
     });
 
     const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
-    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "10"), 10) || 10));
+    const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? "10"), 10) || 10));
     const paged = payload.slice(offset, offset + limit);
     res.json({ events: paged });
   } catch (error: any) {
@@ -10385,6 +10469,1939 @@ app.get("/api/members/:memberId/tasks", async (req, res) => {
       return res.status(code).json({ error: error.message || "Request failed" });
     }
     res.status(500).json({ error: error.message || "Failed to load tasks" });
+  }
+});
+
+app.get("/api/reports/summary", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+
+    const orgId = String(viewerProfile.organization_id || "");
+    const viewerBranch = await assertViewerBranchScope(req, viewerProfile as OrgProfile, permCtx.userId);
+    const scope = await resolveMinistryScope(supabaseAdmin, permCtx.userId, orgId, viewerBranch, permCtx.isOrgOwner);
+    const visibleMemberIds = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, scope);
+    const requestedGroupId =
+      typeof req.query.group_id === "string" && isUuidString(req.query.group_id) ? req.query.group_id : null;
+    const rangeDaysRaw = Number(req.query.range_days || 90);
+    const rangeDays = Number.isFinite(rangeDaysRaw) ? Math.max(7, Math.min(365, Math.floor(rangeDaysRaw))) : 90;
+    const rangeStart = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000);
+
+    let { data: groupRows, error: groupErr } = await supabaseAdmin
+      .from("groups")
+      .select("id, name, is_deleted, branch_id")
+      .eq("organization_id", orgId)
+      .eq("branch_id", viewerBranch)
+      .or("is_deleted.eq.false,is_deleted.is.null");
+    if (groupErr) throw groupErr;
+    let groups = (groupRows || []) as Array<{ id: string; name?: string | null; member_count?: number | null }>;
+    if (scope.kind === "groups") groups = groups.filter((g) => scope.allowedGroupIds.has(g.id));
+    if (requestedGroupId) {
+      groups = groups.filter((g) => g.id === requestedGroupId);
+      if (groups.length === 0) return res.status(403).json({ error: "Selected group is outside your report scope." });
+    }
+    const selectedGroupSet = new Set(groups.map((g) => g.id));
+    if (groups.length > 0) {
+      const { data: gmCountRows } = await supabaseAdmin
+        .from("group_members")
+        .select("group_id, member_id")
+        .eq("organization_id", orgId)
+        .in("group_id", groups.map((g) => g.id));
+      const memberCountMap = new Map<string, number>();
+      for (const row of (gmCountRows || []) as Array<{ group_id?: string | null }>) {
+        const gid = String(row.group_id || "");
+        if (!gid) continue;
+        memberCountMap.set(gid, (memberCountMap.get(gid) || 0) + 1);
+      }
+      groups = groups.map((g) => ({ ...g, member_count: memberCountMap.get(g.id) || 0 }));
+    }
+
+    let { data: memberRows, error: memberErr } = await supabaseAdmin
+      .from("members")
+      .select("id, first_name, last_name, status, created_at")
+      .eq("organization_id", orgId)
+      .eq("branch_id", viewerBranch)
+      .or("is_deleted.eq.false,is_deleted.is.null");
+    if (memberErr) throw memberErr;
+    let members = (memberRows || []) as Array<{
+      id: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      status?: string | null;
+      created_at?: string | null;
+    }>;
+    if (visibleMemberIds) members = members.filter((m) => visibleMemberIds.has(m.id));
+    if (requestedGroupId) {
+      const { data: gmRows, error: gmErr } = await supabaseAdmin
+        .from("group_members")
+        .select("member_id")
+        .eq("organization_id", orgId)
+        .eq("group_id", requestedGroupId);
+      if (gmErr) throw gmErr;
+      const groupMemberIdSet = new Set((gmRows || []).map((r) => String((r as { member_id?: string }).member_id || "")));
+      members = members.filter((m) => groupMemberIdSet.has(m.id));
+    }
+
+    const statusCount = new Map<string, number>();
+    for (const m of members) {
+      const key = String(m.status || "unknown").trim().toLowerCase() || "unknown";
+      statusCount.set(key, (statusCount.get(key) || 0) + 1);
+    }
+    const activeMembers = members.filter((m) => {
+      const s = String(m.status || "").trim().toLowerCase();
+      if (!s) return true;
+      return !["inactive", "archived", "deleted", "deceased"].includes(s);
+    }).length;
+
+    const trendBuckets = new Map<string, number>();
+    for (const m of members) {
+      if (!m.created_at) continue;
+      const dt = new Date(m.created_at);
+      if (Number.isNaN(dt.getTime()) || dt.getTime() < rangeStart.getTime()) continue;
+      const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      trendBuckets.set(key, (trendBuckets.get(key) || 0) + 1);
+    }
+    const trendMembers = [...trendBuckets.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([bucket, count]) => ({ bucket, count }));
+
+    let eventsInRange = 0;
+    try {
+      const { data: eventRows } = await supabaseAdmin
+        .from("events")
+        .select("id, start_time, start_date, linked_group_ids, group_ids")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch);
+      const rows = (eventRows || []) as Array<{
+        id: string;
+        start_time?: string | null;
+        start_date?: string | null;
+        linked_group_ids?: string[] | null;
+        group_ids?: string[] | null;
+      }>;
+      for (const e of rows) {
+        const dateRaw = e.start_time || e.start_date;
+        if (!dateRaw) continue;
+        const dt = new Date(dateRaw);
+        if (Number.isNaN(dt.getTime()) || dt.getTime() < rangeStart.getTime()) continue;
+        if (selectedGroupSet.size > 0) {
+          const linked = Array.isArray(e.linked_group_ids)
+            ? e.linked_group_ids
+            : Array.isArray(e.group_ids)
+              ? e.group_ids
+              : [];
+          if (linked.length > 0 && !linked.some((id) => selectedGroupSet.has(id))) continue;
+        }
+        eventsInRange += 1;
+      }
+    } catch {
+      // Keep non-critical field as zero if table/column mismatch occurs.
+    }
+
+    let openTasks = 0;
+    try {
+      const [memberTaskRows, groupTaskRows] = await Promise.all([
+        supabaseAdmin
+          .from("member_tasks")
+          .select("status")
+          .eq("organization_id", orgId)
+          .eq("branch_id", viewerBranch),
+        supabaseAdmin
+          .from("group_tasks")
+          .select("status")
+          .eq("organization_id", orgId)
+          .eq("branch_id", viewerBranch),
+      ]);
+      const isOpen = (status: unknown) => {
+        const s = String(status || "").toLowerCase();
+        return s === "pending" || s === "in_progress" || s === "open";
+      };
+      openTasks += ((memberTaskRows.data || []) as Array<{ status?: string | null }>).filter((r) => isOpen(r.status)).length;
+      openTasks += ((groupTaskRows.data || []) as Array<{ status?: string | null }>).filter((r) => isOpen(r.status)).length;
+    } catch {
+      // Optional metric when task tables/columns differ.
+    }
+
+    const groupsTop = [...groups]
+      .sort((a, b) => Number(b.member_count || 0) - Number(a.member_count || 0))
+      .slice(0, 8)
+      .map((g) => ({
+        group_id: g.id,
+        group_name: String(g.name || "Group"),
+        member_count: Number(g.member_count || 0),
+      }));
+
+    const breakdownMemberStatus = [...statusCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({
+        label: label
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+        count,
+      }));
+    const drilldownMembers = [...members]
+      .sort((a, b) => {
+        const ams = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bms = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bms - ams;
+      })
+      .slice(0, 40)
+      .map((m) => ({
+        member_id: m.id,
+        member_name:
+          `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Unnamed member",
+        status: String(m.status || "unknown")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+        created_at: m.created_at || null,
+      }));
+
+    res.json({
+      kpis: {
+        total_members: members.length,
+        active_members: activeMembers,
+        active_groups: groups.length,
+        events_in_range: eventsInRange,
+        open_tasks: openTasks,
+      },
+      trend_members: trendMembers,
+      breakdown_member_status: breakdownMemberStatus,
+      groups_top: groupsTop,
+      drilldown_members: drilldownMembers,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to generate report summary." });
+  }
+});
+
+type ReportType = "group" | "membership" | "leader";
+
+function normalizeReportType(input: unknown): ReportType {
+  const raw = String(input || "group").trim().toLowerCase();
+  if (raw === "membership" || raw === "leader") return raw;
+  return "group";
+}
+
+function normalizeUniqueUuidArray(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    const v = typeof item === "string" ? item.trim() : "";
+    if (!v || !isUuidString(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function normalizeAttendanceStatuses(input: unknown): string[] {
+  const allowed = new Set(["present", "absent", "unsure", "not_marked"]);
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of input) {
+    const v = String(item || "").trim().toLowerCase();
+    if (v === "all") return [];
+    if (allowed.has(v) && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+function canAccessReportType(permCtx: any, reportType: ReportType): boolean {
+  if (permCtx?.isOrgOwner) return true;
+  const set = permCtx?.permissionSet as Set<string> | undefined;
+  if (!set) return false;
+  if (set.has("report_view") || set.has("view_analytics")) return true;
+  if (reportType === "group") return set.has("report_group");
+  if (reportType === "membership") return set.has("report_members");
+  if (reportType === "leader") return set.has("report_leaders");
+  return false;
+}
+
+function isMissingReportExportsTableError(error: unknown): boolean {
+  const e = error as { message?: string; code?: string } | null;
+  const msg = String(e?.message || "").toLowerCase();
+  const code = String(e?.code || "").toLowerCase();
+  return (
+    code === "42p01" ||
+    (msg.includes("could not find") && msg.includes("table") && msg.includes("report_exports")) ||
+    (msg.includes("relation") && msg.includes("report_exports") && msg.includes("does not exist"))
+  );
+}
+
+type ReportFiltersSummaryContext = {
+  reportType: ReportType;
+  reportWindowMode: "local_iso" | "ymd_utc" | "rolling";
+  rangeDays: number;
+  appliedRangeStart: string | null;
+  appliedRangeEnd: string | null;
+  requestedGroupIds: string[];
+  groupIdsInReport: string[];
+  groupNameById: Map<string, string>;
+  memberSelectAll: boolean;
+  requestedMemberIds: string[];
+  requestedMemberId: string | null;
+  memberNameById: Map<string, string>;
+  eventTypeFilter: string[];
+  requestedEventIds: string[];
+  eventSearchDisplay: string;
+  eventTitleById: Map<string, string>;
+  memberStatusesIn: string[];
+  attendanceStatuses: string[];
+  leaderDisplayName: string | null;
+};
+
+function formatReportFiltersSummary(p: ReportFiltersSummaryContext): string {
+  const lines: string[] = [];
+  const hSlug = (s: string) =>
+    String(s || "")
+      .split("_")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  const typeLabel =
+    p.reportType === "group" ? "Group report" : p.reportType === "membership" ? "Membership report" : "Leader report";
+  lines.push(`Report: ${typeLabel}`);
+
+  if (p.appliedRangeStart && p.appliedRangeEnd) {
+    const a = new Date(`${p.appliedRangeStart}T12:00:00.000Z`);
+    const b = new Date(`${p.appliedRangeEnd}T12:00:00.000Z`);
+    const fmt = (d: Date) => d.toLocaleDateString("en", { year: "numeric", month: "short", day: "numeric" });
+    if (!Number.isNaN(a.getTime()) && !Number.isNaN(b.getTime())) {
+      lines.push(`Date range: ${fmt(a)} – ${fmt(b)} (${p.rangeDays} days)`);
+    } else {
+      lines.push(`Date range: last ${p.rangeDays} days (rolling)`);
+    }
+  } else {
+    lines.push(`Date range: last ${p.rangeDays} days (rolling)`);
+  }
+  if (p.reportWindowMode === "local_iso") {
+    lines.push("Event window: local calendar day boundaries (matches the selected YYYY-MM-DD range).");
+  } else if (p.reportWindowMode === "ymd_utc") {
+    lines.push("Event window: UTC for the selected start and end YYYY-MM-DD values.");
+  }
+
+  if (p.reportType === "membership") {
+    if (p.requestedGroupIds.length > 0) {
+      lines.push(
+        `Groups: ${p.requestedGroupIds
+          .map((id) => p.groupNameById.get(id) || "Unknown group")
+          .join(", ")}`,
+      );
+    } else {
+      lines.push("Groups: not limited to specific groups.");
+    }
+    if (p.memberSelectAll) {
+      lines.push(
+        p.requestedGroupIds.length > 0
+          ? "Members: all members in the selected groups (with other filters applied)."
+          : "Members: all members in your scope (with other filters applied).",
+      );
+    } else {
+      const ex = p.requestedMemberId
+        ? [p.requestedMemberId, ...p.requestedMemberIds.filter((x) => x !== p.requestedMemberId)]
+        : p.requestedMemberIds;
+      const unique = [...new Set(ex.filter(Boolean) as string[])];
+      if (unique.length > 0) {
+        const names = unique.map((id) => p.memberNameById.get(id) || "Member");
+        lines.push(`Members: ${names.join(", ")}`);
+      } else {
+        lines.push("Members: from group and status filters (no specific people selected).");
+      }
+    }
+    if (p.memberStatusesIn.length > 0) {
+      lines.push(`Member status: ${p.memberStatusesIn.map((s) => hSlug(s)).join(", ")}`);
+    }
+  } else if (p.reportType === "group") {
+    if (p.groupIdsInReport.length > 0) {
+      lines.push(
+        `Groups: ${[...p.groupIdsInReport]
+          .sort()
+          .map((id) => p.groupNameById.get(id) || "Unknown group")
+          .join(", ")}`,
+      );
+    } else {
+      lines.push("Groups: none in scope for this run.");
+    }
+    if (p.eventTypeFilter.length > 0) {
+      lines.push(`Event types: ${p.eventTypeFilter.map((t) => hSlug(t)).join(", ")}`);
+    } else {
+      lines.push("Event types: all");
+    }
+    if (p.requestedEventIds.length > 0) {
+      const titles = p.requestedEventIds.map((id) => p.eventTitleById.get(id) || "Event");
+      lines.push(`Events: ${titles.join(", ")}`);
+    }
+    if (p.eventSearchDisplay) {
+      lines.push(`Event title search: "${p.eventSearchDisplay}"`);
+    }
+  } else {
+    if (p.leaderDisplayName) {
+      lines.push(`Leader: ${p.leaderDisplayName}`);
+    }
+    if (p.groupIdsInReport.length > 0) {
+      lines.push(
+        `Groups: ${[...p.groupIdsInReport]
+          .sort()
+          .map((id) => p.groupNameById.get(id) || "Unknown group")
+          .join(", ")}`,
+      );
+    } else {
+      lines.push("Groups: none in this report.");
+    }
+  }
+
+  {
+    const four = ["present", "absent", "unsure", "not_marked"];
+    const stSet = new Set(p.attendanceStatuses.map((x) => String(x).toLowerCase()));
+    const allSelected = stSet.size === 4 && four.every((k) => stSet.has(k));
+    if (p.attendanceStatuses.length > 0) {
+      if (!allSelected) {
+        const lab = (s: string) => {
+          const t = s.toLowerCase();
+          if (t === "present") return "Present";
+          if (t === "absent") return "Absent";
+          if (t === "unsure") return "Unsure";
+          if (t === "not_marked") return "Not marked";
+          return hSlug(s);
+        };
+        lines.push(`Attendance: ${p.attendanceStatuses.map((s) => lab(String(s))).join(", ")}`);
+      } else {
+        lines.push("Attendance: all statuses");
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function buildReportPayload(
+  req: any,
+  permCtx: any,
+  reportTypeInput: unknown,
+  filtersInput: unknown,
+) {
+  const reportType = normalizeReportType(reportTypeInput);
+  if (!canAccessReportType(permCtx, reportType)) {
+    const err: any = new Error("No access for selected report type.");
+    err.statusCode = 403;
+    throw err;
+  }
+  const filters = (filtersInput && typeof filtersInput === "object" ? filtersInput : {}) as Record<string, unknown>;
+  /** When set (ISO from the browser), used for 12m past / "profile card" style metrics so "now" matches the member screen. */
+  const clientNowForProfileMetrics = (() => {
+    const raw = typeof filters.client_clock_iso === "string" ? String(filters.client_clock_iso).trim() : "";
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  })();
+  const YMD = /^\d{4}-\d{2}-\d{2}$/;
+  const rangeStartIn = typeof filters.range_start === "string" ? filters.range_start.trim() : "";
+  const rangeEndIn = typeof filters.range_end === "string" ? filters.range_end.trim() : "";
+  const hasExplicitYmd = YMD.test(rangeStartIn) && YMD.test(rangeEndIn);
+  const MS_DAY = 24 * 60 * 60 * 1000;
+  const rangeStartUtcIso = typeof filters.range_start_utc === "string" ? filters.range_start_utc.trim() : "";
+  const rangeEndUtcIso = typeof filters.range_end_utc === "string" ? filters.range_end_utc.trim() : "";
+  const fromIso = (s: string) => {
+    const t = s ? new Date(s) : new Date(NaN);
+    return Number.isNaN(t.getTime()) ? null : t;
+  };
+  const dUs = rangeStartUtcIso ? fromIso(rangeStartUtcIso) : null;
+  const dUe = rangeEndUtcIso ? fromIso(rangeEndUtcIso) : null;
+  const useLocalIsoBounds = Boolean(
+    hasExplicitYmd && dUs && dUe && dUs.getTime() <= dUe.getTime(),
+  );
+  let reportWindowMode: "local_iso" | "ymd_utc" | "rolling" = "rolling";
+  let rangeStart: Date;
+  let rangeEnd: Date;
+  let rangeDays: number;
+  let appliedRangeStart: string | null = null;
+  let appliedRangeEnd: string | null = null;
+  if (hasExplicitYmd) {
+    const startUtc = new Date(`${rangeStartIn}T00:00:00.000Z`);
+    const endUtc = new Date(`${rangeEndIn}T23:59:59.999Z`);
+    if (Number.isNaN(startUtc.getTime()) || Number.isNaN(endUtc.getTime()) || startUtc.getTime() > endUtc.getTime()) {
+      const err: any = new Error("Invalid range_start or range_end.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const spanRaw = Math.floor((endUtc.getTime() - startUtc.getTime()) / MS_DAY) + 1;
+    if (spanRaw < 1 || spanRaw > 3650) {
+      const err: any = new Error("Date range must be between 1 and 3650 days inclusive.");
+      err.statusCode = 400;
+      throw err;
+    }
+    rangeStart = useLocalIsoBounds && dUs && dUe ? dUs : startUtc;
+    rangeEnd = useLocalIsoBounds && dUs && dUe ? dUe : endUtc;
+    rangeDays = spanRaw;
+    appliedRangeStart = rangeStartIn;
+    appliedRangeEnd = rangeEndIn;
+    reportWindowMode = useLocalIsoBounds ? "local_iso" : "ymd_utc";
+  } else {
+    const rangeDaysRaw = Number(filters.range_days ?? req.query.range_days ?? 90);
+    rangeDays = Number.isFinite(rangeDaysRaw) ? Math.max(1, Math.min(3650, Math.floor(rangeDaysRaw))) : 90;
+    rangeStart = new Date(Date.now() - rangeDays * MS_DAY);
+    rangeEnd = new Date();
+    reportWindowMode = "rolling";
+  }
+  const eventRangeStartUtc = (() => {
+    if (useLocalIsoBounds && dUs && dUe) {
+      return new Date(dUs.getTime());
+    }
+    const d = new Date(rangeStart);
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+  })();
+  const eventRangeEndUtc = (() => {
+    if (useLocalIsoBounds && dUs && dUe) {
+      return new Date(dUe.getTime());
+    }
+    const d = new Date(rangeEnd);
+    d.setUTCHours(23, 59, 59, 999);
+    return d;
+  })();
+  const requestedMemberIds = normalizeUniqueUuidArray(filters.member_ids);
+  const requestedMemberId = typeof filters.member_id === "string" && isUuidString(filters.member_id) ? filters.member_id : null;
+  const requestedLeaderId = typeof filters.leader_id === "string" && isUuidString(filters.leader_id) ? filters.leader_id : null;
+  const requestedGroupIds = normalizeUniqueUuidArray(filters.group_ids);
+  const requestedEventIds = normalizeUniqueUuidArray(filters.event_ids);
+  const eventSearchInput = typeof filters.event_search === "string" ? String(filters.event_search) : "";
+  const eventSearchDisplay = eventSearchInput.trim();
+  const eventSearch = eventSearchDisplay.toLowerCase();
+  const memberSelectAll = Boolean(filters.select_all_members);
+  const attendanceStatuses = normalizeAttendanceStatuses(filters.attendance_statuses);
+  const eventTypeFilter = normalizeUniqueStringArray(filters.event_types);
+  const memberStatusesIn = (() => {
+    const v = (filters as { member_statuses?: unknown }).member_statuses;
+    if (!Array.isArray(v)) return [] as string[];
+    return v
+      .map((x) => String(x || "").trim().toLowerCase())
+      .filter((s) => s.length > 0);
+  })();
+
+  const { data: viewerProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("organization_id, branch_id")
+    .eq("id", permCtx.userId)
+    .single();
+  if (!viewerProfile) throw new Error("User profile not found");
+
+  const orgId = String(viewerProfile.organization_id || "");
+  const viewerBranch = await assertViewerBranchScope(req, viewerProfile as OrgProfile, permCtx.userId);
+  const scope = await resolveMinistryScope(supabaseAdmin, permCtx.userId, orgId, viewerBranch, permCtx.isOrgOwner);
+  const visibleMemberIds = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, scope);
+
+  let { data: groupRows, error: groupErr } = await supabaseAdmin
+    .from("groups")
+    .select("id, name, is_deleted, branch_id, leader_id, parent_group_id")
+    .eq("organization_id", orgId)
+    .eq("branch_id", viewerBranch)
+    .or("is_deleted.eq.false,is_deleted.is.null");
+  if (groupErr) throw groupErr;
+  let groups = (groupRows || []) as Array<{
+    id: string;
+    name?: string | null;
+    member_count?: number | null;
+    leader_id?: string | null;
+    parent_group_id?: string | null;
+  }>;
+  if (scope.kind === "groups") groups = groups.filter((g) => scope.allowedGroupIds.has(g.id));
+
+  if (reportType === "leader") {
+    const leaderId = requestedLeaderId || permCtx.userId;
+    let leaderIsOrgOwner = false;
+    try {
+      const { data: leaderProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("is_org_owner")
+        .eq("id", leaderId)
+        .maybeSingle();
+      leaderIsOrgOwner = Boolean((leaderProfile as { is_org_owner?: boolean | null } | null)?.is_org_owner);
+    } catch {
+      // is_org_owner column may not exist; treat as false.
+    }
+    let scopeGroupIds = new Set<string>();
+    try {
+      const { data: scRows } = await supabaseAdmin
+        .from("profile_ministry_scope")
+        .select("group_id")
+        .eq("profile_id", leaderId);
+      for (const row of (scRows || []) as Array<{ group_id?: string | null }>) {
+        const gid = String(row.group_id || "");
+        if (gid) scopeGroupIds.add(gid);
+      }
+    } catch {
+      // table optional
+    }
+    if (!leaderIsOrgOwner) {
+      groups = groups.filter((g) => {
+        if (String(g.leader_id || "") === leaderId) return true;
+        if (scopeGroupIds.has(g.id)) return true;
+        return false;
+      });
+    }
+  } else if (reportType === "group") {
+    if (requestedGroupIds.length > 0) {
+      const byParent = new Map<string, string[]>();
+      for (const g of groups) {
+        const parent = String(g.parent_group_id || "");
+        if (!parent) continue;
+        byParent.set(parent, [...(byParent.get(parent) || []), g.id]);
+      }
+      const wanted = new Set(requestedGroupIds);
+      const queue = [...requestedGroupIds];
+      while (queue.length > 0) {
+        const id = String(queue.shift() || "");
+        for (const child of byParent.get(id) || []) {
+          if (wanted.has(child)) continue;
+          wanted.add(child);
+          queue.push(child);
+        }
+      }
+      groups = groups.filter((g) => wanted.has(g.id));
+    }
+  }
+  const selectedGroupSet = new Set(groups.map((g) => g.id));
+  if (groups.length > 0) {
+    const { data: gmCountRows } = await supabaseAdmin
+      .from("group_members")
+      .select("group_id, member_id")
+      .eq("organization_id", orgId)
+      .in("group_id", groups.map((g) => g.id));
+    const memberCountMap = new Map<string, number>();
+    for (const row of (gmCountRows || []) as Array<{ group_id?: string | null }>) {
+      const gid = String(row.group_id || "");
+      if (!gid) continue;
+      memberCountMap.set(gid, (memberCountMap.get(gid) || 0) + 1);
+    }
+    groups = groups.map((g) => ({ ...g, member_count: memberCountMap.get(g.id) || 0 }));
+  }
+  const groupNameById = new Map<string, string>(groups.map((g) => [g.id, String(g.name || "Group")]));
+
+  let { data: memberRows, error: memberErr } = await supabaseAdmin
+    .from("members")
+    .select("id, first_name, last_name, status, created_at")
+    .eq("organization_id", orgId)
+    .eq("branch_id", viewerBranch)
+    .or("is_deleted.eq.false,is_deleted.is.null");
+  if (memberErr) throw memberErr;
+  let members = (memberRows || []) as Array<{
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+  }>;
+  if (visibleMemberIds) members = members.filter((m) => visibleMemberIds.has(m.id));
+
+  const memberNameByIdForSummary = new Map<string, string>();
+  for (const m of (memberRows || []) as Array<{
+    id: string;
+    first_name?: string | null;
+    last_name?: string | null;
+  }>) {
+    if (visibleMemberIds && !visibleMemberIds.has(m.id)) continue;
+    const nm = `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Member";
+    memberNameByIdForSummary.set(m.id, nm);
+  }
+
+  if (reportType === "group" || reportType === "leader") {
+    if (selectedGroupSet.size > 0) {
+      const { data: gmRows, error: gmErr } = await supabaseAdmin
+        .from("group_members")
+        .select("member_id, group_id")
+        .eq("organization_id", orgId)
+        .in("group_id", [...selectedGroupSet]);
+      if (gmErr) throw gmErr;
+      const groupMemberIds = new Set(
+        (gmRows || []).map((r) => String((r as { member_id?: string }).member_id || "")).filter((id) => !!id),
+      );
+      members = members.filter((m) => groupMemberIds.has(m.id));
+    } else {
+      members = [];
+    }
+  }
+  if (reportType === "membership") {
+    const expandedForMembership =
+      requestedGroupIds.length > 0
+        ? new Set(expandGroupIdsWithDescendants(groups, requestedGroupIds))
+        : new Set<string>();
+    let groupMemberIdSet = new Set<string>();
+    if (expandedForMembership.size > 0) {
+      const { data: gmRows, error: gmErr2 } = await supabaseAdmin
+        .from("group_members")
+        .select("member_id, group_id")
+        .eq("organization_id", orgId)
+        .in("group_id", [...expandedForMembership]);
+      if (gmErr2) throw gmErr2;
+      for (const r of (gmRows || []) as Array<{ member_id?: string }>) {
+        const mid = String((r as { member_id?: string }).member_id || "");
+        if (mid) groupMemberIdSet.add(mid);
+      }
+    }
+    const explicitSet = new Set(requestedMemberIds);
+    if (requestedMemberId) explicitSet.add(requestedMemberId);
+    let candidateIds: Set<string>;
+    if (memberSelectAll) {
+      if (requestedGroupIds.length > 0) {
+        candidateIds = new Set(groupMemberIdSet);
+      } else {
+        candidateIds = new Set(members.map((m) => m.id));
+      }
+    } else {
+      if (requestedGroupIds.length > 0 && explicitSet.size > 0) {
+        candidateIds = new Set([...groupMemberIdSet, ...explicitSet]);
+      } else if (requestedGroupIds.length > 0) {
+        candidateIds = new Set(groupMemberIdSet);
+      } else if (explicitSet.size > 0) {
+        candidateIds = explicitSet;
+      } else {
+        candidateIds = new Set();
+      }
+    }
+    if (visibleMemberIds) {
+      candidateIds = new Set([...candidateIds].filter((id) => visibleMemberIds.has(id)));
+    }
+    let pool = members.filter((m) => candidateIds.has(m.id));
+    if (memberStatusesIn.length > 0) {
+      const statusSet = new Set(memberStatusesIn);
+      pool = pool.filter((m) => {
+        const s = String(m.status || "").trim().toLowerCase() || "unknown";
+        return statusSet.has(s);
+      });
+    }
+    members = pool;
+    if (members.length === 0) {
+      const err: any = new Error("No members match the selected filters for this membership report.");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const statusCount = new Map<string, number>();
+  for (const m of members) {
+    const key = String(m.status || "unknown").trim().toLowerCase() || "unknown";
+    statusCount.set(key, (statusCount.get(key) || 0) + 1);
+  }
+  const activeMembers = members.filter((m) => {
+    const s = String(m.status || "").trim().toLowerCase();
+    if (!s) return true;
+    return !["inactive", "archived", "deleted", "deceased"].includes(s);
+  }).length;
+
+  const trendBuckets = new Map<string, number>();
+  for (const m of members) {
+    if (!m.created_at) continue;
+    const dt = new Date(m.created_at);
+    if (Number.isNaN(dt.getTime()) || dt.getTime() < rangeStart.getTime()) continue;
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    trendBuckets.set(key, (trendBuckets.get(key) || 0) + 1);
+  }
+  const trendMembers = [...trendBuckets.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([bucket, count]) => ({ bucket, count }));
+
+  let eventsInRange = 0;
+  const eventIdsInRange = new Set<string>();
+  const eventMetaById = new Map<string, { title: string; event_type: string }>();
+  const memberTaskStats = new Map<string, { pending: number; completed: number; all: number }>();
+  const attendanceByMember = new Map<string, { present: number; absent: number; unsure: number; not_marked: number; total: number }>();
+  /** Same definition as member profile: past events, last 12 mo., using event start_time only. */
+  const profilePast12mByMember = new Map<string, { present: number; total: number; ratePct: number | null }>();
+  const attendanceByEvent = new Map<string, { present: number; absent: number; unsure: number; not_marked: number; total: number }>();
+  try {
+    let eventRows: Array<Record<string, unknown>> | null = null;
+    let eventQueryErr: { message?: string } | null = null;
+    const queryVariants = [
+      "id, title, start_time, start_date, linked_group_ids, group_ids, event_type",
+      "id, title, start_time, linked_group_ids, group_ids, event_type",
+      "id, title, start_time, group_ids, event_type",
+      "id, title, start_time, event_type",
+      "id, title, start_time",
+    ];
+    for (const selectStr of queryVariants) {
+      const { data, error } = await supabaseAdmin
+        .from("events")
+        .select(selectStr)
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch);
+      if (!error) {
+        eventRows = data as Array<Record<string, unknown>>;
+        eventQueryErr = null;
+        break;
+      }
+      eventQueryErr = error;
+    }
+    const rows = (eventRows || []) as Array<{
+      id: string;
+      title?: string | null;
+      start_time?: string | null;
+      start_date?: string | null;
+      linked_group_ids?: string[] | null;
+      group_ids?: string[] | null;
+      event_type?: string | null;
+    }>;
+    const isMembership = reportType === "membership";
+    // Membership reports: count attendance for any branch event in the date range for the
+    // selected members. Do not restrict events to the viewer's ministry group links, and do
+    // not apply group-report-only filters (event_ids / event_search) that may be left over
+    // in the request when the user switches report types in the same modal session.
+    for (const e of rows) {
+      const dateRaw = e.start_time || e.start_date;
+      if (!dateRaw) continue;
+      const dt = new Date(dateRaw);
+      if (Number.isNaN(dt.getTime()) || dt.getTime() < eventRangeStartUtc.getTime()) continue;
+      if (dt.getTime() > eventRangeEndUtc.getTime()) continue;
+      if (eventTypeFilter.length > 0 && !eventTypeFilter.includes(String(e.event_type || "").trim())) continue;
+      if (!isMembership && requestedEventIds.length > 0 && !requestedEventIds.includes(e.id)) continue;
+      if (!isMembership && eventSearch && !String(e.title || "").toLowerCase().includes(eventSearch)) continue;
+      if (!isMembership && selectedGroupSet.size > 0) {
+        const linked = Array.isArray(e.linked_group_ids)
+          ? e.linked_group_ids
+          : Array.isArray(e.group_ids)
+            ? e.group_ids
+            : [];
+        if (linked.length > 0 && !linked.some((id) => selectedGroupSet.has(id))) continue;
+      }
+      eventsInRange += 1;
+      eventIdsInRange.add(e.id);
+      eventMetaById.set(e.id, {
+        title: String(e.title || "Event"),
+        event_type: String(e.event_type || "unknown"),
+      });
+    }
+  } catch {
+    // Keep non-critical field as zero if table/column mismatch occurs.
+  }
+
+  let openTasks = 0;
+  let tasksCompleted = 0;
+  const groupTaskStats = new Map<string, { pending: number; completed: number; all: number }>();
+  try {
+    const [memberTaskRows, groupTaskRows] = await Promise.all([
+      supabaseAdmin
+        .from("member_tasks")
+        .select("status, member_id, created_at, updated_at, due_at")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch),
+      supabaseAdmin
+        .from("group_tasks")
+        .select("status, group_id, created_at, updated_at, due_at")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch),
+    ]);
+    const isOpen = (status: unknown) => {
+      const s = String(status || "").toLowerCase();
+      return s === "pending" || s === "in_progress" || s === "open";
+    };
+    const isDone = (status: unknown) => String(status || "").toLowerCase() === "completed";
+
+    const inRange = (row: { created_at?: string | null; updated_at?: string | null; due_at?: string | null }) => {
+      const t = row.updated_at || row.created_at || row.due_at || null;
+      if (!t) return false;
+      const dt = new Date(t);
+      if (Number.isNaN(dt.getTime())) return false;
+      return dt.getTime() >= eventRangeStartUtc.getTime() && dt.getTime() <= eventRangeEndUtc.getTime();
+    };
+    const memberTaskData = (memberTaskRows.data || []) as Array<{
+      status?: string | null;
+      member_id?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
+      due_at?: string | null;
+    }>;
+    const membershipMemberSet = reportType === "membership" ? new Set(members.map((m) => m.id)) : null;
+    const leaderMemberSet = reportType === "leader" ? new Set(members.map((m) => m.id)) : null;
+    const groupMemberSet = reportType === "group" ? new Set(members.map((m) => m.id)) : null;
+    let filteredMemberTaskData = memberTaskData;
+    if (membershipMemberSet && membershipMemberSet.size > 0) {
+      filteredMemberTaskData = memberTaskData.filter((r) => membershipMemberSet.has(String(r.member_id || "")));
+    } else if (leaderMemberSet && leaderMemberSet.size > 0) {
+      filteredMemberTaskData = memberTaskData.filter((r) => leaderMemberSet.has(String(r.member_id || "")));
+    } else if (groupMemberSet && groupMemberSet.size > 0) {
+      filteredMemberTaskData = memberTaskData.filter((r) => groupMemberSet.has(String(r.member_id || "")));
+    }
+    openTasks += filteredMemberTaskData.filter((r) => inRange(r) && isOpen(r.status)).length;
+    tasksCompleted += filteredMemberTaskData.filter((r) => inRange(r) && isDone(r.status)).length;
+    for (const row of filteredMemberTaskData) {
+      if (!inRange(row)) continue;
+      const memberId = String(row.member_id || "");
+      if (!memberId) continue;
+      const stats = memberTaskStats.get(memberId) || { pending: 0, completed: 0, all: 0 };
+      stats.all += 1;
+      if (isOpen(row.status)) stats.pending += 1;
+      if (isDone(row.status)) stats.completed += 1;
+      memberTaskStats.set(memberId, stats);
+    }
+
+    let groupTaskData = (groupTaskRows.data || []) as Array<{
+      status?: string | null;
+      group_id?: string | null;
+      created_at?: string | null;
+      updated_at?: string | null;
+      due_at?: string | null;
+    }>;
+    if (selectedGroupSet.size > 0) groupTaskData = groupTaskData.filter((r) => selectedGroupSet.has(String(r.group_id || "")));
+    for (const row of groupTaskData) {
+      if (!inRange(row)) continue;
+      const gid = String(row.group_id || "");
+      if (!gid) continue;
+      const stats = groupTaskStats.get(gid) || { pending: 0, completed: 0, all: 0 };
+      stats.all += 1;
+      if (isOpen(row.status)) stats.pending += 1;
+      if (isDone(row.status)) stats.completed += 1;
+      groupTaskStats.set(gid, stats);
+    }
+    if (reportType !== "membership") {
+      openTasks += groupTaskData.filter((r) => inRange(r) && isOpen(r.status)).length;
+      tasksCompleted += groupTaskData.filter((r) => inRange(r) && isDone(r.status)).length;
+    }
+  } catch {
+    // Optional metric when task tables/columns differ.
+  }
+
+  let attendanceTotal = 0;
+  let attendancePresent = 0;
+  let attendanceAbsent = 0;
+  let attendanceUnsure = 0;
+  let attendanceNotMarked = 0;
+  let membershipScopedEventCount: number | null = null;
+  try {
+    type AttRow = {
+      status?: string | null;
+      member_id?: string | null;
+      event_id?: string | null;
+      updated_at?: string | null;
+      created_at?: string | null;
+    };
+    const statusFilter = (attendanceRows: AttRow[]) => {
+      const four = new Set(["present", "absent", "unsure", "not_marked"]);
+      const stSet = new Set(attendanceStatuses.map((x) => String(x || "").trim().toLowerCase()));
+      const allStatusesSelected = stSet.size === 4 && [...four].every((s) => stSet.has(s));
+      if (attendanceStatuses.length > 0 && !allStatusesSelected) {
+        return attendanceRows.filter((r) => stSet.has(String(r.status || "not_marked").toLowerCase()));
+      }
+      return attendanceRows;
+    };
+    const membershipWithMemberSelection = reportType === "membership" && members.length > 0;
+    if (membershipWithMemberSelection) {
+      const memberIdList: string[] = members.map((m) => m.id);
+      if (memberIdList.length > 0) {
+        const fourSt = new Set(["present", "absent", "unsure", "not_marked"]);
+        const stSetRep = new Set(attendanceStatuses.map((x) => String(x || "").trim().toLowerCase()));
+        const allStatusesSelected =
+          stSetRep.size === 4 && [...fourSt].every((s) => stSetRep.has(s));
+        const statusCountsTowardReport = (s: string) => {
+          if (attendanceStatuses.length === 0 || allStatusesSelected) return true;
+          return stSetRep.has(s);
+        };
+        const seenMembershipEvents = new Set<string>();
+        const isOwner = permCtx.isOrgOwner === true;
+        for (const m of members) {
+          const memberId = m.id;
+          let rosterIds: string[] = [];
+          try {
+            // Full roster: slicing before the date window dropped in-range events when roster was larger than 200.
+            rosterIds = await fetchEventIdsForMember(memberId, orgId, viewerBranch);
+          } catch {
+            rosterIds = [];
+          }
+          if (rosterIds.length === 0) {
+            profilePast12mByMember.set(memberId, { present: 0, total: 0, ratePct: null });
+            continue;
+          }
+          const evAcc: Record<string, unknown>[] = [];
+          for (let o = 0; o < rosterIds.length; o += 100) {
+            const ch = rosterIds.slice(o, o + 100);
+            let { data: evPart, error: evErr } = await supabaseAdmin
+              .from("events")
+              .select("id, start_time, start_date, event_type, group_id")
+              .in("id", ch)
+              .eq("organization_id", orgId)
+              .eq("branch_id", viewerBranch);
+            if (evErr) {
+              const msg = String(evErr.message || "").toLowerCase();
+              const code = (evErr as { code?: string }).code;
+              const retriable = code === "42703" || msg.includes("start_date") || msg.includes("column");
+              if (retriable) {
+                const retry = await supabaseAdmin
+                  .from("events")
+                  .select("id, start_time, event_type, group_id")
+                  .in("id", ch)
+                  .eq("organization_id", orgId)
+                  .eq("branch_id", viewerBranch);
+                evPart = retry.data;
+              }
+            }
+            for (const ev of evPart || []) evAcc.push(ev as Record<string, unknown>);
+          }
+          // Membership: roster is already this member's events. Do not re-apply ministry visibility here — it can
+          // clear the whole list even though the same viewer sees these rows on the member profile (see global note ~10974).
+          const visibleEv = evAcc;
+
+          // Match MemberDetailPanel attendanceRateLast12Mo. Prefer the browser "now" to avoid server vs client year skew
+          // (e.g. events dated 2026 on a host whose clock is still 2025, which made every row "future" and produced all zeros).
+          const nowProfile = clientNowForProfileMetrics ? new Date(clientNowForProfileMetrics.getTime()) : new Date();
+          const cutoffProfile = new Date(nowProfile);
+          cutoffProfile.setMonth(cutoffProfile.getMonth() - 12);
+          const nowMs = nowProfile.getTime();
+          const cutoffMs = cutoffProfile.getTime();
+          const profilePast12 = visibleEv.filter((ev) => {
+            const st =
+              (ev as { start_time?: string | null; start_date?: string | null }).start_time ||
+              (ev as { start_date?: string | null }).start_date;
+            if (st == null || String(st).trim() === "") return false;
+            const t = new Date(String(st));
+            if (Number.isNaN(t.getTime())) return false;
+            const ms = t.getTime();
+            return ms < nowMs && ms >= cutoffMs;
+          });
+          if (profilePast12.length === 0) {
+            profilePast12mByMember.set(memberId, { present: 0, total: 0, ratePct: null });
+          } else {
+            const eidsProfile = profilePast12
+              .map((ev) => String((ev as { id?: string }).id || ""))
+              .filter((id) => isUuidString(id));
+            const attProfile = new Map<string, string>();
+            for (let o = 0; o < eidsProfile.length; o += 100) {
+              const ch = eidsProfile.slice(o, o + 100);
+              const { data: atP } = await supabaseAdmin
+                .from("event_attendance")
+                .select("event_id, status")
+                .eq("organization_id", orgId)
+                .eq("member_id", memberId)
+                .in("event_id", ch);
+              for (const ar of (atP || []) as Array<{ event_id?: string; status?: string | null }>) {
+                if (ar.event_id) {
+                  attProfile.set(String(ar.event_id), String(ar.status || "not_marked").toLowerCase());
+                }
+              }
+            }
+            let pr12 = 0;
+            for (const ev of profilePast12) {
+              const eid = String((ev as { id?: string }).id || "");
+              if (!eid || !isUuidString(eid)) continue;
+              let s = (attProfile.get(eid) || "not_marked").toLowerCase();
+              if (!fourSt.has(s)) s = "not_marked";
+              if (s === "present") pr12 += 1;
+            }
+            const t12 = profilePast12.length;
+            profilePast12mByMember.set(memberId, {
+              present: pr12,
+              total: t12,
+              ratePct: t12 > 0 ? Math.round((pr12 / t12) * 100) : null,
+            });
+          }
+
+          const inWindow = visibleEv.filter((ev) => {
+            const dr =
+              (ev.start_time as string | null | undefined) || (ev.start_date as string | null | undefined);
+            if (!dr) return false;
+            const dt = new Date(String(dr));
+            if (Number.isNaN(dt.getTime())) return false;
+            const t = dt.getTime();
+            if (t < eventRangeStartUtc.getTime() || t > eventRangeEndUtc.getTime()) return false;
+            if (eventTypeFilter.length > 0) {
+              const et = String((ev.event_type as string | null) || "").trim();
+              if (!eventTypeFilter.includes(et)) return false;
+            }
+            return true;
+          });
+          if (inWindow.length === 0) continue;
+          const eids = inWindow
+            .map((ev) => String((ev as { id?: string }).id || ""))
+            .filter((id) => isUuidString(id));
+          const attByEid = new Map<string, string>();
+          for (let o = 0; o < eids.length; o += 100) {
+            const ch = eids.slice(o, o + 100);
+            const { data: atRows } = await supabaseAdmin
+              .from("event_attendance")
+              .select("event_id, status")
+              .eq("organization_id", orgId)
+              .eq("member_id", memberId)
+              .in("event_id", ch);
+            for (const ar of (atRows || []) as Array<{ event_id?: string; status?: string | null }>) {
+              if (ar.event_id) {
+                attByEid.set(String(ar.event_id), String(ar.status || "not_marked").toLowerCase());
+              }
+            }
+          }
+          for (const ev of inWindow) {
+            const eid = String((ev as { id?: string }).id || "");
+            if (!eid || !isUuidString(eid)) continue;
+            let s = (attByEid.get(eid) || "not_marked").toLowerCase();
+            if (!fourSt.has(s)) s = "not_marked";
+            if (!statusCountsTowardReport(s)) continue;
+            seenMembershipEvents.add(eid);
+            attendanceTotal += 1;
+            if (s === "present") attendancePresent += 1;
+            else if (s === "absent") attendanceAbsent += 1;
+            else if (s === "unsure") attendanceUnsure += 1;
+            else attendanceNotMarked += 1;
+            const st = attendanceByMember.get(memberId) || {
+              present: 0,
+              absent: 0,
+              unsure: 0,
+              not_marked: 0,
+              total: 0,
+            };
+            st.total += 1;
+            if (s === "present") st.present += 1;
+            else if (s === "absent") st.absent += 1;
+            else if (s === "unsure") st.unsure += 1;
+            else st.not_marked += 1;
+            attendanceByMember.set(memberId, st);
+          }
+        }
+        membershipScopedEventCount = seenMembershipEvents.size;
+      }
+    } else if (eventIdsInRange.size > 0) {
+      const eventCap = reportType === "membership" ? 5000 : 2000;
+      const cappedEventIds = [...eventIdsInRange].slice(0, eventCap);
+      let dataRows: Array<Record<string, unknown>> | null = null;
+      const { data } = await supabaseAdmin
+        .from("event_attendance")
+        .select("status, event_id, member_id")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch)
+        .in("event_id", cappedEventIds);
+      dataRows = (data || []) as Array<Record<string, unknown>>;
+      let attendanceRows = (dataRows || []) as Array<AttRow>;
+      if (reportType === "group" || reportType === "leader") {
+        const scopedMemberSet = new Set(members.map((m) => m.id));
+        if (scopedMemberSet.size > 0) {
+          attendanceRows = attendanceRows.filter((r) => scopedMemberSet.has(String(r.member_id || "")));
+        }
+      } else if (visibleMemberIds) {
+        attendanceRows = attendanceRows.filter((r) => visibleMemberIds.has(String(r.member_id || "")));
+      }
+      attendanceRows = statusFilter(attendanceRows);
+      for (const row of attendanceRows) {
+        const s = String(row.status || "not_marked").toLowerCase();
+        const memberId = String(row.member_id || "");
+        const eventId = String(row.event_id || "");
+        attendanceTotal += 1;
+        if (s === "present") attendancePresent += 1;
+        else if (s === "absent") attendanceAbsent += 1;
+        else if (s === "unsure") attendanceUnsure += 1;
+        else attendanceNotMarked += 1;
+
+        if (memberId) {
+          const stats = attendanceByMember.get(memberId) || { present: 0, absent: 0, unsure: 0, not_marked: 0, total: 0 };
+          stats.total += 1;
+          if (s === "present") stats.present += 1;
+          else if (s === "absent") stats.absent += 1;
+          else if (s === "unsure") stats.unsure += 1;
+          else stats.not_marked += 1;
+          attendanceByMember.set(memberId, stats);
+        }
+        if (eventId) {
+          const stats = attendanceByEvent.get(eventId) || { present: 0, absent: 0, unsure: 0, not_marked: 0, total: 0 };
+          stats.total += 1;
+          if (s === "present") stats.present += 1;
+          else if (s === "absent") stats.absent += 1;
+          else if (s === "unsure") stats.unsure += 1;
+          else stats.not_marked += 1;
+          attendanceByEvent.set(eventId, stats);
+        }
+      }
+    }
+  } catch {
+    // Optional when table not available.
+  }
+
+  let actionLogCount = 0;
+  try {
+    const { data: logRows } = await supabaseAdmin
+      .from("audit_action_logs")
+      .select("id, created_at")
+      .eq("organization_id", orgId)
+      .eq("branch_id", viewerBranch)
+      .gte("created_at", rangeStart.toISOString());
+    actionLogCount = (logRows || []).length;
+  } catch {
+    // Optional when table not available.
+  }
+
+  const groupsTop = [...groups]
+    .sort((a, b) => Number(b.member_count || 0) - Number(a.member_count || 0))
+    .slice(0, 8)
+    .map((g) => ({
+      group_id: g.id,
+      group_name: String(g.name || "Group"),
+      member_count: Number(g.member_count || 0),
+    }));
+
+  const breakdownMemberStatus = [...statusCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({
+      label: label
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()),
+      count,
+    }));
+  const drilldownMembers = [...members]
+    .sort((a, b) => {
+      const ams = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bms = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bms - ams;
+    })
+    .slice(0, 60)
+    .map((m) => ({
+      member_id: m.id,
+      member_name: `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Unnamed member",
+      status: String(m.status || "unknown")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase()),
+      created_at: m.created_at || null,
+    }));
+
+  let ministriesJoined: Array<{ member_id: string; groups: string[] }> = [];
+  try {
+    if (reportType === "membership" && members.length > 0) {
+      const memberSet = new Set(members.map((m) => m.id));
+      const { data: gmRows } = await supabaseAdmin
+        .from("group_members")
+        .select("member_id, group_id")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch);
+      const { data: allGroupRows } = await supabaseAdmin
+        .from("groups")
+        .select("id, name")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch)
+        .or("is_deleted.eq.false,is_deleted.is.null");
+      const groupNameById = new Map(
+        (allGroupRows || []).map((g: { id: string; name?: string | null }) => [g.id, String(g.name || "Group")])
+      );
+      const map = new Map<string, string[]>();
+      for (const row of (gmRows || []) as Array<{ member_id?: string | null; group_id?: string | null }>) {
+        const mid = String(row.member_id || "");
+        const gid = String(row.group_id || "");
+        if (!mid || !gid || !memberSet.has(mid)) continue;
+        const groupName = groupNameById.get(gid);
+        if (groupName) map.set(mid, [...(map.get(mid) || []), groupName]);
+      }
+      ministriesJoined = [...map.entries()].map(([member_id, groups]) => ({ member_id, groups: [...new Set(groups)] }));
+    }
+  } catch {
+    // optional section
+  }
+
+  const attendanceRate = attendanceTotal > 0 ? Math.round((attendancePresent / attendanceTotal) * 1000) / 10 : 0;
+  const taskCompletionRate =
+    openTasks + tasksCompleted > 0 ? Math.round((tasksCompleted / (openTasks + tasksCompleted)) * 1000) / 10 : 0;
+  const takeaways = [
+    `Attendance rate is ${attendanceRate}% for the selected report scope.`,
+    reportType === "membership"
+      ? "Preview table: compare the profile Attendance card to the column 'Use this to match profile: 12 mo. past rate' — not to 'attendance % for report dates only'."
+      : null,
+    `Task completion rate is ${taskCompletionRate}% (${tasksCompleted} completed vs ${openTasks} open).`,
+    `There are ${activeMembers} active members out of ${members.length} total members in scope.`,
+  ].filter((x): x is string => x != null && x !== "");
+
+  let rawPreviewRows: Array<Record<string, unknown>> = drilldownMembers.map((row) => ({ ...row }));
+  if (reportType === "group") {
+    const zeroStats = { present: 0, absent: 0, unsure: 0, not_marked: 0, total: 0 };
+    if (eventMetaById.size > 0) {
+      rawPreviewRows = [...eventMetaById.entries()].map(([event_id, meta]) => {
+        const stats = attendanceByEvent.get(event_id) || zeroStats;
+        const pct = (n: number) => (stats.total > 0 ? Math.round((n / stats.total) * 1000) / 10 : 0);
+        return {
+          event_id,
+          event_name: meta.title,
+          event_type: meta.event_type,
+          total_attendance: stats.total,
+          present: stats.present,
+          present_pct: pct(stats.present),
+          absent: stats.absent,
+          absent_pct: pct(stats.absent),
+          unsure: stats.unsure,
+          unsure_pct: pct(stats.unsure),
+          not_marked: stats.not_marked,
+          not_marked_pct: pct(stats.not_marked),
+        };
+      });
+    } else {
+      rawPreviewRows = groups.map((g) => ({
+        group_id: g.id,
+        group_name: String(g.name || "Group"),
+        member_count: Number((g as { member_count?: number }).member_count || 0),
+        events_in_range: 0,
+        total_attendance: 0,
+        present: 0,
+        present_pct: 0,
+        absent: 0,
+        absent_pct: 0,
+        unsure: 0,
+        unsure_pct: 0,
+        not_marked: 0,
+        not_marked_pct: 0,
+        note: "No events found in the selected date range for this group.",
+      }));
+    }
+  } else if (reportType === "membership") {
+    const memberNameById = new Map(
+      members.map((m) => [
+        m.id,
+        `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Member",
+      ]),
+    );
+    const ministriesByMember = new Map(ministriesJoined.map((row) => [row.member_id, row.groups]));
+    const pctOfTotal = (n: number, total: number) =>
+      total > 0 ? Math.round((n / total) * 1000) / 10 : 0;
+    rawPreviewRows = members.map((m) => {
+      const task = memberTaskStats.get(m.id) || { pending: 0, completed: 0, all: 0 };
+      const att = attendanceByMember.get(m.id) || { present: 0, absent: 0, unsure: 0, not_marked: 0, total: 0 };
+      const t = att.total;
+      const p12 = profilePast12mByMember.get(m.id) ?? { present: 0, total: 0, ratePct: null };
+      return {
+        member_id: m.id,
+        member_name: memberNameById.get(m.id) || "Member",
+        status: String(m.status || "unknown"),
+        tasks_pending: task.pending,
+        tasks_completed: task.completed,
+        tasks_all: task.all,
+        ministries_joined: ministriesByMember.get(m.id) || [],
+        attendance_present: att.present,
+        attendance_absent: att.absent,
+        attendance_unsure: att.unsure,
+        attendance_not_marked: att.not_marked,
+        attendance_total: t,
+        attendance_present_pct: pctOfTotal(att.present, t),
+        attendance_absent_pct: pctOfTotal(att.absent, t),
+        attendance_unsure_pct: pctOfTotal(att.unsure, t),
+        attendance_not_marked_pct: pctOfTotal(att.not_marked, t),
+        attendance_rate_pct: pctOfTotal(att.present, t),
+        profile_past_12m_rate_pct: p12.ratePct,
+        profile_past_12m_present: p12.present,
+        profile_past_12m_past_event_total: p12.total,
+      };
+    });
+  } else if (reportType === "leader") {
+    rawPreviewRows = groups.map((g) => {
+      const gStats = groupTaskStats.get(g.id) || { pending: 0, completed: 0, all: 0 };
+      return {
+        leader_id: requestedLeaderId || permCtx.userId,
+        group_id: g.id,
+        group_name: String(g.name || "Group"),
+        member_count: Number(g.member_count || 0),
+        group_tasks_pending: gStats.pending,
+        group_tasks_completed: gStats.completed,
+        group_tasks_all: gStats.all,
+      };
+    });
+  }
+
+  const eventTitleById = new Map<string, string>([...eventMetaById].map(([id, meta]) => [id, meta.title]));
+  if (reportType === "group" && requestedEventIds.length > 0) {
+    const missing = requestedEventIds.filter((id) => !eventTitleById.has(id));
+    if (missing.length > 0) {
+      const { data: evT } = await supabaseAdmin
+        .from("events")
+        .select("id, title")
+        .in("id", missing)
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch);
+      for (const e of (evT || []) as Array<{ id?: string; title?: string | null }>) {
+        if (e.id) eventTitleById.set(e.id, String(e.title || "Event"));
+      }
+    }
+  }
+
+  let leaderDisplayName: string | null = null;
+  if (reportType === "leader") {
+    const lid = requestedLeaderId || permCtx.userId;
+    const { data: lp } = await supabaseAdmin
+      .from("profiles")
+      .select("first_name, last_name, email")
+      .eq("id", lid)
+      .maybeSingle();
+    if (lp) {
+      const p = lp as { first_name?: string | null; last_name?: string | null; email?: string | null };
+      const n = `${String(p.first_name || "").trim()} ${String(p.last_name || "").trim()}`.trim();
+      leaderDisplayName = n || (p.email ? String(p.email) : null) || "Leader";
+    } else {
+      leaderDisplayName = "Leader";
+    }
+  }
+
+  const filtersSummaryText = formatReportFiltersSummary({
+    reportType,
+    reportWindowMode,
+    rangeDays,
+    appliedRangeStart,
+    appliedRangeEnd,
+    requestedGroupIds,
+    groupIdsInReport: reportType === "membership" ? requestedGroupIds : [...selectedGroupSet],
+    groupNameById,
+    memberSelectAll,
+    requestedMemberIds,
+    requestedMemberId,
+    memberNameById: memberNameByIdForSummary,
+    eventTypeFilter,
+    requestedEventIds,
+    eventSearchDisplay,
+    eventTitleById,
+    memberStatusesIn,
+    attendanceStatuses,
+    leaderDisplayName,
+  });
+
+  return {
+    report_type: reportType,
+    filters_summary: filtersSummaryText,
+    filters_applied: {
+      range_days: rangeDays,
+      range_start: appliedRangeStart,
+      range_end: appliedRangeEnd,
+      report_window_mode: reportWindowMode,
+      event_range_start: eventRangeStartUtc.toISOString(),
+      event_range_end: eventRangeEndUtc.toISOString(),
+      group_ids: reportType === "membership" ? requestedGroupIds : [...selectedGroupSet],
+      member_ids: reportType === "membership" ? members.map((m) => m.id) : [],
+      event_types: eventTypeFilter,
+      member_statuses: memberStatusesIn,
+      leader_id: requestedLeaderId || (reportType === "leader" ? permCtx.userId : null),
+      attendance_statuses: attendanceStatuses,
+    },
+    kpis: {
+      total_members: members.length,
+      active_members: activeMembers,
+      active_groups: groups.length,
+      events_in_range: membershipScopedEventCount != null ? membershipScopedEventCount : eventsInRange,
+      open_tasks: openTasks,
+      completed_tasks: tasksCompleted,
+      attendance_total: attendanceTotal,
+      attendance_present: attendancePresent,
+      attendance_absent: attendanceAbsent,
+      attendance_unsure: attendanceUnsure,
+      attendance_not_marked: attendanceNotMarked,
+      attendance_rate_pct: attendanceRate,
+      task_completion_rate_pct: taskCompletionRate,
+      action_logs_in_range: actionLogCount,
+    },
+    trend_members: trendMembers,
+    breakdown_member_status: breakdownMemberStatus,
+    groups_top: groupsTop,
+    drilldown_members: drilldownMembers,
+    raw_preview_rows: rawPreviewRows,
+    member_ministries_joined: ministriesJoined,
+    takeaways,
+  };
+}
+
+function normalizeUniqueStringArray(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of input) {
+    const value = String(item || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+app.post("/api/reports/generate", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+
+  try {
+    const payload = await buildReportPayload(req, permCtx, req.body?.report_type, req.body?.filters);
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    const orgId = String(viewerProfile?.organization_id || "");
+    const viewerBranch = String(viewerProfile?.branch_id || "");
+    const reportName = typeof req.body?.name === "string" && req.body.name.trim() ? req.body.name.trim() : null;
+    const reportDescription =
+      typeof req.body?.description === "string" && req.body.description.trim() ? req.body.description.trim() : null;
+    const filtersSummary =
+      typeof (payload as { filters_summary?: unknown }).filters_summary === "string" &&
+      String((payload as { filters_summary?: string }).filters_summary).trim()
+        ? String((payload as { filters_summary: string }).filters_summary).trim()
+        : JSON.stringify((payload as { filters_applied?: unknown }).filters_applied || {});
+    const runInsert = await supabaseAdmin
+      .from("report_runs")
+      .insert({
+        organization_id: orgId,
+        branch_id: viewerBranch,
+        definition_id: null,
+        report_type: payload.report_type,
+        filter_payload: payload.filters_applied,
+        result_payload: payload,
+        report_name: reportName,
+        report_description: reportDescription,
+        filters_summary: filtersSummary,
+        generated_by: permCtx.userId,
+      })
+      .select("id, generated_at")
+      .maybeSingle();
+    res.json({ report: payload, run_id: runInsert.data?.id || null, generated_at: runInsert.data?.generated_at || null });
+  } catch (error: any) {
+    const code = Number((error as { statusCode?: number }).statusCode || 0);
+    if (code >= 400 && code < 500) return res.status(code).json({ error: error?.message || "Request failed" });
+    res.status(500).json({ error: error?.message || "Failed to generate report." });
+  }
+});
+
+app.post("/api/reports/preview", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const payload = await buildReportPayload(req, permCtx, req.body?.report_type, req.body?.filters);
+    res.json({ preview: payload });
+  } catch (error: any) {
+    const code = Number((error as { statusCode?: number }).statusCode || 0);
+    if (code >= 400 && code < 500) return res.status(code).json({ error: error?.message || "Request failed" });
+    res.status(500).json({ error: error?.message || "Failed to preview report." });
+  }
+});
+
+app.get("/api/reports/leaders", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "report_leaders", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const orgId = String(viewerProfile.organization_id || "");
+    const viewerBranch = await assertViewerBranchScope(req, viewerProfile as OrgProfile, permCtx.userId);
+    const mainBranchId = await getMainBranchIdForOrg(orgId);
+
+    // Leaders = user profiles (staff) in the same organization, scoped to viewer's branch.
+    // Mirrors /api/org/staff filtering so the dropdown matches the role/permission page.
+    let { data: profileRows, error: profileErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, first_name, last_name, email, avatar_url, branch_id, is_org_owner, is_active")
+      .eq("organization_id", orgId)
+      .order("first_name", { ascending: true })
+      .limit(500);
+
+    if (profileErr && String(profileErr.message || "").toLowerCase().includes("avatar_url")) {
+      const r = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name, email, branch_id, is_org_owner, is_active")
+        .eq("organization_id", orgId)
+        .order("first_name", { ascending: true })
+        .limit(500);
+      profileRows = (r.data || []).map((p) => ({ ...p, avatar_url: null as string | null }));
+      profileErr = r.error;
+    }
+    if (profileErr && String(profileErr.message || "").toLowerCase().includes("is_active")) {
+      const r = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name, email, branch_id, is_org_owner")
+        .eq("organization_id", orgId)
+        .order("first_name", { ascending: true })
+        .limit(500);
+      profileRows = (r.data || []).map((p) => ({ ...p, is_active: true, avatar_url: null as string | null }));
+      profileErr = r.error;
+    }
+    if (profileErr) throw profileErr;
+
+    const raw = (profileRows || []) as Array<{
+      id: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      email?: string | null;
+      avatar_url?: string | null;
+      branch_id?: string | null;
+      is_org_owner?: boolean | null;
+      is_active?: boolean | null;
+    }>;
+
+    const scoped = raw.filter((p) => {
+      if (p.is_active === false) return false;
+      if (p.is_org_owner === true) return true;
+      return filterRowsByBranchScope([{ branch_id: p.branch_id }], viewerBranch, mainBranchId).length > 0;
+    });
+
+    const leaders = scoped.map((p) => ({
+      id: p.id,
+      first_name: p.first_name ?? null,
+      last_name: p.last_name ?? null,
+      email: p.email ?? null,
+      avatar_url: p.avatar_url ?? null,
+    }));
+
+    res.json({ leaders });
+  } catch (error: any) {
+    const code = Number((error as { statusCode?: number }).statusCode || 0);
+    if (code >= 400 && code < 500) return res.status(code).json({ error: error?.message || "Request failed" });
+    res.status(500).json({ error: error?.message || "Failed to load leaders." });
+  }
+});
+
+app.post("/api/reports/definitions", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) return res.status(400).json({ error: "name is required" });
+    const reportType = normalizeReportType(req.body?.report_type);
+    if (!canAccessReportType(permCtx, reportType)) return res.status(403).json({ error: "No access for selected report type." });
+    const filterPayload = req.body?.filters && typeof req.body.filters === "object" ? req.body.filters : {};
+    const outputPayload = req.body?.output && typeof req.body.output === "object" ? req.body.output : {};
+    const { data, error } = await supabaseAdmin
+      .from("report_definitions")
+      .insert({
+        organization_id: String(viewerProfile.organization_id),
+        branch_id: String(viewerProfile.branch_id),
+        created_by: permCtx.userId,
+        updated_by: permCtx.userId,
+        name,
+        description: typeof req.body?.description === "string" ? req.body.description.trim() || null : null,
+        report_type: reportType,
+        filter_payload: filterPayload,
+        output_payload: outputPayload,
+        is_shared: Boolean(req.body?.is_shared),
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to save report definition." });
+  }
+});
+
+app.get("/api/reports/runs", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 30) || 30));
+    const { data, error } = await supabaseAdmin
+      .from("report_runs")
+      .select("id, definition_id, report_type, report_name, report_description, filters_summary, generated_at")
+      .eq("organization_id", String(viewerProfile.organization_id))
+      .eq("branch_id", String(viewerProfile.branch_id))
+      .order("generated_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    res.json({ runs: data || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to load report run history." });
+  }
+});
+
+app.get("/api/reports/history-table", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 30) || 30));
+    const { data: runRows, error: runErr } = await supabaseAdmin
+      .from("report_runs")
+      .select("id, report_name, report_description, filters_summary, generated_at")
+      .eq("organization_id", String(viewerProfile.organization_id))
+      .eq("branch_id", String(viewerProfile.branch_id))
+      .order("generated_at", { ascending: false })
+      .limit(limit);
+    if (runErr) throw runErr;
+
+    const runIds = (runRows || []).map((r) => String((r as { id?: string }).id || "")).filter((id) => !!id);
+    const exportByRun = new Map<string, { csv_url: string | null; pdf_url: string | null; graph_url: null }>();
+    if (runIds.length > 0) {
+      try {
+        const { data: exRows, error: exErr } = await supabaseAdmin
+          .from("report_exports")
+          .select("run_id, export_format, file_url, exported_at")
+          .in("run_id", runIds)
+          .order("exported_at", { ascending: false });
+        if (exErr && !isMissingReportExportsTableError(exErr)) throw exErr;
+        for (const row of (exRows || []) as Array<{ run_id?: string | null; export_format?: string | null; file_url?: string | null }>) {
+          const rid = String(row.run_id || "");
+          if (!rid) continue;
+          const curr = exportByRun.get(rid) || { csv_url: null, pdf_url: null, graph_url: null };
+          const fmt = String(row.export_format || "").toLowerCase();
+          if (fmt === "csv" && !curr.csv_url) curr.csv_url = row.file_url || null;
+          if (fmt === "pdf" && !curr.pdf_url) curr.pdf_url = row.file_url || null;
+          exportByRun.set(rid, curr);
+        }
+      } catch (e) {
+        if (!isMissingReportExportsTableError(e)) throw e;
+      }
+    }
+
+    const rows = (runRows || []).map((r) => {
+      const rr = r as { id?: string; report_name?: string | null; report_description?: string | null; filters_summary?: string | null; generated_at?: string | null };
+      const links = exportByRun.get(String(rr.id || "")) || { csv_url: null, pdf_url: null, graph_url: null };
+      return {
+        run_id: String(rr.id || ""),
+        report_name: String(rr.report_name || "Generated report"),
+        description: rr.report_description || "",
+        date: rr.generated_at || null,
+        data_filtered: rr.filters_summary || "",
+        export: links,
+      };
+    });
+    res.json({ rows });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to load report history table." });
+  }
+});
+
+app.get("/api/reports/definitions", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const { data, error } = await supabaseAdmin
+      .from("report_definitions")
+      .select("*")
+      .eq("organization_id", String(viewerProfile.organization_id))
+      .eq("branch_id", String(viewerProfile.branch_id))
+      .eq("is_archived", false)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    res.json({ definitions: data || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to load saved reports." });
+  }
+});
+
+app.get("/api/reports/definitions/:id", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const defId = req.params.id;
+    if (!isUuidString(defId)) return res.status(400).json({ error: "Invalid report definition id." });
+    const { data, error } = await supabaseAdmin.from("report_definitions").select("*").eq("id", defId).maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Saved report not found." });
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to load report definition." });
+  }
+});
+
+app.patch("/api/reports/definitions/:id", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const defId = req.params.id;
+    if (!isUuidString(defId)) return res.status(400).json({ error: "Invalid report definition id." });
+    const patch: Record<string, unknown> = {
+      updated_by: permCtx.userId,
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof req.body?.name === "string" && req.body.name.trim()) patch.name = req.body.name.trim();
+    if (typeof req.body?.report_type === "string") patch.report_type = normalizeReportType(req.body.report_type);
+    if (req.body?.filters && typeof req.body.filters === "object") patch.filter_payload = req.body.filters;
+    if (req.body?.output && typeof req.body.output === "object") patch.output_payload = req.body.output;
+    if (typeof req.body?.is_shared === "boolean") patch.is_shared = req.body.is_shared;
+    if (typeof req.body?.is_archived === "boolean") patch.is_archived = req.body.is_archived;
+    const { data, error } = await supabaseAdmin.from("report_definitions").update(patch).eq("id", defId).select("*").maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Saved report not found." });
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to update report definition." });
+  }
+});
+
+app.post("/api/reports/definitions/:id/run", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, ["report_view", "view_analytics"]);
+  if (!permCtx) return;
+  try {
+    const defId = req.params.id;
+    if (!isUuidString(defId)) return res.status(400).json({ error: "Invalid report definition id." });
+    const { data: def, error: defErr } = await supabaseAdmin.from("report_definitions").select("*").eq("id", defId).maybeSingle();
+    if (defErr) throw defErr;
+    if (!def) return res.status(404).json({ error: "Saved report not found." });
+    const reportType = String((def as { report_type?: string }).report_type || "group");
+    const filters = (def as { filter_payload?: unknown }).filter_payload || {};
+    const payload = await buildReportPayload(req, permCtx, reportType, filters);
+
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    const { data: runRow, error: runErr } = await supabaseAdmin
+      .from("report_runs")
+      .insert({
+        organization_id: String(viewerProfile?.organization_id || ""),
+        branch_id: String(viewerProfile?.branch_id || ""),
+        definition_id: defId,
+        report_type: payload.report_type,
+        filter_payload: payload.filters_applied,
+        result_payload: payload,
+        report_name: String((def as { name?: string }).name || "Saved report"),
+        report_description: String((def as { description?: string | null }).description || ""),
+        filters_summary:
+          typeof (payload as { filters_summary?: unknown }).filters_summary === "string" &&
+          String((payload as { filters_summary?: string }).filters_summary).trim()
+            ? String((payload as { filters_summary: string }).filters_summary).trim()
+            : JSON.stringify((payload as { filters_applied?: unknown }).filters_applied || {}),
+        generated_by: permCtx.userId,
+      })
+      .select("id, generated_at")
+      .single();
+    if (runErr) throw runErr;
+    res.json({ report: payload, run_id: runRow.id, generated_at: runRow.generated_at });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to run saved report." });
+  }
+});
+
+app.post("/api/reports/exports", async (req, res) => {
+  const permCtx = await requirePermission(req, res, "export_data");
+  if (!permCtx) return;
+
+  try {
+    const format = String(req.body?.format || "csv").trim().toLowerCase();
+    if (!["csv", "pdf"].includes(format)) return res.status(400).json({ error: "format must be csv or pdf" });
+    const runId = typeof req.body?.run_id === "string" && isUuidString(req.body.run_id) ? req.body.run_id : null;
+    const defId = typeof req.body?.definition_id === "string" && isUuidString(req.body.definition_id) ? req.body.definition_id : null;
+
+    let reportPayload = req.body?.report && typeof req.body.report === "object" ? req.body.report : null;
+    if (!reportPayload && runId) {
+      const { data: runRow } = await supabaseAdmin.from("report_runs").select("result_payload").eq("id", runId).maybeSingle();
+      reportPayload = (runRow as { result_payload?: unknown } | null)?.result_payload || null;
+    }
+    if (!reportPayload || typeof reportPayload !== "object") {
+      return res.status(400).json({ error: "report payload is required for export." });
+    }
+
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    const report = reportPayload as Record<string, unknown>;
+    const rawRows = Array.isArray(report.raw_preview_rows) ? (report.raw_preview_rows as Array<Record<string, unknown>>) : [];
+    const rt = parseReportType((report as { report_type?: string }).report_type);
+    const reportName =
+      String((report as { name?: string; report_name?: string }).name || (report as { report_name?: string }).report_name || "").trim() ||
+      undefined;
+    const csvResult = buildReportExportCsv(rawRows, rt);
+    const pdfResult = buildReportExportPdfBase64(reportName, rawRows, rt);
+    const content =
+      format === "pdf" ? pdfResult.contentBase64 : csvResult.content;
+    const mimeType = format === "pdf" ? pdfResult.mime : csvResult.mime;
+    const ext = format === "pdf" ? pdfResult.ext : csvResult.ext;
+    const fileSize = format === "pdf" ? Buffer.from(content, "base64").length : String(content).length;
+    const filename = `sheepmug-report-${Date.now()}.${ext}`;
+
+    let fileUrl: string | null = null;
+    try {
+      const { data: exportRow, error: exportErr } = await supabaseAdmin.from("report_exports").insert({
+        organization_id: String(viewerProfile?.organization_id || ""),
+        branch_id: String(viewerProfile?.branch_id || ""),
+        run_id: runId,
+        definition_id: defId,
+        export_format: format,
+        exported_by: permCtx.userId,
+        file_content: content,
+        mime_type: mimeType,
+        file_size: fileSize,
+        export_meta: {
+          requested_at: new Date().toISOString(),
+          encoding: format === "pdf" ? "base64" : "utf8",
+        },
+      }).select("id").single();
+      if (exportErr) throw exportErr;
+      fileUrl = `/api/reports/exports/${exportRow.id}/download`;
+      await supabaseAdmin.from("report_exports").update({ file_url: fileUrl, storage_path: fileUrl }).eq("id", exportRow.id);
+    } catch (e) {
+      if (!isMissingReportExportsTableError(e)) throw e;
+      fileUrl = null;
+    }
+
+    res.json({
+      format: format as "csv" | "pdf",
+      filename,
+      content,
+      file_url: fileUrl || undefined,
+      message: format === "pdf" ? "PDF export generated." : "CSV export generated.",
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || "Failed to prepare report export." });
+  }
+});
+
+app.get("/api/reports/exports/:id/download", async (req, res) => {
+  const permCtx = await requirePermission(req, res, "export_data");
+  if (!permCtx) return;
+  try {
+    const exportId = req.params.id;
+    if (!isUuidString(exportId)) return res.status(400).json({ error: "Invalid export id." });
+    const { data: row, error } = await supabaseAdmin
+      .from("report_exports")
+      .select("organization_id, branch_id, export_format, file_content, mime_type")
+      .eq("id", exportId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) return res.status(404).json({ error: "Export not found." });
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    if (String(row.organization_id || "") !== String(viewerProfile.organization_id || "")) {
+      return res.status(403).json({ error: "Export is outside your organization scope." });
+    }
+    const content = String((row as { file_content?: string | null }).file_content || "");
+    const format = String((row as { export_format?: string | null }).export_format || "csv");
+    const mime = String((row as { mime_type?: string | null }).mime_type || "text/plain");
+    const isPdf = format === "pdf" && mime.includes("pdf");
+    const ext = format === "csv" ? "csv" : isPdf ? "pdf" : "txt";
+    res.setHeader("Content-Type", isPdf ? "application/pdf" : mime);
+    res.setHeader("Content-Disposition", `attachment; filename="report-export-${exportId}.${ext}"`);
+    if (isPdf) {
+      res.send(Buffer.from(content, "base64"));
+    } else {
+      res.send(content);
+    }
+  } catch (error: any) {
+    if (isMissingReportExportsTableError(error)) {
+      return res.status(404).json({ error: "Export storage table is not available yet. Run report export migrations first." });
+    }
+    res.status(500).json({ error: error?.message || "Failed to download report export." });
   }
 });
 
@@ -14183,6 +16200,11 @@ app.get("/api/groups/:groupId/events", async (req, res) => {
         end_time: (ev.end_time as string | null) ?? null,
         event_type: (ev.event_type as string | null) ?? null,
         status: (ev.status as string | null) ?? null,
+        cover_image_url: (ev.cover_image_url as string | null) ?? null,
+        location_type: (ev.location_type as string | null) ?? null,
+        location_details: (ev.location_details as string | null) ?? null,
+        online_meeting_url: (ev.online_meeting_url as string | null) ?? null,
+        notes: (ev.notes as string | null) ?? null,
         group_name: groupName,
       };
     });
@@ -16419,6 +18441,24 @@ app.post("/api/event-types", async (req, res) => {
     if (error) {
       return res.status(500).json({ error: error.message || "Failed to create event type" });
     }
+    if (created?.id) {
+      const mainBranchIdForSync = await getMainBranchIdForOrg(userProfile.organization_id as string);
+      try {
+        await syncSingleDefaultEventTypePerScope(
+          userProfile.organization_id as string,
+          viewerBranch,
+          mainBranchIdForSync,
+          body.is_default === true ? created.id : null,
+        );
+      } catch {
+        /* is_default column may be missing until migration runs */
+      }
+      const refetch = await supabaseAdmin.from("event_types").select("*").eq("id", created.id).maybeSingle();
+      if (refetch.data) {
+        res.status(201).json(refetch.data);
+        return;
+      }
+    }
     res.status(201).json(created);
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
@@ -16457,7 +18497,7 @@ app.patch("/api/event-types/:id", async (req, res) => {
 
     const { data: existing } = await supabaseAdmin
       .from("event_types")
-      .select("id, branch_id")
+      .select("id, branch_id, slug, name, is_default")
       .eq("id", id)
       .eq("organization_id", orgId)
       .maybeSingle();
@@ -16473,6 +18513,17 @@ app.patch("/api/event-types/:id", async (req, res) => {
     if (body.is_active === true || body.is_active === false) patch.is_active = body.is_active;
     patch.updated_at = new Date().toISOString();
 
+    const wasDefault = Boolean((existing as { is_default?: boolean }).is_default);
+    if (body.is_default === true) {
+      try {
+        await syncSingleDefaultEventTypePerScope(orgId, viewerBranch, mainBranchId, id);
+      } catch {
+        /* `is_default` column missing until migration is applied */
+      }
+    } else if (body.is_default === false) {
+      patch.is_default = false;
+    }
+
     const { data: updated, error } = await supabaseAdmin
       .from("event_types")
       .update(patch)
@@ -16482,6 +18533,16 @@ app.patch("/api/event-types/:id", async (req, res) => {
       .single();
     if (error) throw error;
     if (!updated) return res.status(404).json({ error: "Not found" });
+    if (body.is_default === false && wasDefault) {
+      try {
+        await syncSingleDefaultEventTypePerScope(orgId, viewerBranch, mainBranchId, null);
+      } catch {
+        /* until migration */
+      }
+      const { data: refreshed } = await supabaseAdmin.from("event_types").select("*").eq("id", id).maybeSingle();
+      res.json(refreshed || updated);
+      return;
+    }
     res.json(updated);
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
@@ -16520,20 +18581,76 @@ app.delete("/api/event-types/:id", async (req, res) => {
 
     const { data: existing } = await supabaseAdmin
       .from("event_types")
-      .select("id, branch_id")
+      .select("id, branch_id, slug, name, is_default")
       .eq("id", id)
       .eq("organization_id", orgId)
       .maybeSingle();
     if (!existing) return res.status(404).json({ error: "Not found" });
     assertConfigRowInBranchScope(existing as { branch_id?: string | null }, viewerBranch, mainBranchId);
 
-    const { error } = await supabaseAdmin
+    const oldSlug = slugifyLabel(String((existing as { slug?: string | null }).slug || ""));
+    const deletedWasDefault = Boolean((existing as { is_default?: boolean }).is_default);
+
+    const { data: allTypes } = await supabaseAdmin
       .from("event_types")
-      .delete()
-      .eq("id", id)
+      .select("id, branch_id, slug, name, is_default")
       .eq("organization_id", orgId);
-    if (error) throw error;
-    res.status(200).json({ ok: true });
+    const candidates = filterRowsByBranchScope((allTypes || []) as EventTypeBranchRow[], viewerBranch, mainBranchId).filter(
+      (t) => t.id !== id,
+    );
+    if (candidates.length === 0) {
+      return res.status(400).json({ error: "Cannot delete the last event type for this branch." });
+    }
+    const replacement =
+      candidates.find((t) => Boolean(t.is_default)) ||
+      ([...candidates].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))[0] as EventTypeBranchRow);
+    const replacementId = replacement.id;
+    const newSlug = slugifyLabel(String(replacement.slug || ""));
+
+    const { count: outlineCount } = await supabaseAdmin
+      .from("event_outline")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", orgId)
+      .eq("event_type_id", id);
+
+    const { data: evRows } = await supabaseAdmin.from("events").select("id, event_type").eq("organization_id", orgId);
+    const oldLc = oldSlug.toLowerCase();
+    const eventIds = (evRows || [])
+      .filter((e: { event_type?: string | null }) => String(e.event_type || "").trim().toLowerCase() === oldLc)
+      .map((e: { id?: string }) => String(e.id || ""))
+      .filter((eid) => isUuidString(eid));
+
+    const now = new Date().toISOString();
+    const outlineUp = await supabaseAdmin
+      .from("event_outline")
+      .update({ event_type_id: replacementId, updated_at: now })
+      .eq("organization_id", orgId)
+      .eq("event_type_id", id);
+    if (outlineUp.error) throw outlineUp.error;
+
+    const chunk = 100;
+    for (let i = 0; i < eventIds.length; i += chunk) {
+      const slice = eventIds.slice(i, i + chunk);
+      const evUp = await supabaseAdmin.from("events").update({ event_type: newSlug, updated_at: now }).in("id", slice);
+      if (evUp.error) throw evUp.error;
+    }
+
+    const { error: delErr } = await supabaseAdmin.from("event_types").delete().eq("id", id).eq("organization_id", orgId);
+    if (delErr) throw delErr;
+
+    try {
+      await syncSingleDefaultEventTypePerScope(orgId, viewerBranch, mainBranchId, deletedWasDefault ? replacementId : null);
+    } catch {
+      /* until migration */
+    }
+
+    res.status(200).json({
+      ok: true,
+      moved_events: eventIds.length,
+      moved_templates: typeof outlineCount === "number" ? outlineCount : 0,
+      replacement_type_id: replacementId,
+      replacement_slug: newSlug,
+    });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
     if (typeof code === "number" && code >= 400 && code < 500) {
@@ -18702,6 +20819,23 @@ async function saveEventAttendanceRows(rows: Record<string, unknown>[]): Promise
   }
 }
 
+function eventAttendanceScheduleFields(event: {
+  start_time?: string | null;
+  start_date?: string | null;
+}): { event_start: string | null; attendance_opens_at: string | null } {
+  const raw =
+    event.start_time != null && String(event.start_time).trim() !== ""
+      ? event.start_time
+      : event.start_date;
+  if (raw == null || !String(raw).trim()) return { event_start: null, attendance_opens_at: null };
+  const t = new Date(String(raw));
+  if (Number.isNaN(t.getTime())) return { event_start: String(raw), attendance_opens_at: null };
+  return {
+    event_start: String(raw),
+    attendance_opens_at: new Date(t.getTime() - 5 * 60 * 1000).toISOString(),
+  };
+}
+
 /** Roster + attendance: union of all linked group rosters and event_assigned_members. */
 app.get("/api/events/:id/attendance", async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -18731,7 +20865,7 @@ app.get("/api/events/:id/attendance", async (req, res) => {
 
     const { data: event, error: evErr } = await supabaseAdmin
       .from("events")
-      .select("id, organization_id, branch_id, group_id, start_time")
+      .select("id, organization_id, branch_id, group_id, start_time, start_date")
       .eq("id", id)
       .eq("organization_id", userProfile.organization_id)
       .maybeSingle();
@@ -18739,6 +20873,9 @@ app.get("/api/events/:id/attendance", async (req, res) => {
     if (evErr) throw evErr;
     if (!event) return res.status(404).json({ error: "Event not found" });
     assertEntityBranch((event as { branch_id?: string | null }).branch_id, viewerBranch, "event");
+    const scheduleMeta = eventAttendanceScheduleFields(
+      event as { start_time?: string | null; start_date?: string | null },
+    );
 
     const { data: profAttGet } = await supabaseAdmin
       .from("profiles")
@@ -18810,6 +20947,8 @@ app.get("/api/events/:id/attendance", async (req, res) => {
     if (rosterMemberIds.length === 0) {
       return res.json({
         event_id: event.id,
+        event_start: scheduleMeta.event_start,
+        attendance_opens_at: scheduleMeta.attendance_opens_at,
         assigned_groups,
         filter_groups: [],
         members: [],
@@ -18888,6 +21027,8 @@ app.get("/api/events/:id/attendance", async (req, res) => {
 
     res.json({
       event_id: event.id,
+      event_start: scheduleMeta.event_start,
+      attendance_opens_at: scheduleMeta.attendance_opens_at,
       assigned_groups,
       filter_groups: filterGroups,
       members: rosterMembers,
@@ -18934,7 +21075,7 @@ app.put("/api/events/:id/attendance", async (req, res) => {
 
     const { data: event, error: evErr } = await supabaseAdmin
       .from("events")
-      .select("id, organization_id, branch_id, group_id, start_time")
+      .select("id, organization_id, branch_id, group_id, start_time, start_date")
       .eq("id", id)
       .eq("organization_id", userProfile.organization_id)
       .maybeSingle();
@@ -18958,6 +21099,19 @@ app.put("/api/events/:id/attendance", async (req, res) => {
       (event as { group_id?: string | null }).group_id,
     );
     if (!canSeeAttPut) return res.status(403).json({ error: "Not allowed to update attendance for this event" });
+
+    const startMs = eventStartMsFromRow(
+      event as { start_time?: string | null; start_date?: string | null },
+    );
+    if (startMs != null) {
+      const g = gateAttendanceRecording(startMs, Date.now());
+      if (!g.allowed) {
+        return res.status(400).json({
+          error: g.userMessage,
+          opens_at: new Date(g.opensAtMs).toISOString(),
+        });
+      }
+    }
 
     const body = req.body || {};
     const updates = Array.isArray(body.updates) ? body.updates : null;

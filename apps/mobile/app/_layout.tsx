@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Stack } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -18,6 +17,7 @@ import { useRouter } from "expo-router";
 import { OfflineSyncProvider } from "../contexts/OfflineSyncContext";
 import { authenticateWithBiometrics, getBiometricAvailability } from "../lib/biometric";
 import { getBiometricUnlockEnabled, setBiometricUnlockEnabled } from "../lib/storage";
+import { initPreventAutoHideSplash, safeHideSplashAsync } from "../lib/safeSplashScreen";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -29,7 +29,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-void SplashScreen.preventAutoHideAsync();
+initPreventAutoHideSplash();
 
 /** Avoid handling the same cold-start notification twice (e.g. React Strict Mode). */
 let expoPushColdStartHandled = false;
@@ -39,7 +39,7 @@ function SplashSafetyHide() {
   useEffect(() => {
     const t = setTimeout(() => {
       devWarn("root: 14s splash safety hide");
-      void SplashScreen.hideAsync().catch(() => {});
+      void safeHideSplashAsync();
     }, 14_000);
     return () => clearTimeout(t);
   }, []);
@@ -231,6 +231,7 @@ function RootNavigator() {
         <Stack.Screen name="group-join-requests" options={{ title: "Group join requests" }} />
         <Stack.Screen name="member-join-requests" options={{ title: "Member join requests" }} />
         <Stack.Screen name="important-dates" options={{ title: "All Important Dates" }} />
+        <Stack.Screen name="reports" options={{ title: "Reports", headerShown: true }} />
         <Stack.Screen name="profile-details" options={{ title: "Profile Details" }} />
         <Stack.Screen name="families" options={{ title: "Families" }} />
         <Stack.Screen name="family/[id]" options={{ title: "Family" }} />

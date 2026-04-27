@@ -671,6 +671,7 @@ export function EventUpsertModal({ visible, editingEvent = null, onClose, onSave
                 const slug = String(row.slug || "").trim();
                 const key = slug || String(row.id);
                 const active = normalizeEventTypeSlug(selectedEventTypeSlug) === normalizeEventTypeSlug(slug);
+                const isDefault = Boolean((row as { is_default?: boolean }).is_default);
                 const label = displayMemberWords(String(row.name || slug || "Type"));
                 return (
                   <Pressable
@@ -678,7 +679,10 @@ export function EventUpsertModal({ visible, editingEvent = null, onClose, onSave
                     style={[styles.pill, active && styles.pillActive]}
                     onPress={() => setSelectedEventTypeSlug(normalizeEventTypeSlug(slug))}
                   >
-                    <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
+                    <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                      {label}
+                      {isDefault ? " · default" : ""}
+                    </Text>
                   </Pressable>
                 );
               })}

@@ -89,6 +89,8 @@ export function AddMinistryModal({ visible, onClose, onCreated }: Props) {
       title="Create New Ministry"
       subtitle="Add a ministry to your branch."
       variant="compact"
+      dynamicHeight
+      backdropColor="transparent"
       footer={
         <Pressable
           onPress={() => void submit()}

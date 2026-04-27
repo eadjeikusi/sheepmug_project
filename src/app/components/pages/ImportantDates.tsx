@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
 import type { UpcomingImportantDateItem } from '@/types';
+import { ImportantDatesListSkeleton } from '@/components/skeletons/data-skeletons';
 
 const RANGE_OPTIONS: Array<{ id: number; label: string }> = [
   { id: 7, label: '7 days' },
@@ -93,7 +94,7 @@ export default function ImportantDates() {
 
       <div className="rounded-xl border border-gray-200 bg-white">
         {loading ? (
-          <div className="p-10 text-sm text-gray-500 text-center">Loading important dates...</div>
+          <ImportantDatesListSkeleton rows={7} />
         ) : items.length === 0 ? (
           <div className="p-10 text-sm text-gray-500 text-center">No upcoming important dates found.</div>
         ) : (

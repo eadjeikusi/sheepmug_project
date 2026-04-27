@@ -12,6 +12,10 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "notification": {
+      "icon": "./assets/sheepmug-logo.png",
+      "color": "#2563eb"
+    },
     "plugins": [
       [
         "expo-image-picker",
@@ -25,6 +29,13 @@
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow SheepMug to use Face ID so only you can unlock this app quickly."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/sheepmug-logo.png",
+          "color": "#2563eb"
         }
       ]
     ],

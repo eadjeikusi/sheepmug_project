@@ -14,6 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,6 +33,7 @@ import { formatEventLocationSummary } from "../../lib/eventLocation";
 import { eventTypeSlugFromEvent, labelForEventTypeSlug, normalizeEventTypeSlug } from "../../lib/eventTypeDisplay";
 import { getGroupShareUrls } from "../../lib/groupPublicUrls";
 import { normalizeImageUri } from "../../lib/imageUri";
+import { uploadMemberImageFromUri } from "../../lib/uploadMemberImage";
 import {
   displayMemberWords,
   formatCalendarCountdown,
@@ -382,9 +384,10 @@ export default function MinistryDetailScreen() {
     height: number;
   } | null>(null);
   const [linkQrKind, setLinkQrKind] = useState<null | "public" | "join">(null);
-  const [leaderSheetLeader, setLeaderSheetLeader] = useState<MinistryLeaderListItem | null>(null);
   const [leadersPickerOpen, setLeadersPickerOpen] = useState(false);
   const [createSubgroupOpen, setCreateSubgroupOpen] = useState(false);
+  const [updatingCoverImage, setUpdatingCoverImage] = useState(false);
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
   const overflowMenuRef = useRef<View>(null);
 
   const [memberSearch, setMemberSearch] = useState("");
@@ -568,6 +571,38 @@ export default function MinistryDetailScreen() {
     });
   }, []);
 
+  const editCoverImage = useCallback(async () => {
+    if (!id || !canManageGroups || updatingCoverImage) return;
+    closeHeaderMenu();
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to choose a cover image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsEditing: true,
+      aspect: [3, 2],
+      selectionLimit: 1,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+    setUpdatingCoverImage(true);
+    try {
+      const uploadedUrl = await uploadMemberImageFromUri(result.assets[0].uri);
+      const updated = await api.groups.update(
+        id,
+        { cover_image_url: uploadedUrl } as unknown as { name?: string; description?: string | null; group_type?: string | null }
+      );
+      setGroup(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update cover image";
+      Alert.alert("Cover image", message);
+    } finally {
+      setUpdatingCoverImage(false);
+    }
+  }, [id, canManageGroups, updatingCoverImage, closeHeaderMenu]);
+
   const eventTypeFilterOptions = useMemo(() => {
     return eventTypeRows
       .map((r) => {
@@ -740,12 +775,19 @@ export default function MinistryDetailScreen() {
     <SafeAreaView style={styles.safeArea} edges={["bottom", "left", "right"]}>
       <ScrollView
         contentContainerStyle={styles.container}
+        stickyHeaderIndices={[1]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.coverWrap}>
           {coverUri ? (
-            <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+            <Pressable
+              onPress={() => setCoverPreviewOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open cover image"
+            >
+              <Image source={{ uri: coverUri }} style={styles.coverImage} resizeMode="cover" />
+            </Pressable>
           ) : (
             <View style={styles.coverPlaceholder}>
               <Ionicons name="image-outline" size={48} color="#94a3b8" />
@@ -768,83 +810,37 @@ export default function MinistryDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.title}>{displayMemberWords(String(group?.name || "Ministry"))}</Text>
-          <Text style={styles.subtitle}>
-            {group?.description?.trim() ? displayMemberWords(group.description) : "No description"}
-          </Text>
-          {resolvedLeaders.length > 0 ? (
-            <View style={styles.leaderHeroSection}>
-              <Text style={styles.leaderHeroLabel}>
-                {resolvedLeaders.length > 1 ? "Assigned leaders" : "Assigned leader"}
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.leaderHeroScrollContent}
-                nestedScrollEnabled
-              >
-                {resolvedLeaders.map((leader, idx) => (
-                  <Pressable
-                    key={leader.kind === "member" ? leader.memberId : leader.profileId ?? `leader-${idx}`}
-                    onPress={() => setLeaderSheetLeader(leader)}
-                    style={({ pressed }) => [styles.leaderHeroTile, pressed && styles.leaderHeroRowPressed]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Leader ${leader.name}. Double tap for details.`}
-                  >
-                    {leader.imageUri ? (
-                      <Image
-                        source={{ uri: leader.imageUri }}
-                        style={styles.leaderHeroAvatar}
-                        accessibilityIgnoresInvertColors
-                      />
-                    ) : (
-                      <MemberInitialAvatar
-                        initial={(leader.name.trim()[0] || "?").toUpperCase()}
-                        size={44}
-                      />
-                    )}
-                    <Text
-                      style={styles.leaderHeroNameTile}
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
-                    >
-                      {displayMemberWords(leader.name)}
-                    </Text>
-                    <Text style={styles.leaderHeroHint}>Details</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          ) : (
-            <Text style={styles.mutedSmall}>
-              No leader assigned. Use the ··· menu → Group leader after one is set, or assign on the web ministry page.
-            </Text>
-          )}
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.segmentScroll}
-        >
-          <View style={styles.segmentWrap}>
-            {visibleTabs.map((t) => {
-              const active = tab === t;
-              return (
-                <Pressable
-                  key={t}
-                  onPress={() => setTab(t)}
-                  style={[styles.segmentItem, active && styles.segmentItemActive]}
-                >
-                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]} numberOfLines={1}>
-                    {tabLabel(t)}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        <View style={styles.stickyTopSection}>
+          <View style={styles.heroCard}>
+            <Text style={styles.title}>{displayMemberWords(String(group?.name || "Ministry"))}</Text>
+            {group?.description?.trim() ? (
+              <Text style={styles.subtitle}>{displayMemberWords(group.description)}</Text>
+            ) : null}
           </View>
-        </ScrollView>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.segmentScroll}
+          >
+            <View style={styles.segmentWrap}>
+              {visibleTabs.map((t) => {
+                const active = tab === t;
+                return (
+                  <Pressable
+                    key={t}
+                    onPress={() => setTab(t)}
+                    style={[styles.segmentItem, active && styles.segmentItemActive]}
+                  >
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]} numberOfLines={1}>
+                      {tabLabel(t)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
 
         {loading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: 16 }} />
@@ -1150,6 +1146,25 @@ export default function MinistryDetailScreen() {
                 <Ionicons name="link-outline" size={22} color={colors.textPrimary} />
                 <Text style={styles.headerDropdownLabel}>Join Request Link</Text>
               </Pressable>
+              {canManageGroups ? (
+                <>
+                  <View style={styles.headerDropdownDivider} />
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.headerDropdownRow,
+                      pressed && styles.headerDropdownRowPressed,
+                      updatingCoverImage && { opacity: 0.65 },
+                    ]}
+                    onPress={() => void editCoverImage()}
+                    disabled={updatingCoverImage}
+                  >
+                    <Ionicons name="image-outline" size={22} color={colors.textPrimary} />
+                    <Text style={styles.headerDropdownLabel}>
+                      {updatingCoverImage ? "Updating cover..." : "Edit cover image"}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
               {resolvedLeaders.length > 0 ? (
                 <>
                   <View style={styles.headerDropdownDivider} />
@@ -1157,11 +1172,7 @@ export default function MinistryDetailScreen() {
                     style={({ pressed }) => [styles.headerDropdownRow, pressed && styles.headerDropdownRowPressed]}
                     onPress={() => {
                       closeHeaderMenu();
-                      if (resolvedLeaders.length === 1) {
-                        setLeaderSheetLeader(resolvedLeaders[0]);
-                      } else {
-                        setLeadersPickerOpen(true);
-                      }
+                      setLeadersPickerOpen(true);
                     }}
                   >
                     <Ionicons name="ribbon-outline" size={22} color={colors.textPrimary} />
@@ -1177,6 +1188,27 @@ export default function MinistryDetailScreen() {
       </Modal>
 
       <Modal
+        visible={coverPreviewOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCoverPreviewOpen(false)}
+      >
+        <Pressable style={styles.coverPreviewBackdrop} onPress={() => setCoverPreviewOpen(false)}>
+          <View style={styles.coverPreviewInner}>
+            {coverUri ? <Image source={{ uri: coverUri }} style={styles.coverPreviewImage} resizeMode="contain" /> : null}
+            <Pressable
+              style={({ pressed }) => [styles.coverPreviewCloseBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => setCoverPreviewOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close cover image preview"
+            >
+              <Ionicons name="close" size={24} color="#ffffff" />
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={leadersPickerOpen}
         transparent
         animationType="fade"
@@ -1187,85 +1219,24 @@ export default function MinistryDetailScreen() {
             <Text style={styles.modalTitle}>Group leaders</Text>
             <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
               {resolvedLeaders.map((leader, idx) => (
-                <Pressable
+                <View
                   key={leader.kind === "member" ? leader.memberId : leader.profileId ?? `pick-${idx}`}
-                  style={({ pressed }) => [
-                    styles.headerDropdownRow,
-                    pressed && styles.headerDropdownRowPressed,
-                    { paddingVertical: 12 },
-                  ]}
-                  onPress={() => {
-                    setLeadersPickerOpen(false);
-                    setLeaderSheetLeader(leader);
-                  }}
+                  style={styles.leaderPopupRow}
                 >
-                  <Ionicons name="person-outline" size={22} color={colors.textPrimary} />
-                  <Text
-                    style={[styles.headerDropdownLabel, { flex: 1, flexShrink: 1, minWidth: 0 }]}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
+                  {leader.imageUri ? (
+                    <Image source={{ uri: leader.imageUri }} style={styles.leaderPopupAvatar} accessibilityIgnoresInvertColors />
+                  ) : (
+                    <MemberInitialAvatar initial={(leader.name.trim()[0] || "?").toUpperCase()} size={40} />
+                  )}
+                  <Text style={styles.leaderPopupName} numberOfLines={1} ellipsizeMode="tail">
                     {displayMemberWords(leader.name)}
                   </Text>
-                </Pressable>
+                </View>
               ))}
             </ScrollView>
             <Pressable style={styles.modalClose} onPress={() => setLeadersPickerOpen(false)}>
               <Text style={styles.modalCloseText}>Cancel</Text>
             </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={leaderSheetLeader != null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLeaderSheetLeader(null)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setLeaderSheetLeader(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            {leaderSheetLeader ? (
-              <>
-                <Text style={styles.modalTitle}>Group leader</Text>
-                <View style={{ alignItems: "center", marginVertical: 16 }}>
-                  {leaderSheetLeader.imageUri ? (
-                    <Image
-                      source={{ uri: leaderSheetLeader.imageUri }}
-                      style={{ width: 96, height: 96, borderRadius: 48 }}
-                      accessibilityIgnoresInvertColors
-                    />
-                  ) : (
-                    <MemberInitialAvatar
-                      initial={(leaderSheetLeader.name.trim()[0] || "?").toUpperCase()}
-                      size={96}
-                    />
-                  )}
-                </View>
-                <Text
-                  style={[styles.modalLine, { textAlign: "center", fontWeight: "600", alignSelf: "stretch" }]}
-                  numberOfLines={2}
-                  ellipsizeMode="tail"
-                >
-                  {displayMemberWords(leaderSheetLeader.name)}
-                </Text>
-                {leaderSheetLeader.kind === "member" ? (
-                  <Pressable
-                    style={[styles.viewMemberBtn, { marginTop: 16 }]}
-                    onPress={() => {
-                      const idMember = leaderSheetLeader.memberId;
-                      setLeaderSheetLeader(null);
-                      router.push({ pathname: "/member/[id]", params: { id: idMember } });
-                    }}
-                  >
-                    <Text style={styles.viewMemberBtnText}>View profile</Text>
-                  </Pressable>
-                ) : null}
-                <Pressable style={styles.modalClose} onPress={() => setLeaderSheetLeader(null)}>
-                  <Text style={styles.modalCloseText}>Close</Text>
-                </Pressable>
-              </>
-            ) : null}
           </Pressable>
         </Pressable>
       </Modal>
@@ -1532,6 +1503,12 @@ const eventStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.bg },
   container: { paddingHorizontal: 16, gap: 12, paddingBottom: 28 },
+  stickyTopSection: {
+    backgroundColor: colors.bg,
+    gap: 10,
+    paddingBottom: 4,
+    zIndex: 5,
+  },
   coverWrap: {
     marginHorizontal: -16,
     height: 220,
@@ -1705,6 +1682,27 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
     marginLeft: 14,
+  },
+  leaderPopupRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+  },
+  leaderPopupAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#f1f5f9",
+  },
+  leaderPopupName: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+    color: colors.textPrimary,
+    fontWeight: type.bodyStrong.weight,
   },
   qrPopupBackdrop: {
     flex: 1,
@@ -2020,6 +2018,34 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   helper: { fontSize: type.body.size, color: colors.textSecondary },
+  coverPreviewBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+  coverPreviewInner: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coverPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  coverPreviewCloseBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15,23,42,0.7)",
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

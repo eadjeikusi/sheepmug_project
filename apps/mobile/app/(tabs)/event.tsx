@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { EventListSkeleton } from "../../components/DataSkeleton";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +38,12 @@ import {
 } from "../../lib/memberDisplayFormat";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
 import { hydratePayloadWithOfflineImages } from "../../lib/offline/imageCache";
+import {
+  buildGroupTreeSelection,
+  buildMinistryTreeRows,
+  filterVisibleMinistryTreeRows,
+  toggleMinistryInSet,
+} from "../../lib/ministryGroupTree";
 
 type WhenMode = "upcoming" | "past";
 const PAGE_SIZE = 10;
@@ -188,6 +195,12 @@ export default function EventScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [eventsTotalCount, setEventsTotalCount] = useState(0);
+  /** `ministry` = hierarchy picker; cannot use a second RN Modal on top of FormModalShell (nesting fails). */
+  const [eventFilterSheet, setEventFilterSheet] = useState<"main" | "ministry">("main");
+  const [expandedEventMinistryNodes, setExpandedEventMinistryNodes] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [ministryEventSearchQuery, setMinistryEventSearchQuery] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -350,6 +363,22 @@ export default function EventScreen() {
     return list;
   }, [groups, events]);
 
+  const groupTree = useMemo(() => buildGroupTreeSelection(groups), [groups]);
+  const ministryTreeRows = useMemo(() => buildMinistryTreeRows(groups), [groups]);
+  const visibleEventMinistryRows = useMemo(
+    () => filterVisibleMinistryTreeRows(ministryTreeRows, expandedEventMinistryNodes, ministryEventSearchQuery),
+    [ministryTreeRows, expandedEventMinistryNodes, ministryEventSearchQuery]
+  );
+  const draftEventMinistrySummary = useMemo(() => {
+    if (draftSelectedGroupIds.size === 0) {
+      return { all: true as const, label: "All ministries" };
+    }
+    return {
+      all: false as const,
+      label: `${draftSelectedGroupIds.size} ${draftSelectedGroupIds.size === 1 ? "ministry" : "ministries"}`,
+    };
+  }, [draftSelectedGroupIds]);
+
   useEffect(() => {
     const valid = new Set(eventTypeFilterOptions.map((o) => o.slug));
     setSelectedEventTypeSlugs((prev) => {
@@ -379,6 +408,10 @@ export default function EventScreen() {
     setDraftSelectedGroupIds(new Set(selectedGroupIds));
     // Seed draft when opening only.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid resetting draft while editing
+  }, [filterOpen]);
+
+  useEffect(() => {
+    if (!filterOpen) setEventFilterSheet("main");
   }, [filterOpen]);
 
   const liveApplyCount = useMemo(() => {
@@ -430,19 +463,26 @@ export default function EventScreen() {
   const hasAppliedFilters =
     whenModes.size > 0 || selectedEventTypeSlugs.size > 0 || selectedGroupIds.size > 0;
 
-  const openFiltersModal = useCallback(() => setFilterOpen(true), []);
+  const openEventFiltersMain = useCallback(() => {
+    setEventFilterSheet("main");
+    setFilterOpen(true);
+  }, []);
+  const openEventFiltersToMinistry = useCallback(() => {
+    setEventFilterSheet("ministry");
+    setFilterOpen(true);
+  }, []);
 
   const filterChips = useMemo((): FilterResultChip[] => {
     const chips: FilterResultChip[] = [];
     if (whenModes.has("upcoming")) {
-      chips.push({ key: "when-upcoming", label: "Upcoming", onLabelPress: openFiltersModal });
+      chips.push({ key: "when-upcoming", label: "Upcoming", onLabelPress: openEventFiltersMain });
     }
     if (whenModes.has("past")) {
-      chips.push({ key: "when-past", label: "Past", onLabelPress: openFiltersModal });
+      chips.push({ key: "when-past", label: "Past", onLabelPress: openEventFiltersMain });
     }
     for (const slug of [...selectedEventTypeSlugs].sort((a, b) => a.localeCompare(b))) {
       const lab = eventTypeFilterOptions.find((o) => o.slug === slug)?.label ?? slug;
-      chips.push({ key: `type:${slug}`, label: lab, onLabelPress: openFiltersModal });
+      chips.push({ key: `type:${slug}`, label: lab, onLabelPress: openEventFiltersMain });
     }
     const sortedGids = [...selectedGroupIds].sort((a, b) => {
       const na = groupFilterOptions.find((g) => g.id === a)?.label || a;
@@ -451,10 +491,18 @@ export default function EventScreen() {
     });
     for (const id of sortedGids) {
       const lab = groupFilterOptions.find((g) => g.id === id)?.label || "Ministry";
-      chips.push({ key: `group:${id}`, label: lab, onLabelPress: openFiltersModal });
+      chips.push({ key: `group:${id}`, label: lab, onLabelPress: openEventFiltersToMinistry });
     }
     return chips;
-  }, [whenModes, selectedEventTypeSlugs, selectedGroupIds, groupFilterOptions, openFiltersModal, eventTypeFilterOptions]);
+  }, [
+    whenModes,
+    selectedEventTypeSlugs,
+    selectedGroupIds,
+    groupFilterOptions,
+    openEventFiltersMain,
+    openEventFiltersToMinistry,
+    eventTypeFilterOptions,
+  ]);
 
   const clearAppliedFilters = useCallback(() => {
     setWhenModes(new Set());
@@ -556,7 +604,10 @@ export default function EventScreen() {
               accessibilityLabel={hasAppliedFilters ? "Edit filters" : "Open filters"}
               accessibilityState={{ selected: hasAppliedFilters }}
               active={hasAppliedFilters}
-              onPress={() => setFilterOpen(true)}
+              onPress={() => {
+                setEventFilterSheet("main");
+                setFilterOpen(true);
+              }}
             >
               <Ionicons
                 name={hasAppliedFilters ? "filter" : "filter-outline"}
@@ -608,8 +659,8 @@ export default function EventScreen() {
       <FormModalShell
         visible={filterOpen}
         onClose={() => setFilterOpen(false)}
-        title="Filters"
-        subtitle="Refine event list"
+        title={eventFilterSheet === "ministry" ? "Ministry" : "Filters"}
+        subtitle={eventFilterSheet === "ministry" ? "Choose groups and subgroups" : "Refine event list"}
         variant="compact"
         headerIcon="options-outline"
         footer={
@@ -638,6 +689,8 @@ export default function EventScreen() {
           </View>
         }
       >
+        {eventFilterSheet === "main" ? (
+          <>
         <View style={styles.liveCountRow}>
           <Text style={styles.liveCountText}>{liveApplyCount} events match current selection</Text>
         </View>
@@ -735,56 +788,159 @@ export default function EventScreen() {
 
         <View style={styles.filterBlock}>
           <Text style={styles.filterSectionTitle}>Ministry</Text>
-          <Text style={styles.filterHint}>Select one or more ministries</Text>
-          <View style={styles.groupListWrap}>
+          <Text style={styles.filterHint}>
+            Open the list to pick main groups and subgroups. Choosing a top-level ministry includes all its
+            sub-ministries in the filter.
+          </Text>
+          <Pressable
+            style={styles.ministryFilterTrigger}
+            onPress={() => {
+              setMinistryEventSearchQuery("");
+              setEventFilterSheet("ministry");
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Choose ministries for filter"
+          >
+            <View style={styles.ministryFilterTriggerTextWrap}>
+              <Text style={styles.ministryFilterTriggerLabel} numberOfLines={1}>
+                {draftEventMinistrySummary.label}
+              </Text>
+              <Text style={styles.ministryFilterTriggerSub} numberOfLines={1}>
+                Tap to open hierarchy
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+          </>
+        ) : (
+          <>
             <Pressable
-              style={[styles.filterPill, draftSelectedGroupIds.size === 0 && styles.filterPillActive]}
+              onPress={() => setEventFilterSheet("main")}
+              style={styles.filterSubscreenBack}
+              accessibilityRole="button"
+              accessibilityLabel="Back to all filters"
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.accent} />
+              <Text style={styles.filterSubscreenBackText}>All filters</Text>
+            </Pressable>
+            <Text style={styles.filterHint}>
+              Select a main group to include all of its sub-ministries, or pick individual sub-ministries.
+            </Text>
+            <View style={styles.liveCountRow}>
+              <Text style={styles.liveCountText}>{liveApplyCount} events match current selection</Text>
+            </View>
+            <Pressable
+              style={[
+                styles.mPickerAllRow,
+                draftSelectedGroupIds.size === 0 && styles.mPickerAllRowActive,
+              ]}
               onPress={() => setDraftSelectedGroupIds(new Set())}
             >
-              <View style={[styles.pillDot, draftSelectedGroupIds.size === 0 && styles.pillDotActive]}>
-                {draftSelectedGroupIds.size === 0 ? <Ionicons name="checkmark" size={10} color="#fff" /> : null}
-              </View>
-              <Text
-                style={[
-                  styles.filterPillText,
-                  draftSelectedGroupIds.size === 0 && styles.filterPillTextActive,
-                ]}
+              <View
+                style={[styles.mSelectCircle, draftSelectedGroupIds.size === 0 && styles.mSelectCircleActive]}
               >
-                All ministries
-              </Text>
+                {draftSelectedGroupIds.size === 0 ? (
+                  <Ionicons name="checkmark" size={13} color="#fff" />
+                ) : null}
+              </View>
+              <Text style={styles.mPickerAllRowText}>All ministries</Text>
             </Pressable>
-            {groupFilterOptions.map((g) => {
-              const active = draftSelectedGroupIds.has(g.id);
-              return (
-                <Pressable
-                  key={g.id}
-                  style={[styles.filterPill, active && styles.filterPillActive]}
-                  onPress={() => {
-                    setDraftSelectedGroupIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(g.id)) next.delete(g.id);
-                      else next.add(g.id);
-                      return next;
-                    });
-                  }}
-                >
-                  <View style={[styles.pillDot, active && styles.pillDotActive]}>
-                    {active ? <Ionicons name="checkmark" size={10} color="#fff" /> : null}
+            <View style={styles.mSearchRow}>
+              <TextInput
+                value={ministryEventSearchQuery}
+                onChangeText={setMinistryEventSearchQuery}
+                placeholder="Search ministry name"
+                style={[styles.input, styles.mSearchInput]}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+                autoCorrect={false}
+                autoCapitalize="none"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+            <View style={styles.mPickerListFlat}>
+              {visibleEventMinistryRows.map((row) => {
+                const allMode = draftSelectedGroupIds.size === 0;
+                const selected = draftSelectedGroupIds.has(row.id);
+                const expanded = expandedEventMinistryNodes.has(row.nodeKey);
+                return (
+                  <View
+                    key={row.nodeKey}
+                    style={[styles.mOptRow, row.depth === 0 && styles.mOptRowMain]}
+                  >
+                    <Pressable
+                      style={styles.mOptRowPress}
+                      disabled={allMode}
+                      onPress={() => {
+                        if (allMode) return;
+                        setDraftSelectedGroupIds((prev) =>
+                          toggleMinistryInSet(prev, row, groupTree, {})
+                        );
+                      }}
+                    >
+                      <View style={styles.mOptLeft}>
+                        <View style={{ width: row.depth * 20 }} />
+                        <View style={styles.mIconCircle}>
+                          <Ionicons name="people-outline" size={16} color={colors.accent} />
+                        </View>
+                        <View style={styles.mTextWrap}>
+                          <Text
+                            numberOfLines={2}
+                            style={[styles.mOptName, row.depth === 0 && styles.mOptNameMain]}
+                          >
+                            {row.name}
+                          </Text>
+                          <Text numberOfLines={2} style={styles.mOptSub}>
+                            {row.subtitle}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.mOptRight}>
+                        <View
+                          style={[
+                            styles.mSelectCircle,
+                            selected && !allMode && styles.mSelectCircleActive,
+                          ]}
+                        >
+                          {selected && !allMode ? (
+                            <Ionicons name="checkmark" size={13} color="#fff" />
+                          ) : null}
+                        </View>
+                      </View>
+                    </Pressable>
+                    {row.hasChildren ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={expanded ? "Collapse subgroups" : "Expand subgroups"}
+                        style={styles.mExpandBtn}
+                        onPress={() =>
+                          setExpandedEventMinistryNodes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(row.nodeKey)) next.delete(row.nodeKey);
+                            else next.add(row.nodeKey);
+                            return next;
+                          })
+                        }
+                      >
+                        <Ionicons
+                          name={expanded ? "chevron-down" : "chevron-forward"}
+                          size={18}
+                          color="#9ca3af"
+                        />
+                      </Pressable>
+                    ) : null}
                   </View>
-                  <Text style={[styles.filterPillText, active && styles.filterPillTextActive]} numberOfLines={1}>
-                    {g.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
+                );
+              })}
+            </View>
+          </>
+        )}
       </FormModalShell>
 
       {loading ? (
-        <View style={styles.loadingBlock}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.helper}>Loading events…</Text>
+        <View style={styles.skeletonListFill}>
+          <EventListSkeleton count={7} />
         </View>
       ) : (
         <FlatList
@@ -844,6 +1000,7 @@ export default function EventScreen() {
           }
         />
       )}
+
       <EventUpsertModal
         visible={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -902,6 +1059,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 24,
     gap: 10,
+  },
+  skeletonListFill: {
+    flex: 1,
+    minHeight: 0,
   },
   listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
   card: {
@@ -1096,5 +1257,124 @@ const styles = StyleSheet.create({
   filterPillTextActive: {
     color: colors.accent,
     fontWeight: type.bodyStrong.weight,
+  },
+  ministryFilterTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.card,
+    gap: 10,
+  },
+  ministryFilterTriggerTextWrap: { flex: 1, minWidth: 0 },
+  ministryFilterTriggerLabel: {
+    fontSize: type.bodyStrong.size,
+    fontWeight: "600",
+    color: colors.textPrimary,
+  },
+  ministryFilterTriggerSub: {
+    fontSize: type.caption.size,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  filterSubscreenBack: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 10,
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  filterSubscreenBackText: {
+    fontSize: type.body.size,
+    fontWeight: "600",
+    color: colors.accent,
+  },
+  mPickerAllRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+  },
+  mPickerAllRowActive: {
+    backgroundColor: colors.accentSurface,
+    borderRadius: radius.sm,
+  },
+  mPickerAllRowText: { fontSize: type.body.size, fontWeight: "600", color: colors.textPrimary },
+  mSearchRow: { marginBottom: 8, width: "100%" },
+  mSearchInput: { minHeight: 44, flex: 0, width: "100%" },
+  /** Ministry rows live inside FormModalShell ScrollView; no nested ScrollView. */
+  mPickerListFlat: { gap: 8, paddingBottom: 8 },
+  mOptRow: {
+    minHeight: 62,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "#fff",
+    paddingLeft: 4,
+    paddingRight: 0,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  mOptRowMain: { backgroundColor: "#fafafb" },
+  mOptRowPress: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    minHeight: 56,
+    minWidth: 0,
+  },
+  mExpandBtn: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderLeftWidth: 1,
+    borderLeftColor: "#f1f5f9",
+  },
+  mOptLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0, paddingRight: 10 },
+  mOptRight: { alignItems: "center", justifyContent: "center", paddingLeft: 4 },
+  mIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: "#eef2ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mTextWrap: { flex: 1, minWidth: 0, gap: 2 },
+  mOptName: {
+    fontSize: type.body.size,
+    lineHeight: type.body.lineHeight,
+    color: colors.textPrimary,
+  },
+  mOptNameMain: { fontWeight: type.bodyStrong.weight },
+  mOptSub: {
+    fontSize: type.caption.size - 1,
+    lineHeight: type.caption.lineHeight,
+    color: colors.textSecondary,
+  },
+  mSelectCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mSelectCircleActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
   },
 });

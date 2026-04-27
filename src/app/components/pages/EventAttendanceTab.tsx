@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
+import { gateAttendanceRecording, eventStartMsFromRow } from '@sheepmug/shared-api';
 
 export type AttendanceStatus = 'not_marked' | 'present' | 'absent' | 'unsure';
 
@@ -39,6 +40,8 @@ export interface EventAttendanceRow {
 
 interface EventAttendancePayload {
   event_id: string;
+  event_start?: string | null;
+  attendance_opens_at?: string | null;
   assigned_groups: { id: string; name: string }[];
   filter_groups?: { id: string; name: string }[];
   members: EventAttendanceRosterMember[];
@@ -120,6 +123,17 @@ export default function EventAttendanceTab({
   const [groupFilter, setGroupFilter] = useState<string>('all');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [clockTick, setClockTick] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((t) => t + 1), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const recordingGate = useMemo(() => {
+    const ms = eventStartMsFromRow({ start_time: data?.event_start ?? null, start_date: null });
+    return gateAttendanceRecording(ms, Date.now());
+  }, [data?.event_start, clockTick]);
 
   const attendanceByMember = useMemo(() => {
     const m = new Map<string, EventAttendanceRow>();
@@ -271,6 +285,10 @@ export default function EventAttendanceTab({
 
   const applyStatusToSelected = async (status: AttendanceStatus) => {
     if (!token || selected.size === 0) return;
+    if (!recordingGate.allowed) {
+      toast.error(recordingGate.userMessage);
+      return;
+    }
     setSaving(true);
     try {
       const updates = [...selected].map((member_id) => ({ member_id, status }));
@@ -342,6 +360,13 @@ export default function EventAttendanceTab({
           Roster includes members assigned to this event&apos;s ministry. Select people, then mark status below.
         </p>
       </div>
+
+      {data && !recordingGate.allowed ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Attendance is not open yet</p>
+          <p className="mt-1 text-amber-900/90">{recordingGate.userMessage}</p>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-4">
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-center">
@@ -573,7 +598,7 @@ export default function EventAttendanceTab({
               <button
                 key={st}
                 type="button"
-                disabled={saving}
+                disabled={saving || !recordingGate.allowed}
                 onClick={() => void applyStatusToSelected(st)}
                 className={cn(
                   'inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 sm:text-sm',

@@ -7,7 +7,7 @@ import {
   Shield,
   ListTodo,
   MessageSquare,
-  Bell,
+  BarChart3,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,8 +50,14 @@ const navItems: {
   },
   { id: 'groups', icon: UserCircle2, label: 'Ministries', permission: 'view_groups' },
   { id: 'messages', icon: MessageSquare, label: 'Messages', permission: 'send_messages' },
-  { id: 'notifications', icon: Bell, label: 'Notifications', permission: null },
   { id: 'events', icon: Trophy, label: 'Events', permission: 'view_events' },
+  {
+    id: 'reports',
+    icon: BarChart3,
+    label: 'Reports',
+    permission: 'report_view',
+    anyPermissions: ['report_view', 'view_analytics'],
+  },
 ];
 
 const shortcutItems: { id: string; icon: typeof Settings; label: string; permission: string | null }[] = [

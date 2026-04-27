@@ -28,6 +28,8 @@ type Props = {
   subtitle?: string;
   headerIcon?: IonName;
   variant?: FormModalVariant;
+  dynamicHeight?: boolean;
+  backdropColor?: string;
   children: ReactNode;
   footer?: ReactNode;
 };
@@ -43,6 +45,8 @@ export function FormModalShell({
   subtitle,
   headerIcon,
   variant = "full",
+  dynamicHeight = false,
+  backdropColor = "rgba(0,0,0,0.4)",
   children,
   footer,
 }: Props) {
@@ -56,14 +60,24 @@ export function FormModalShell({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <FormModalOverlayHost>
         <View style={styles.root}>
-        <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Dismiss" />
-        <View style={[styles.sheetOuter, { maxHeight: sheetMaxH, height: sheetMaxH }]}>
+        <Pressable
+          style={[styles.backdrop, { backgroundColor: backdropColor }]}
+          onPress={onClose}
+          accessibilityLabel="Dismiss"
+        />
+        <View
+          style={[
+            styles.sheetOuter,
+            { maxHeight: sheetMaxH },
+            dynamicHeight ? styles.sheetOuterDynamic : { height: sheetMaxH },
+          ]}
+        >
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.kav}
+            style={dynamicHeight ? styles.kavDynamic : styles.kav}
             keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
           >
-            <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <View style={[styles.sheet, dynamicHeight && styles.sheetDynamic, { paddingBottom: Math.max(insets.bottom, 12) }]}>
               <View style={styles.headerRow}>
               {headerIcon ? (
                 <HeaderIconCircle>
@@ -86,7 +100,7 @@ export function FormModalShell({
               </View>
               <DashedRule />
               <ScrollView
-                style={styles.scroll}
+                style={[styles.scroll, dynamicHeight && styles.scrollDynamic]}
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
@@ -117,7 +131,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.lg,
     overflow: "hidden",
   },
+  sheetOuterDynamic: {
+    height: undefined,
+  },
   kav: { flex: 1, width: "100%" },
+  kavDynamic: { width: "100%" },
   sheet: {
     flex: 1,
     minHeight: 200,
@@ -127,6 +145,10 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.accentBorder,
     borderBottomWidth: 0,
+  },
+  sheetDynamic: {
+    flex: 0,
+    flexShrink: 1,
   },
   headerRow: {
     flexDirection: "row",
@@ -157,6 +179,7 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
   },
   scroll: { flexGrow: 1, flexShrink: 1 },
+  scrollDynamic: { flexGrow: 0, flexShrink: 1 },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,

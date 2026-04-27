@@ -13,6 +13,11 @@ import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DashboardListRowSkeleton,
+  DashboardStatIconStackSkeleton,
+} from '@/components/skeletons/data-skeletons';
 import MemberDetailPanel from '../panels/MemberDetailPanel';
 import { displayTitleWords } from '@/utils/displayText';
 import { formatLongWeekdayDateTime, formatCalendarCountdown } from '@/utils/dateDisplayFormat';
@@ -382,7 +387,9 @@ export default function Dashboard() {
             <div className="flex items-start justify-between gap-2">
               <p className="text-xs text-gray-500 leading-tight">{s.label}</p>
               <div className="flex shrink-0 items-center gap-1">
-                {s.label === 'Members' ? (
+                {loading ? (
+                  <DashboardStatIconStackSkeleton />
+                ) : s.label === 'Members' ? (
                   <StackedMemberFaces members={statFacePools.members} max={4} />
                 ) : s.label === 'Groups' ? (
                   <GroupFaceStack groups={groups} max={3} />
@@ -404,7 +411,11 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-2 flex items-end justify-between gap-2">
-              <p className="text-2xl font-semibold text-gray-900 tabular-nums">{loading ? '...' : s.value}</p>
+              {loading ? (
+                <Skeleton className="h-8 w-14" />
+              ) : (
+                <p className="text-2xl font-semibold text-gray-900 tabular-nums">{s.value}</p>
+              )}
               <div className="opacity-80">{cardIcon(<BarChart3 className="w-4 h-4 text-gray-600" />)}</div>
             </div>
           </motion.div>
@@ -422,20 +433,22 @@ export default function Dashboard() {
               <Link to="/tasks" className="text-sm text-blue-600 hover:text-blue-700">View all</Link>
             </div>
             <div className="space-y-2">
-              {tasks.map((t) => {
-                const dueCd = t.due_at ? formatCalendarCountdown(t.due_at) : '';
-                return (
-                  <div key={t.id} className="p-2 rounded-xl border border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">{displayTitleWords(t.title)}</p>
-                    <p className="text-xs text-gray-500">
-                      {t.due_at
-                        ? `Due ${formatLongWeekdayDateTime(t.due_at)}${dueCd ? ` · ${dueCd}` : ''}`
-                        : 'No due date'}{' '}
-                      · {displayTitleWords(t.status.replace(/_/g, ' '))}
-                    </p>
-                  </div>
-                );
-              })}
+              {loading
+                ? [0, 1, 2].map((i) => <DashboardListRowSkeleton key={i} />)
+                : tasks.map((t) => {
+                    const dueCd = t.due_at ? formatCalendarCountdown(t.due_at) : '';
+                    return (
+                      <div key={t.id} className="p-2 rounded-xl border border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">{displayTitleWords(t.title)}</p>
+                        <p className="text-xs text-gray-500">
+                          {t.due_at
+                            ? `Due ${formatLongWeekdayDateTime(t.due_at)}${dueCd ? ` · ${dueCd}` : ''}`
+                            : 'No due date'}{' '}
+                          · {displayTitleWords(t.status.replace(/_/g, ' '))}
+                        </p>
+                      </div>
+                    );
+                  })}
               {!loading && tasks.length === 0 && <p className="text-sm text-gray-500">No upcoming tasks.</p>}
             </div>
           </section>
@@ -451,33 +464,35 @@ export default function Dashboard() {
               <Link to="/members" className="text-sm text-blue-600 hover:text-blue-700">View all</Link>
             </div>
             <div className="space-y-2">
-              {recentMembers.slice(0, 4).map((m) => {
-                const imageSrc = memberImageUrl(m);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setViewingMemberDetail(m)}
-                    className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
-                  >
-                    {imageSrc ? (
-                      <img
-                        src={imageSrc}
-                        alt={`${m.first_name} ${m.last_name}`}
-                        className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white border border-gray-200 shadow-sm"
-                      />
-                    ) : (
-                      <div className="shrink-0">
-                        <MemberFace m={m} size="md" />
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{m.first_name} {m.last_name}</p>
-                      <p className="text-xs text-gray-500 truncate">{m.email || '-'}</p>
-                    </div>
-                  </button>
-                );
-              })}
+              {loading
+                ? [0, 1, 2, 3].map((i) => <DashboardListRowSkeleton key={i} />)
+                : recentMembers.slice(0, 4).map((m) => {
+                    const imageSrc = memberImageUrl(m);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setViewingMemberDetail(m)}
+                        className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
+                      >
+                        {imageSrc ? (
+                          <img
+                            src={imageSrc}
+                            alt={`${m.first_name} ${m.last_name}`}
+                            className="h-10 w-10 shrink-0 rounded-full object-cover ring-2 ring-white border border-gray-200 shadow-sm"
+                          />
+                        ) : (
+                          <div className="shrink-0">
+                            <MemberFace m={m} size="md" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{m.first_name} {m.last_name}</p>
+                          <p className="text-xs text-gray-500 truncate">{m.email || '-'}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
               {!loading && recentMembers.length === 0 && <p className="text-sm text-gray-500">No members to show.</p>}
             </div>
           </section>

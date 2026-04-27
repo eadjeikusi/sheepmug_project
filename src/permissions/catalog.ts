@@ -426,8 +426,45 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
     id: "analytics",
     label: "Reports",
     permissions: [
-      { id: "view_analytics", name: "View analytics", description: "Access reports and analytics", actionKinds: ["view"] },
-      { id: "export_data", name: "Export data", description: "Export data to files", actionKinds: ["export"] },
+      {
+        id: "report_view",
+        name: "Report view",
+        description: "View reports and generated charts (read-only)",
+        implies: ["report_group", "report_members", "report_leaders"],
+        actionKinds: ["view"],
+      },
+      {
+        id: "report_group",
+        name: "Group report access",
+        description: "Create and view group reports",
+        actionKinds: ["view"],
+      },
+      {
+        id: "report_members",
+        name: "Membership report access",
+        description: "Create and view membership reports",
+        actionKinds: ["view"],
+      },
+      {
+        id: "report_leaders",
+        name: "Leaders report access",
+        description: "Create and view leaders reports",
+        actionKinds: ["view"],
+      },
+      {
+        id: "view_analytics",
+        name: "View analytics (legacy)",
+        description: "Legacy reports permission (maps to report view)",
+        implies: ["report_view"],
+        actionKinds: ["view"],
+      },
+      {
+        id: "export_data",
+        name: "Export data",
+        description: "Export report data to files",
+        implies: ["report_view"],
+        actionKinds: ["export"],
+      },
     ],
   },
   {

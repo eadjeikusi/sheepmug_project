@@ -10,6 +10,7 @@ import EventDetail from "./components/pages/EventDetail";
 import Tasks from "./components/pages/Tasks";
 import Messages from "./components/pages/Messages";
 import Notifications from "./components/pages/Notifications";
+import Reports from "./components/pages/Reports";
 import Settings from "./components/pages/Settings";
 import ImportantDates from "./components/pages/ImportantDates";
 import ProfileSettings from "./components/pages/ProfileSettings";
@@ -101,6 +102,10 @@ export const router = createBrowserRouter([
       {
         path: "notifications",
         Component: Notifications,
+      },
+      {
+        path: "reports",
+        Component: Reports,
       },
       {
         path: "important-dates",

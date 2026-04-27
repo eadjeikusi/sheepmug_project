@@ -22,7 +22,7 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: themedColors.bg },
         headerTitle: "",
         headerLeft: () => (
-          <Pressable style={styles.headerLeftWrap} onPress={() => router.push("/(tabs)/menu")}>
+          <Pressable style={styles.headerLeftWrap} onPress={() => router.push("/profile-details")}>
             {user?.profile_image ? (
               <Image source={{ uri: user.profile_image }} style={styles.headerAvatar} />
             ) : (
@@ -36,8 +36,11 @@ export default function TabsLayout() {
         ),
         headerRight: () => (
           <View style={styles.headerRightWrap}>
-            <Pressable style={[styles.headerIconButton, { backgroundColor: themedColors.headerIconCircleBg }]}>
-              <Ionicons name="headset-outline" size={sizes.headerIcon} color={themedColors.textPrimary} />
+            <Pressable
+              style={[styles.headerIconButton, { backgroundColor: themedColors.headerIconCircleBg }]}
+              onPress={() => router.push("/(tabs)/menu")}
+            >
+              <Ionicons name="settings-outline" size={sizes.headerIcon} color={themedColors.textPrimary} />
             </Pressable>
             <Pressable
               style={[styles.headerIconButton, { backgroundColor: themedColors.headerIconCircleBg }]}

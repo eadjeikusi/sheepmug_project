@@ -25,6 +25,7 @@ import {
   formatCalendarCountdown,
   formatCompactWeekdayDate,
 } from '@/utils/dateDisplayFormat';
+import { DatePickerField } from '@/components/datetime';
 import {
   Trash2,
   ArrowLeft,
@@ -1711,22 +1712,22 @@ const MinistryDetail: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-end gap-3 mb-4 px-1">
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+              <label className="flex min-w-0 w-full max-w-xs flex-col gap-1 text-xs font-medium text-gray-600 sm:w-52">
                 Assigned from
-                <input
-                  type="date"
+                <DatePickerField
                   value={assignedRangeStart}
-                  onChange={(e) => setAssignedRangeStart(e.target.value)}
-                  className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-900"
+                  onChange={setAssignedRangeStart}
+                  placeholder="Start date"
+                  triggerClassName="border-gray-200 bg-white text-sm text-gray-900"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+              <label className="flex min-w-0 w-full max-w-xs flex-col gap-1 text-xs font-medium text-gray-600 sm:w-52">
                 Assigned to
-                <input
-                  type="date"
+                <DatePickerField
                   value={assignedRangeEnd}
-                  onChange={(e) => setAssignedRangeEnd(e.target.value)}
-                  className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm text-gray-900"
+                  onChange={setAssignedRangeEnd}
+                  placeholder="End date"
+                  triggerClassName="border-gray-200 bg-white text-sm text-gray-900"
                 />
               </label>
               {(assignedRangeStart || assignedRangeEnd) && (

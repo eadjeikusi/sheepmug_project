@@ -20,6 +20,7 @@ export function permissionsForPath(pathname: string): string[] | null {
       'edit_group_task_checklist',
       'complete_group_task_checklist',
     ],
+    reports: ['report_view', 'view_analytics'],
   };
   if (p in multiMap) return multiMap[p];
 

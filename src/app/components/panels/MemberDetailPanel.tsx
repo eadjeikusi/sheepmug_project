@@ -30,6 +30,7 @@ import {
   formatLongWeekdayDateTime,
   formatCalendarCountdown,
 } from '@/utils/dateDisplayFormat';
+import { gateAttendanceRecording, eventStartMsFromRow } from '@sheepmug/shared-api';
 
 const DEFAULT_PHONE_REGION = 'US';
 
@@ -65,7 +66,8 @@ type MemberGroupRow = {
 type MemberEventRow = {
   id: string;
   title: string;
-  start_time: string;
+  start_time?: string | null;
+  start_date?: string | null;
   end_time: string | null;
   event_type: string | null;
   status: string | null;
@@ -272,9 +274,12 @@ export default function MemberDetailPanel({
     setMemberEventsLoading(true);
     setMemberEventsError(null);
     try {
-      const res = await fetch(`/api/members/${encodeURIComponent(String(member.id).trim())}/events`, {
-        headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
-      });
+      const res = await fetch(
+        `/api/members/${encodeURIComponent(String(member.id).trim())}/events?limit=200&offset=0`,
+        {
+          headers: withBranchScope(selectedBranch?.id, { Authorization: `Bearer ${token}` }),
+        },
+      );
       const raw = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof raw?.error === 'string' ? raw.error : 'Failed to load events');
       const list = raw?.events;
@@ -491,6 +496,18 @@ export default function MemberDetailPanel({
 
   const updateAttendance = async (eventId: string, status: AttendanceStatus) => {
     if (!member || !token || !isMemberDbId(member.id)) return;
+    const evRow = memberEvents.find((e) => e.id === eventId);
+    const gate = gateAttendanceRecording(
+      eventStartMsFromRow({
+        start_time: evRow?.start_time ?? null,
+        start_date: evRow?.start_date ?? null,
+      }),
+      Date.now(),
+    );
+    if (!gate.allowed) {
+      toast.error(gate.userMessage);
+      return;
+    }
     setSavingAttendanceForEventId(eventId);
     try {
       const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/attendance`, {
@@ -552,9 +569,10 @@ export default function MemberDetailPanel({
     const now = Date.now();
     const q = eventSearch.trim().toLowerCase();
     return memberEvents.filter((ev) => {
-      const start = new Date(ev.start_time).getTime();
-      if (eventTimeFilter === 'upcoming' && start < now) return false;
-      if (eventTimeFilter === 'past' && start >= now) return false;
+      const raw = ev.start_time || ev.start_date;
+      const start = raw ? new Date(String(raw)).getTime() : NaN;
+      if (eventTimeFilter === 'upcoming' && (Number.isNaN(start) || start < now)) return false;
+      if (eventTimeFilter === 'past' && (Number.isNaN(start) || start >= now)) return false;
       if (eventStatusFilter !== 'all') {
         const st = (ev.status || '').trim();
         if (st !== eventStatusFilter) return false;
@@ -580,7 +598,12 @@ export default function MemberDetailPanel({
     const cutoff = new Date(now);
     cutoff.setMonth(cutoff.getMonth() - 12);
     const past = memberEvents.filter((e) => {
-      const t = new Date(e.start_time);
+      const raw =
+        (e as { start_time?: string; start_date?: string | null }).start_time ||
+        (e as { start_date?: string | null }).start_date;
+      if (raw == null || String(raw).trim() === "") return false;
+      const t = new Date(String(raw));
+      if (Number.isNaN(t.getTime())) return false;
       return t < now && t >= cutoff;
     });
     if (past.length === 0) return null;
@@ -2119,9 +2142,17 @@ export default function MemberDetailPanel({
                         ) : (
                           <div className="space-y-3">
                             {filteredMemberEvents.map((event) => {
-                              const start = new Date(event.start_time);
-                              const eventCd = formatCalendarCountdown(event.start_time);
-                              const isPast = start.getTime() < Date.now();
+                              const startIso = event.start_time || event.start_date || '';
+                              const start = startIso ? new Date(String(startIso)) : new Date(NaN);
+                              const eventCd = startIso ? formatCalendarCountdown(startIso) : '';
+                              const isPast = !Number.isNaN(start.getTime()) && start.getTime() < Date.now();
+                              const attGate = gateAttendanceRecording(
+                                eventStartMsFromRow({
+                                  start_time: event.start_time ?? null,
+                                  start_date: event.start_date ?? null,
+                                }),
+                                Date.now(),
+                              );
                               const typeKey = (event.event_type || 'general').toLowerCase().replace(/\s+/g, '_');
                               const attended = event.attendance_status === 'present';
                               return (
@@ -2142,7 +2173,7 @@ export default function MemberDetailPanel({
                                     <div className="min-w-0">
                                       <h4 className="font-medium text-gray-900">{event.title || 'Untitled event'}</h4>
                                       <p className="text-xs text-gray-500 mt-0.5">
-                                        {formatLongWeekdayDateTime(event.start_time)}
+                                        {startIso ? formatLongWeekdayDateTime(startIso) : 'Time not set'}
                                         {eventCd ? ` · ${eventCd}` : ''}
                                         {event.group_name ? ` · ${event.group_name}` : ''}
                                       </p>
@@ -2177,7 +2208,8 @@ export default function MemberDetailPanel({
                                           ? (event.attendance_status as AttendanceStatus)
                                           : 'not_marked'
                                       }
-                                      disabled={savingAttendanceForEventId === event.id}
+                                      disabled={savingAttendanceForEventId === event.id || !attGate.allowed}
+                                      title={!attGate.allowed ? attGate.userMessage : undefined}
                                       onChange={(e) =>
                                         updateAttendance(event.id, e.target.value as AttendanceStatus)
                                       }

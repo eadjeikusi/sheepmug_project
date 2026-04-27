@@ -1,4 +1,4 @@
-import { ApiError } from "@sheepmug/shared-api";
+import { ApiError, gateAttendanceRecording, eventStartMsFromRow } from "@sheepmug/shared-api";
 import { api } from "../api";
 import { devLog, devWarn } from "../devLog";
 import { runOfflineBootstrap } from "./bootstrap";
@@ -47,6 +47,12 @@ async function runOne(item: OfflineQueueItem): Promise<Record<string, unknown>> 
         }>)
       : [];
     if (!eventId || updates.length === 0) throw new Error("Invalid attendance payload.");
+    const startIso = typeof item.payload.event_start_iso === "string" ? item.payload.event_start_iso.trim() : null;
+    const startMs = eventStartMsFromRow({ start_time: startIso, start_date: null });
+    const g = gateAttendanceRecording(startMs, Date.now());
+    if (!g.allowed) {
+      throw new Error(g.userMessage);
+    }
     const res = await api.events.attendance.update(eventId, updates);
     return {
       operation: item.operation,

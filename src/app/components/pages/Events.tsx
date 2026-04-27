@@ -20,6 +20,7 @@ import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
 import { displayTitleWords } from '@/utils/displayText';
 import { formatEventRangeLabel, formatCalendarCountdown } from '@/utils/dateDisplayFormat';
 import { formatEventLocationSummary } from '@/utils/eventLocation';
+import { EventsTableSkeleton } from '@/components/skeletons/data-skeletons';
 
 export interface EventAttachmentItem {
   /** Stored bucket path for same-origin download (`/api/download-event-file`). */
@@ -489,7 +490,7 @@ export default function Events() {
           ) : null}
 
           {loading ? (
-            <p className="py-12 text-center text-sm text-gray-500">Loading events…</p>
+            <EventsTableSkeleton rows={8} />
           ) : filteredEvents.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-200 py-14 text-center text-sm text-gray-500">
               {branchFiltered.length === 0

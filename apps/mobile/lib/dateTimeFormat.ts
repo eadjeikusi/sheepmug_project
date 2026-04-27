@@ -14,6 +14,56 @@ export function parseYmdToLocalDate(ymd: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Inclusive number of local calendar days between two `YYYY-MM-DD` strings. 0 if invalid. */
+export function inclusiveLocalDayCount(ymdA: string, ymdB: string): number {
+  const a = parseYmdToLocalDate(ymdA);
+  const b = parseYmdToLocalDate(ymdB);
+  if (!a || !b) return 0;
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  if (d1.getTime() < d0.getTime()) return 0;
+  return Math.floor((d1.getTime() - d0.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+export function newDefaultReportDateRangeYmd() {
+  const e = new Date();
+  const s = new Date();
+  s.setDate(s.getDate() - 90);
+  return { start: toYmd(s), end: toYmd(e) };
+}
+
+/** Quick ranges (inclusive), aligned with web report builder presets. */
+export type ReportDatePresetId = "last7" | "last30" | "last90" | "thisMonth" | "ytd";
+
+export function applyReportDatePreset(preset: ReportDatePresetId): { start: string; end: string } {
+  const end = new Date();
+  end.setHours(12, 0, 0, 0);
+  const start = new Date(end);
+  if (preset === "last7") {
+    start.setDate(start.getDate() - 6);
+  } else if (preset === "last30") {
+    start.setDate(start.getDate() - 29);
+  } else if (preset === "last90") {
+    start.setDate(start.getDate() - 89);
+  } else if (preset === "thisMonth") {
+    start.setDate(1);
+  } else {
+    start.setMonth(0, 1);
+  }
+  if (start.getTime() > end.getTime()) return { start: toYmd(end), end: toYmd(end) };
+  return { start: toYmd(start), end: toYmd(end) };
+}
+
+/** Inclusive local [start, end] as ISO instants for the API (aligns with web report). */
+export function localDayBoundsToIso(ymdStart: string, ymdEnd: string): { start: string; end: string } | null {
+  const a = parseYmdToLocalDate(ymdStart);
+  const b = parseYmdToLocalDate(ymdEnd);
+  if (!a || !b) return null;
+  const s = new Date(a.getFullYear(), a.getMonth(), a.getDate(), 0, 0, 0, 0);
+  const e = new Date(b.getFullYear(), b.getMonth(), b.getDate(), 23, 59, 59, 999);
+  return { start: s.toISOString(), end: e.toISOString() };
+}
+
 /** Due date as ISO at local noon (matches member task create flow). */
 export function ymdToDueAtIso(ymd: string): string | null {
   const d = parseYmdToLocalDate(ymd.trim());

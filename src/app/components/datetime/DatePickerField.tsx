@@ -6,6 +6,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
+import { PickerDropdownCard, pickerPopoverContentClassName } from "./PickerDropdownCard";
 import {
   CALENDAR_FROM_FALLBACK,
   CALENDAR_TO_FALLBACK,
@@ -77,23 +78,29 @@ export function DatePickerField({
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto border p-0 shadow-md" align="start">
-          <Calendar
-            mode="single"
-            captionLayout="dropdown-buttons"
-            fromDate={fromDate}
-            toDate={toDate}
-            fromYear={fromDate.getFullYear()}
-            toYear={toDate.getFullYear()}
-            selected={selected}
-            disabled={disabledMatcher}
-            onSelect={(d) => {
-              if (d) {
-                onChange(toIsoDateOnly(d));
-                setOpen(false);
-              }
-            }}
-          />
+        <PopoverContent
+          className={cn(pickerPopoverContentClassName, "w-auto")}
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <PickerDropdownCard>
+            <Calendar
+              mode="single"
+              captionLayout="dropdown-buttons"
+              fromDate={fromDate}
+              toDate={toDate}
+              fromYear={fromDate.getFullYear()}
+              toYear={toDate.getFullYear()}
+              selected={selected}
+              disabled={disabledMatcher}
+              onSelect={(d) => {
+                if (d) {
+                  onChange(toIsoDateOnly(d));
+                  setOpen(false);
+                }
+              }}
+            />
+          </PickerDropdownCard>
         </PopoverContent>
       </Popover>
     </div>

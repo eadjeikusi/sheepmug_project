@@ -18,6 +18,7 @@ import { useBranch } from "../../contexts/BranchContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
+import { usePermissions } from "../../hooks/usePermissions";
 import { radius, type } from "../../theme";
 import Constants from "expo-constants";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
@@ -88,6 +89,7 @@ function MenuRow({
 export default function MenuScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { can } = usePermissions();
   const { branches, selectedBranch, selectBranch, refreshBranches } = useBranch();
   useNotifications();
   const { colors } = useTheme();
@@ -186,6 +188,7 @@ export default function MenuScreen() {
   const selectedBranchName = selectedBranch?.name?.trim()
     ? displayMemberWords(selectedBranch.name)
     : "Select branch";
+  const canViewReports = can("report_view") || can("view_analytics");
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -264,6 +267,15 @@ export default function MenuScreen() {
             label="Notification inbox"
             onPress={() => router.push("/notifications")}
             colors={settingsColors}
+          />
+          <MenuRow
+            icon="bar-chart-outline"
+            label="Reports"
+            onPress={() => router.push("/reports")}
+            colors={settingsColors}
+            rightNode={
+              canViewReports ? undefined : <Text style={styles.menuRowMeta}>No access</Text>
+            }
           />
         </View>
 

@@ -5,6 +5,7 @@ import { Clock } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { cn } from "../ui/utils";
+import { PickerDropdownCard, pickerPopoverContentClassName } from "./PickerDropdownCard";
 import { formatTime12h } from "./dateTimeFormat";
 import { hhmmToParts, partsToHHmm } from "./timeParts";
 
@@ -67,7 +68,12 @@ export function TimePickerField({
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-3" align="start">
+        <PopoverContent
+          className={cn(pickerPopoverContentClassName, "w-auto")}
+          align="start"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <PickerDropdownCard className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor={id ? `${id}-hour` : undefined}>
               Hour
@@ -120,6 +126,7 @@ export function TimePickerField({
               Done
             </button>
           </div>
+          </PickerDropdownCard>
         </PopoverContent>
       </Popover>
     </div>

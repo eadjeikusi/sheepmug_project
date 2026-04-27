@@ -28,6 +28,7 @@ import { memberStatusBadgePair } from '../../utils/memberStatusBadge';
 import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
 import { usePermissions } from '@/hooks/usePermissions';
 import { DatePickerField } from '@/components/datetime';
+import { MemberTableBodySkeleton } from '@/components/skeletons/data-skeletons';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
 import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
 
@@ -2212,14 +2213,7 @@ export default function Members() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-2" />
-                        <p className="text-gray-500 text-sm">Loading members...</p>
-                      </div>
-                    </td>
-                  </tr>
+                  <MemberTableBodySkeleton showDeletedMembers={showDeletedMembers} rows={10} />
                 ) : (
                   <AnimatePresence>
                     {filteredMembers.map((member, index) => (

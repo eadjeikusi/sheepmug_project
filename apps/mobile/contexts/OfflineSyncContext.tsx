@@ -26,6 +26,7 @@ import { devLog, devWarn } from "../lib/devLog";
 import { ensureOfflineBootstrap, subscribeOfflineBootstrapProgress } from "../lib/offline/bootstrapCoordinator";
 import { rescheduleLocalAttendanceRemindersFromCache } from "../lib/localAttendanceReminders";
 import { rescheduleLocalTaskRemindersFromCache } from "../lib/localTaskReminders";
+import { gateAttendanceRecording, eventStartMsFromRow } from "@sheepmug/shared-api";
 
 type OfflineSyncState = {
   isOnline: boolean;
@@ -39,7 +40,11 @@ type OfflineSyncState = {
   checkConnectivity: () => Promise<boolean>;
   syncNow: () => Promise<void>;
   queueMemberCreate: (payload: Record<string, unknown>) => Promise<OfflineQueueItem>;
-  queueAttendanceUpdate: (eventId: string, updates: Array<{ member_id: string; status: string }>) => Promise<OfflineQueueItem>;
+  queueAttendanceUpdate: (
+    eventId: string,
+    updates: Array<{ member_id: string; status: string }>,
+    opts: { event_start_iso: string | null }
+  ) => Promise<OfflineQueueItem>;
   queueTaskPatch: (
     taskType: "group" | "member",
     taskId: string,
@@ -190,16 +195,27 @@ export function OfflineSyncProvider({ children }: { children: ReactNode }) {
   );
 
   const queueAttendanceUpdate = useCallback(
-    async (eventId: string, updates: Array<{ member_id: string; status: string }>) => {
+    async (
+      eventId: string,
+      updates: Array<{ member_id: string; status: string }>,
+      opts: { event_start_iso: string | null }
+    ) => {
       if (!can("record_event_attendance")) {
         Alert.alert("Permission required", "You do not have permission to record attendance.");
         throw new Error("Missing permission: record_event_attendance");
+      }
+      const startMs = eventStartMsFromRow({ start_time: opts.event_start_iso, start_date: null });
+      const g = gateAttendanceRecording(startMs, Date.now());
+      if (!g.allowed) {
+        Alert.alert("Attendance not open yet", g.userMessage);
+        throw new Error(g.userMessage);
       }
       const item = await enqueueOutboxItem({
         operation: "attendance_update",
         payload: {
           event_id: eventId,
           updates,
+          event_start_iso: opts.event_start_iso,
         },
         branch_id: selectedBranch?.id ?? null,
         user_id: user?.id ?? null,

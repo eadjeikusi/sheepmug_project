@@ -18,6 +18,7 @@ import { FilterResultsChips, FilterResultsHeaderCount } from "../../components/F
 import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import type { AnchorRect } from "../../components/FilterPickerModal";
 import { FilterPickerModal } from "../../components/FilterPickerModal";
+import { MinistryListSkeleton } from "../../components/DataSkeleton";
 import { MinistriesGrid } from "../../components/MinistriesGrid";
 import { api } from "../../lib/api";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
@@ -26,6 +27,7 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { canCreateGroup } from "@sheepmug/permissions-helpers";
 import { sortMinistriesGroups } from "../../lib/ministriesOrder";
 import { colors, radius, sizes, type } from "../../theme";
+import { useFocusEffect } from "@react-navigation/native";
 
 const PAGE_SIZE = 10;
 const MINISTRIES_CACHE_KEY = "ministries:list";
@@ -159,6 +161,15 @@ export default function MinistriesScreen() {
     }
   }
 
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setTypeMenuOpen(false);
+        setTypeAnchor(null);
+      };
+    }, [])
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -174,8 +185,10 @@ export default function MinistriesScreen() {
       >
         <View style={styles.topRow}>
           <View style={styles.titleBlock}>
-            <Text style={styles.title}>Ministries</Text>
-            <FilterResultsHeaderCount count={filteredGroups.length} />
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Ministries</Text>
+              <FilterResultsHeaderCount count={filteredGroups.length} />
+            </View>
           </View>
           <View style={styles.topActions}>
             {canManageGroups ? (
@@ -196,7 +209,7 @@ export default function MinistriesScreen() {
                 hitSlop={8}
               >
                 <Ionicons
-                  name={typeFilter.trim() ? "layers" : "layers-outline"}
+                  name={typeFilter.trim() ? "filter" : "filter-outline"}
                   size={sizes.headerIcon}
                   color={typeFilter.trim() ? colors.accent : colors.textPrimary}
                 />
@@ -242,7 +255,7 @@ export default function MinistriesScreen() {
         />
 
         {loading ? (
-          <Text style={styles.helper}>Loading ministries...</Text>
+          <MinistryListSkeleton count={5} />
         ) : filteredGroups.length === 0 ? (
           <Text style={styles.helper}>
             {groups.length === 0 ? "No ministries found." : "No ministries match your search."}
@@ -298,6 +311,7 @@ const styles = StyleSheet.create({
   },
   topActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   titleBlock: { flex: 1, minWidth: 0, paddingRight: 10 },
+  titleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
   title: {
     fontSize: type.pageTitle.size,
     lineHeight: type.pageTitle.lineHeight,

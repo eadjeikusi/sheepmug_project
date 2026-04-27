@@ -39,6 +39,7 @@ import {
   parseYearMonth,
 } from '@/components/datetime';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
+import { TaskListSkeleton } from '@/components/skeletons/data-skeletons';
 import { capitalizeSentencesForUi } from '@/utils/sentenceCaseDisplay';
 import { displayTitleWords } from '@/utils/displayText';
 
@@ -1332,7 +1333,7 @@ export default function Tasks() {
           ) : null}
 
           {branchLoading ? (
-            <p className="text-sm text-gray-500">Loading…</p>
+            <TaskListSkeleton rows={6} />
           ) : branchLoadError ? (
             <p className="text-sm text-red-600">{branchLoadError}</p>
           ) : branchTasks.length === 0 ? (
@@ -1638,7 +1639,7 @@ export default function Tasks() {
             <FilterResultChips chips={mineFilterChips} onClearAll={clearAllMineFilters} />
           ) : null}
           {mineLoading ? (
-            <p className="text-sm text-gray-500">Loading…</p>
+            <TaskListSkeleton rows={6} />
           ) : mineLoadError ? (
             <p className="text-sm text-red-600">{mineLoadError}</p>
           ) : mineTasks.length === 0 ? (

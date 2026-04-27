@@ -63,7 +63,7 @@ export default function OnboardingScreen() {
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   /** Fixed for this tour so the pager does not reshuffle after the user uploads a photo. */
-  const [tourIncludePhoto] = useState(() => !Boolean(String(user?.profile_image ?? "").trim()));
+  const [tourIncludePhoto] = useState(() => !String(user?.profile_image ?? "").trim());
 
   const steps = useMemo(() => {
     const s: StepKind[] = ["welcome"];

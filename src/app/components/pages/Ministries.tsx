@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import MinistryCard from '../cards/MinistryCard'; // Will create this component
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { useGroupTypeOptions } from '@/hooks/useGroupTypeOptions';
+import { MinistryGridSkeleton } from '@/components/skeletons/data-skeletons';
 
 const PAGE_SIZE = 10;
 
@@ -159,15 +160,6 @@ const Ministries: React.FC = () => {
     void fetchTrashCount();
   }, [fetchTrashCount]);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col flex-1 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="mt-4 text-gray-600">Loading ministries...</p>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex flex-col flex-1 items-center justify-center text-red-600">
@@ -222,7 +214,9 @@ const Ministries: React.FC = () => {
         </div>
         <p className="mt-2 text-gray-600">Manage all ministries and their subgroups within your organization.</p>
 
-        {ministries.length === 0 ? (
+        {isLoading ? (
+          <MinistryGridSkeleton cards={6} />
+        ) : ministries.length === 0 ? (
           <div className="flex flex-col flex-1 items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-8 mt-8">
             <p className="text-lg text-gray-500">No ministries found.</p>
             <p className="text-gray-500">Click "Create New Ministry" to add your first ministry.</p>

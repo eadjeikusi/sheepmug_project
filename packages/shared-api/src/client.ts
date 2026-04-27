@@ -19,6 +19,14 @@ import type {
   MemberNote,
   MemberStatusOption,
   NotificationPreferences,
+  ReportDefinition,
+  ReportExportResponse,
+  ReportFilterPayload,
+  ReportGeneratedPayload,
+  ReportHistoryTableRow,
+  ReportRun,
+  ReportSummaryResponse,
+  ReportType,
   TaskItem,
   UpcomingImportantDateItem,
 } from "./types";
@@ -379,7 +387,7 @@ export function createApiClient(options: ApiClientOptions) {
       },
       events: async (memberId: string) => {
         const payload = await request<MemberEventItem[] | { events?: MemberEventItem[] }>(
-          `/api/members/${encodeURIComponent(memberId)}/events`
+          `/api/members/${encodeURIComponent(memberId)}/events?limit=200&offset=0`
         );
         if (Array.isArray(payload)) return payload;
         return Array.isArray(payload.events) ? payload.events : [];
@@ -802,6 +810,9 @@ export function createApiClient(options: ApiClientOptions) {
       attendance: {
         get: (eventId: string) =>
           request<{
+            event_id?: string;
+            event_start?: string | null;
+            attendance_opens_at?: string | null;
             members?: Member[];
             attendance?: EventAttendanceRow[];
             assigned_groups?: Group[];
@@ -824,6 +835,16 @@ export function createApiClient(options: ApiClientOptions) {
         const payload = await request<EventTypeRow[] | unknown>("/api/event-types");
         return Array.isArray(payload) ? (payload as EventTypeRow[]) : [];
       },
+      update: (eventTypeId: string, body: Record<string, unknown>) =>
+        request<EventTypeRow>(`/api/event-types/${encodeURIComponent(eventTypeId)}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }),
+      delete: (eventTypeId: string) =>
+        request<{ ok: boolean; moved_events?: number; moved_templates?: number; replacement_slug?: string }>(
+          `/api/event-types/${encodeURIComponent(eventTypeId)}`,
+          { method: "DELETE" },
+        ),
     },
 
     tasks: {
@@ -876,6 +897,93 @@ export function createApiClient(options: ApiClientOptions) {
         );
         return parseTasksListPayload(payload);
       },
+    },
+
+    reports: {
+      summary: (params?: { range_days?: number; group_id?: string }) => {
+        const qs = new URLSearchParams();
+        if (typeof params?.range_days === "number" && Number.isFinite(params.range_days)) {
+          qs.set("range_days", String(Math.max(1, Math.min(3650, Math.floor(params.range_days)))));
+        }
+        if (params?.group_id && params.group_id.trim()) {
+          qs.set("group_id", params.group_id.trim());
+        }
+        const query = qs.toString();
+        return request<ReportSummaryResponse>(`/api/reports/summary${query ? `?${query}` : ""}`);
+      },
+      generate: (payload: { name?: string; description?: string; report_type: ReportType; filters?: ReportFilterPayload }) =>
+        request<{ report: ReportGeneratedPayload; run_id: string | null; generated_at: string | null }>("/api/reports/generate", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      preview: (payload: { report_type: ReportType; filters?: ReportFilterPayload }) =>
+        request<{ preview: ReportGeneratedPayload }>("/api/reports/preview", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      listDefinitions: () => request<{ definitions: ReportDefinition[] }>("/api/reports/definitions"),
+      listRuns: (params?: { limit?: number }) => {
+        const qs = new URLSearchParams();
+        if (typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0) {
+          qs.set("limit", String(Math.floor(params.limit)));
+        }
+        const query = qs.toString();
+        return request<{ runs: ReportRun[] }>(`/api/reports/runs${query ? `?${query}` : ""}`);
+      },
+      historyTable: (params?: { limit?: number }) => {
+        const qs = new URLSearchParams();
+        if (typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0) {
+          qs.set("limit", String(Math.floor(params.limit)));
+        }
+        const query = qs.toString();
+        return request<{ rows: ReportHistoryTableRow[] }>(`/api/reports/history-table${query ? `?${query}` : ""}`);
+      },
+      listLeaders: () =>
+        request<{ leaders: Array<{ id: string; first_name?: string | null; last_name?: string | null; email?: string | null; avatar_url?: string | null }> }>("/api/reports/leaders"),
+      getDefinition: (id: string) =>
+        request<ReportDefinition>(`/api/reports/definitions/${encodeURIComponent(id)}`),
+      createDefinition: (payload: {
+        name: string;
+        description?: string;
+        report_type: ReportType;
+        filters?: ReportFilterPayload;
+        output?: Record<string, unknown>;
+        is_shared?: boolean;
+      }) =>
+        request<ReportDefinition>("/api/reports/definitions", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      updateDefinition: (
+        id: string,
+        payload: Partial<{
+          name: string;
+          report_type: ReportType;
+          filters: ReportFilterPayload;
+          output: Record<string, unknown>;
+          is_shared: boolean;
+          is_archived: boolean;
+        }>
+      ) =>
+        request<ReportDefinition>(`/api/reports/definitions/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        }),
+      runDefinition: (id: string) =>
+        request<{ report: ReportGeneratedPayload; run_id: string; generated_at: string }>(
+          `/api/reports/definitions/${encodeURIComponent(id)}/run`,
+          { method: "POST" }
+        ),
+      export: (payload: {
+        format: "csv" | "pdf";
+        run_id?: string;
+        definition_id?: string;
+        report?: ReportGeneratedPayload;
+      }) =>
+        request<ReportExportResponse>("/api/reports/exports", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
     },
 
     memberRequests: {
