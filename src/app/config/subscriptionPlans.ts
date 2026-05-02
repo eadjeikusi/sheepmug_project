@@ -1,9 +1,11 @@
 /**
- * Default subscription tiers and resource limits (GHS pricing is illustrative).
- * Per-org overrides live on organizations.max_* columns (null = use tier default).
+ * Subscription tiers (resource limits only). There is no free tier — legacy DB values
+ * `free` normalize to `basic`. Public pricing is defined in `paidPlans.ts` (Core monthly / 6mo / annual).
  */
 
-export type SubscriptionTierId = 'free' | 'basic' | 'pro' | 'enterprise';
+export type SubscriptionTierId = 'basic' | 'pro' | 'enterprise';
+
+export const DEFAULT_SUBSCRIPTION_TIER: SubscriptionTierId = 'basic';
 
 export type PlanLimits = {
   max_members: number;
@@ -16,24 +18,15 @@ export type PlanLimits = {
 export type SubscriptionPlanDef = PlanLimits & {
   id: SubscriptionTierId;
   label: string;
+  /** Illustrative GHS for Super Admin revenue estimates (actual checkout uses PAID_PLANS). */
   price_ghs: number;
 };
 
 export const SUBSCRIPTION_PLANS: Record<SubscriptionTierId, SubscriptionPlanDef> = {
-  free: {
-    id: 'free',
-    label: 'Free',
-    price_ghs: 0,
-    max_members: 50,
-    max_groups: 3,
-    max_branches: 1,
-    max_events_per_month: 5,
-    max_staff: 2,
-  },
   basic: {
     id: 'basic',
-    label: 'Basic',
-    price_ghs: 50,
+    label: 'Core (entry)',
+    price_ghs: 250,
     max_members: 200,
     max_groups: 10,
     max_branches: 2,
@@ -42,8 +35,8 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionTierId, SubscriptionPlanDef>
   },
   pro: {
     id: 'pro',
-    label: 'Pro',
-    price_ghs: 150,
+    label: 'Core (growth)',
+    price_ghs: 250,
     max_members: 1000,
     max_groups: 50,
     max_branches: 5,
@@ -52,8 +45,8 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionTierId, SubscriptionPlanDef>
   },
   enterprise: {
     id: 'enterprise',
-    label: 'Enterprise',
-    price_ghs: 400,
+    label: 'Core (full limits)',
+    price_ghs: 250,
     max_members: 999999,
     max_groups: 999999,
     max_branches: 999999,
@@ -62,24 +55,32 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionTierId, SubscriptionPlanDef>
   },
 };
 
+export const SUBSCRIPTION_TIER_IDS: SubscriptionTierId[] = ['basic', 'pro', 'enterprise'];
+
 const TIER_ALIASES: Record<string, SubscriptionTierId> = {
-  free: 'free',
   basic: 'basic',
   pro: 'pro',
   enterprise: 'enterprise',
-  // legacy / UI strings
-  Free: 'free',
+  // Paystack Core SKUs → full limits
+  core_monthly: 'enterprise',
+  core_6months: 'enterprise',
+  core_annual: 'enterprise',
+  // legacy / UI
+  free: 'basic',
+  Free: 'basic',
   Basic: 'basic',
   Pro: 'pro',
   Enterprise: 'enterprise',
 };
 
 export function normalizeSubscriptionTier(raw: string | null | undefined): SubscriptionTierId {
-  if (!raw || typeof raw !== 'string') return 'free';
+  if (!raw || typeof raw !== 'string') return DEFAULT_SUBSCRIPTION_TIER;
   const k = raw.trim().toLowerCase();
   if (k in SUBSCRIPTION_PLANS) return k as SubscriptionTierId;
+  if (k === 'free') return 'basic';
+  if (k === 'core_monthly' || k === 'core_6months' || k === 'core_annual') return 'enterprise';
   if (raw in TIER_ALIASES) return TIER_ALIASES[raw];
-  return 'free';
+  return DEFAULT_SUBSCRIPTION_TIER;
 }
 
 export function getPlanDefaults(tier: SubscriptionTierId): PlanLimits {
@@ -102,10 +103,7 @@ export type OrgLimitRow = {
   max_staff?: number | null;
 };
 
-export function effectiveLimit<K extends keyof PlanLimits>(
-  org: OrgLimitRow,
-  key: K,
-): number {
+export function effectiveLimit<K extends keyof PlanLimits>(org: OrgLimitRow, key: K): number {
   const override = org[key];
   if (typeof override === 'number' && override >= 0) return override;
   const tier = normalizeSubscriptionTier(org.subscription_tier ?? undefined);

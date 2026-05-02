@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Dimensions } from "react-native";
 import { BlurView } from "expo-blur";
 import { useNavigation } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../lib/api";
 import { useTheme } from "../contexts/ThemeContext";
@@ -21,7 +22,10 @@ import {
 import type { ReportGroupRow } from "../lib/reportGroupTree";
 import { colors, radius, type, type ThemeColors } from "../theme";
 import { shareReportFromDownloadPath, shareReportFromExportResponse } from "../lib/downloadReportExport";
+import { fetchAllMembersPaged } from "../lib/fetchMembersPaged";
+import { fetchAllEventsPaged } from "../lib/fetchEventsPaged";
 import {
+  filterReportTableKeys,
   formatPreviewCountPctCell,
   formatReportTableCellValueForPreview,
   getReportTableColumnLabel,
@@ -42,7 +46,12 @@ const REPORT_DATE_PRESETS: Array<{ id: ReportDatePresetId; label: string }> = [
 const REPORT_TYPES: Array<{ value: ReportType; label: string; blurb: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { value: "group", label: "Group report", blurb: "Attendance and events for selected groups and dates.", icon: "layers-outline" },
   { value: "membership", label: "Membership report", blurb: "Per-member tasks, attendance, and ministries. Filter by group, type, or individuals.", icon: "people-outline" },
-  { value: "leader", label: "Leaders report", blurb: "Task metrics for a leader and their groups.", icon: "person-circle-outline" },
+  {
+    value: "leader",
+    label: "Leaders report",
+    blurb: "Per-group tasks and attendance for a leader’s ministries.",
+    icon: "person-circle-outline",
+  },
 ];
 
 function formatDate(input: string | null | undefined) {
@@ -97,9 +106,23 @@ function formatHistoryRelativeDate(iso: string | null | undefined): string {
   return cap(past ? `${years} ${u} ago` : `In ${years} ${u}`);
 }
 
+function isUuidMobile(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || "").trim());
+}
+
 export default function ReportsScreen() {
+  const router = useRouter();
+  const leaderSearchParam = useLocalSearchParams<{ leader?: string }>();
+  const leaderFromUrl =
+    typeof leaderSearchParam.leader === "string" ? leaderSearchParam.leader.trim() : "";
+
   const { can } = usePermissions();
-  const canViewReports = can("report_view") || can("view_analytics");
+  const canViewReports =
+    can("report_view") ||
+    can("view_analytics") ||
+    can("report_group") ||
+    can("report_members") ||
+    can("report_leaders");
   const canExportReports = can("export_data");
   const canGroup = can("report_group");
   const canMembers = can("report_members");
@@ -126,6 +149,8 @@ export default function ReportsScreen() {
   const [selectedEventTypeSlugs, setSelectedEventTypeSlugs] = useState<string[]>([]);
   const [eventSearch, setEventSearch] = useState("");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [groupReportSelectAllGroups, setGroupReportSelectAllGroups] = useState(false);
+  const [membershipSelectAllGroups, setMembershipSelectAllGroups] = useState(false);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [selectAllEvents, setSelectAllEvents] = useState(true);
   const [memberSearch, setMemberSearch] = useState("");
@@ -171,6 +196,64 @@ export default function ReportsScreen() {
     });
   }, [eventSearch, events, selectedEventTypeSlugs]);
 
+  const reportFiltersReady = useMemo(() => {
+    if (reportType === "group") {
+      if (groupReportSelectAllGroups || selectedGroupIds.length > 0) return { ok: true as const };
+      return { ok: false as const, reason: "Select at least one group, or choose All groups in scope." };
+    }
+    if (reportType === "membership") {
+      const hasGroups = membershipSelectAllGroups || selectedGroupIds.length > 0;
+      const hasStatus = selectedMemberStatuses.length > 0;
+      const hasMembers = selectAllMembers || selectedMemberIds.length > 0;
+      if (hasGroups || hasStatus || hasMembers) return { ok: true as const };
+      return {
+        ok: false as const,
+        reason: "Choose at least one: groups (or all groups), member status, or member(s) / all members.",
+      };
+    }
+    if (reportType === "leader") {
+      if (!selectedLeaderId.trim()) return { ok: false as const, reason: "Select a leader." };
+      if (mergedEventTypeSlugs.length > 0 && selectedEventTypeSlugs.length === 0) {
+        return { ok: false as const, reason: "Select at least one event type." };
+      }
+      return { ok: true as const };
+    }
+    return { ok: true as const };
+  }, [
+    reportType,
+    groupReportSelectAllGroups,
+    membershipSelectAllGroups,
+    selectedGroupIds.length,
+    selectedMemberStatuses.length,
+    selectAllMembers,
+    selectedMemberIds.length,
+    selectedLeaderId,
+    mergedEventTypeSlugs.length,
+    selectedEventTypeSlugs.length,
+  ]);
+
+  const closeReportWizard = useCallback(() => {
+    setOpen(false);
+    setResultFiltersOpen(false);
+    if (leaderFromUrl) {
+      router.replace("/reports");
+    }
+  }, [leaderFromUrl, router]);
+
+  useEffect(() => {
+    if (!leaderFromUrl || !canLeaders || !isUuidMobile(leaderFromUrl)) return;
+    setOpen(true);
+    setReportType("leader");
+    setSelectedLeaderId(leaderFromUrl);
+    setStep(2);
+  }, [leaderFromUrl, canLeaders]);
+
+  useEffect(() => {
+    if (!open || reportType !== "leader") return;
+    if (mergedEventTypeSlugs.length === 0) return;
+    setSelectedEventTypeSlugs((prev) => (prev.length === 0 ? [...mergedEventTypeSlugs] : prev));
+  }, [open, reportType, mergedEventTypeSlugs]);
+
   const filteredHistoryRows = useMemo(() => {
     const q = historySearch.trim().toLowerCase();
     if (!q) return rows;
@@ -185,12 +268,12 @@ export default function ReportsScreen() {
   const loadData = useCallback(async () => {
     if (!canViewReports) return;
     try {
-      const [etList, history, groupRows, memberRows, eventRows, leadersResp] = await Promise.all([
+      const [etList, history, groupRows, allMembers, allEvents, leadersResp] = await Promise.all([
         api.eventTypes.list().catch(() => [] as { name?: string }[]),
         api.reports.historyTable({ limit: 50 }),
         api.groups.list({ tree: true }),
-        api.members.list({ limit: 500 }),
-        api.events.list({ limit: 500 }),
+        fetchAllMembersPaged(api).catch(() => []),
+        fetchAllEventsPaged(api).catch(() => []),
         api.reports.listLeaders().catch(() => ({ leaders: [] as any[] })),
       ]);
       const rawRows: any[] = Array.isArray(history.rows) ? history.rows : [];
@@ -213,9 +296,8 @@ export default function ReportsScreen() {
           }))
           .filter((g) => g.id)
       );
-      const memRows = Array.isArray((memberRows as any)?.members) ? (memberRows as any).members : [];
       setMembers(
-        memRows
+        allMembers
           .map((m: any) => ({
             value: String(m.id || ""),
             label: `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Member",
@@ -223,11 +305,13 @@ export default function ReportsScreen() {
           }))
           .filter((m: any) => m.value)
       );
-      const evtRows = Array.isArray((eventRows as any)?.events) ? (eventRows as any).events : Array.isArray(eventRows) ? (eventRows as any[]) : [];
+      const evtRows = allEvents;
       const typeSlugs = new Set<string>();
       for (const r of etList) {
-        const n = String((r as { name?: string }).name || "").trim();
-        if (n) typeSlugs.add(n.toLowerCase());
+        const name = String((r as { name?: string }).name || "").trim().toLowerCase();
+        const slug = String((r as { slug?: string }).slug || "").trim().toLowerCase();
+        if (name) typeSlugs.add(name);
+        if (slug) typeSlugs.add(slug);
       }
       setEvents(
         evtRows
@@ -259,7 +343,15 @@ export default function ReportsScreen() {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    setGroupReportSelectAllGroups(false);
+    setMembershipSelectAllGroups(false);
+  }, [reportType]);
+
   openCreateRef.current = () => {
+    if (leaderFromUrl) {
+      router.replace("/reports");
+    }
     resetFlow();
     setOpen(true);
   };
@@ -318,6 +410,8 @@ export default function ReportsScreen() {
     setSelectedEventTypeSlugs([]);
     setEventSearch("");
     setSelectedGroupIds([]);
+    setGroupReportSelectAllGroups(false);
+    setMembershipSelectAllGroups(false);
     setSelectedEventIds([]);
     setSelectAllEvents(true);
     setMemberSearch("");
@@ -332,6 +426,8 @@ export default function ReportsScreen() {
     const isMembership = reportType === "membership";
     const span = inclusiveLocalDayCount(reportDateRange.start, reportDateRange.end);
     const localBounds = localDayBoundsToIso(reportDateRange.start, reportDateRange.end);
+    const selectAllGroupsPayload =
+      reportType === "group" ? groupReportSelectAllGroups : reportType === "membership" ? membershipSelectAllGroups : false;
     return {
       range_days: span > 0 ? span : 90,
       range_start: reportDateRange.start,
@@ -339,7 +435,9 @@ export default function ReportsScreen() {
       range_start_utc: localBounds?.start,
       range_end_utc: localBounds?.end,
       client_clock_iso: new Date().toISOString(),
-      group_ids: reportType === "group" || reportType === "membership" ? selectedGroupIds : undefined,
+      select_all_groups: reportType === "group" || reportType === "membership" ? selectAllGroupsPayload : undefined,
+      group_ids:
+        reportType === "group" || reportType === "membership" ? (selectAllGroupsPayload ? [] : selectedGroupIds) : undefined,
       event_types: isMembership ? [] : selectedEventTypeSlugs,
       event_search: isMembership ? undefined : eventSearch || undefined,
       event_ids: isMembership ? undefined : selectAllEvents ? undefined : selectedEventIds,
@@ -355,7 +453,13 @@ export default function ReportsScreen() {
     return (
       <View style={styles.sectionGap}>
         <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>Date range</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.presetRow}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
           {REPORT_DATE_PRESETS.map((p) => (
             <Pressable
               key={p.id}
@@ -391,6 +495,7 @@ export default function ReportsScreen() {
             <Pressable
               onPress={() => setEventTypesModalOpen(true)}
               style={[styles.dropdownTrigger, { borderColor: themeColors.border, backgroundColor: themeColors.bg }]}
+              hitSlop={4}
             >
               <Text style={{ color: themeColors.textPrimary, flex: 1, fontSize: 15 }} numberOfLines={1}>
                 {mergedEventTypeSlugs.length === 0
@@ -401,34 +506,101 @@ export default function ReportsScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color={themeColors.textSecondary} />
             </Pressable>
-            <Text style={styles.subtleHint}>Choose types in the list. None selected means all types.</Text>
+            <Text style={styles.subtleHint}>
+              {reportType === "leader"
+                ? "Select at least one event type for a leader report."
+                : "Choose types in the list. None selected means all types."}
+            </Text>
           </>
         ) : null}
 
-        {(reportType === "group" || reportType === "membership") && (
+        {reportType === "group" ? (
           <>
-            <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>Groups</Text>
+            <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>Groups (required)</Text>
+            <Pressable
+              onPress={() =>
+                setGroupReportSelectAllGroups((prev) => {
+                  const next = !prev;
+                  if (next) setSelectedGroupIds([]);
+                  return next;
+                })
+              }
+              style={styles.toggleRow}
+            >
+              <Text style={styles.subtle}>{groupReportSelectAllGroups ? "☑" : "☐"} All groups in scope</Text>
+            </Pressable>
             <View style={styles.groupPickerRow}>
-              <Pressable onPress={() => setGroupTreeOpen(true)} style={styles.groupPickerMain}>
+              <Pressable
+                onPress={() => {
+                  if (!groupReportSelectAllGroups) setGroupTreeOpen(true);
+                }}
+                disabled={groupReportSelectAllGroups}
+                style={[styles.groupPickerMain, groupReportSelectAllGroups && { opacity: 0.4 }]}
+              >
                 <Ionicons name="git-network-outline" size={18} color={themeColors.accent} />
                 <Text style={styles.groupPickerText} numberOfLines={1}>
-                  {selectedGroupIds.length === 0 ? "Select groups" : `${selectedGroupIds.length} group(s) selected`}
+                  {groupReportSelectAllGroups
+                    ? "All groups"
+                    : selectedGroupIds.length === 0
+                      ? "Select groups"
+                      : `${selectedGroupIds.length} group(s) selected`}
                 </Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
               </Pressable>
-              {selectedGroupIds.length > 0 ? (
-                <Pressable
-                  onPress={() => setSelectedGroupIds([])}
-                  hitSlop={8}
-                  style={styles.clearGroups}
-                >
+              {!groupReportSelectAllGroups && selectedGroupIds.length > 0 ? (
+                <Pressable onPress={() => setSelectedGroupIds([])} hitSlop={8} style={styles.clearGroups}>
                   <Text style={styles.clearGroupsText}>Clear</Text>
                 </Pressable>
               ) : null}
             </View>
             <Text style={styles.subtleHint}>Subgroups are included when you select a parent.</Text>
           </>
-        )}
+        ) : null}
+
+        {reportType === "membership" ? (
+          <>
+            <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>
+              Groups — use with member filters (at least one filter required overall)
+            </Text>
+            <Pressable
+              onPress={() =>
+                setMembershipSelectAllGroups((prev) => {
+                  const next = !prev;
+                  if (next) setSelectedGroupIds([]);
+                  return next;
+                })
+              }
+              style={styles.toggleRow}
+            >
+              <Text style={styles.subtle}>{membershipSelectAllGroups ? "☑" : "☐"} All groups in scope</Text>
+            </Pressable>
+            <View style={styles.groupPickerRow}>
+              <Pressable
+                onPress={() => {
+                  if (!membershipSelectAllGroups) setGroupTreeOpen(true);
+                }}
+                disabled={membershipSelectAllGroups}
+                style={[styles.groupPickerMain, membershipSelectAllGroups && { opacity: 0.4 }]}
+              >
+                <Ionicons name="git-network-outline" size={18} color={themeColors.accent} />
+                <Text style={styles.groupPickerText} numberOfLines={1}>
+                  {membershipSelectAllGroups
+                    ? "All groups"
+                    : selectedGroupIds.length === 0
+                      ? "Select groups"
+                      : `${selectedGroupIds.length} group(s) selected`}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+              </Pressable>
+              {!membershipSelectAllGroups && selectedGroupIds.length > 0 ? (
+                <Pressable onPress={() => setSelectedGroupIds([])} hitSlop={8} style={styles.clearGroups}>
+                  <Text style={styles.clearGroupsText}>Clear</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={styles.subtleHint}>Subgroups are included when you select a parent.</Text>
+          </>
+        ) : null}
 
         {reportType === "group" ? (
           <>
@@ -444,19 +616,30 @@ export default function ReportsScreen() {
               <Text style={styles.subtle}>{selectAllEvents ? "All events in range" : "Choose specific events"}</Text>
             </Pressable>
             {!selectAllEvents ? (
-              <View style={styles.pickList}>
-                {filteredEvents.map((e) => (
-                  <Pressable
-                    key={e.value}
-                    onPress={() => setSelectedEventIds((p) => (p.includes(e.value) ? p.filter((x) => x !== e.value) : [...p, e.value]))}
-                    style={styles.pickItem}
-                  >
-                    <Text style={styles.subtle}>
-                      {selectedEventIds.includes(e.value) ? "☑" : "☐"} {e.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <ScrollView
+                style={styles.pickListScroll}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                {filteredEvents.length === 0 ? (
+                  <Text style={[styles.subtle, { paddingVertical: 12 }]}>No events match filters.</Text>
+                ) : (
+                  filteredEvents.map((e) => (
+                    <Pressable
+                      key={e.value}
+                      onPress={() =>
+                        setSelectedEventIds((p) => (p.includes(e.value) ? p.filter((x) => x !== e.value) : [...p, e.value]))
+                      }
+                      style={styles.pickItem}
+                    >
+                      <Text style={styles.subtle}>
+                        {selectedEventIds.includes(e.value) ? "☑" : "☐"} {e.label}
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
             ) : null}
           </>
         ) : null}
@@ -494,19 +677,34 @@ export default function ReportsScreen() {
               <Text style={styles.subtle}>{selectAllMembers ? "All members in scope" : "Pick specific members"}</Text>
             </Pressable>
             {!selectAllMembers ? (
-              <View style={styles.pickList}>
-                {filteredMembers.map((m) => (
-                  <Pressable
-                    key={m.value}
-                    onPress={() => setSelectedMemberIds((p) => (p.includes(m.value) ? p.filter((x) => x !== m.value) : [...p, m.value]))}
-                    style={styles.pickItem}
-                  >
-                    <Text style={styles.subtle}>
-                      {selectedMemberIds.includes(m.value) ? "☑" : "☐"} {m.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <ScrollView
+                style={styles.pickListScroll}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                {filteredMembers.length === 0 ? (
+                  <Text style={[styles.subtle, { paddingVertical: 12 }]}>
+                    {members.length === 0 ? "No members loaded." : "No members match search."}
+                  </Text>
+                ) : (
+                  filteredMembers.map((m) => (
+                    <Pressable
+                      key={m.value}
+                      onPress={() =>
+                        setSelectedMemberIds((p) =>
+                          p.includes(m.value) ? p.filter((x) => x !== m.value) : [...p, m.value],
+                        )
+                      }
+                      style={styles.pickItem}
+                    >
+                      <Text style={styles.subtle}>
+                        {selectedMemberIds.includes(m.value) ? "☑" : "☐"} {m.label}
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
             ) : null}
           </>
         ) : null}
@@ -514,19 +712,24 @@ export default function ReportsScreen() {
         {reportType === "leader" ? (
           <View>
             <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>Leader</Text>
-            <View style={styles.pickList}>
-            {leaders.length === 0 ? (
-              <Text style={styles.subtle}>No leaders in scope</Text>
-            ) : (
-              leaders.map((l) => (
-                <Pressable key={l.value} onPress={() => setSelectedLeaderId(l.value)} style={styles.pickItem}>
-                  <Text style={styles.subtle}>
-                    {selectedLeaderId === l.value ? "◉" : "○"} {l.label}
-                  </Text>
-                </Pressable>
-              ))
-            )}
-            </View>
+            <ScrollView
+              style={styles.pickListScroll}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              {leaders.length === 0 ? (
+                <Text style={[styles.subtle, { paddingVertical: 12 }]}>No leaders in scope</Text>
+              ) : (
+                leaders.map((l) => (
+                  <Pressable key={l.value} onPress={() => setSelectedLeaderId(l.value)} style={styles.pickItem}>
+                    <Text style={styles.subtle}>
+                      {selectedLeaderId === l.value ? "◉" : "○"} {l.label}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
           </View>
         ) : null}
       </View>
@@ -534,6 +737,10 @@ export default function ReportsScreen() {
   }
 
   async function previewReport() {
+    if (!reportFiltersReady.ok) {
+      setError(reportFiltersReady.reason);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -720,19 +927,17 @@ export default function ReportsScreen() {
         </View>
       </ScrollView>
 
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => closeReportWizard()}>
         <View style={styles.modalRoot}>
           <BlurView
             intensity={resolvedScheme === "dark" ? 28 : 36}
             tint={resolvedScheme === "dark" ? "dark" : "light"}
             style={StyleSheet.absoluteFill}
+            pointerEvents="none"
           />
           <Pressable
             style={[StyleSheet.absoluteFill, styles.modalDimTouch]}
-            onPress={() => {
-              setOpen(false);
-              setResultFiltersOpen(false);
-            }}
+            onPress={() => closeReportWizard()}
             accessibilityLabel="Close sheet"
           />
           <View style={styles.modalForeground} pointerEvents="box-none">
@@ -750,10 +955,7 @@ export default function ReportsScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.cardTitle, { color: themeColors.textPrimary }]}>Create report</Text>
               <Pressable
-                onPress={() => {
-                  setOpen(false);
-                  setResultFiltersOpen(false);
-                }}
+                onPress={() => closeReportWizard()}
                 hitSlop={10}
                 accessibilityLabel="Close"
                 style={({ pressed }) => [styles.modalIconBtn, pressed && { opacity: 0.75 }]}
@@ -764,7 +966,13 @@ export default function ReportsScreen() {
             <Text style={[styles.stepBadge, { color: themeColors.textSecondary }]}>Step {step} of 3</Text>
 
             {step === 1 ? (
-              <ScrollView contentContainerStyle={styles.sectionGap} showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={{ maxHeight: windowHeight * 0.72 }}
+                contentContainerStyle={styles.sectionGap}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
                 {allowedTypes.map((t) => {
                   const active = reportType === t.value;
                   return (
@@ -788,7 +996,13 @@ export default function ReportsScreen() {
             ) : null}
 
             {step === 2 ? (
-              <ScrollView contentContainerStyle={styles.sectionGap} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <ScrollView
+                style={{ maxHeight: windowHeight * 0.72 }}
+                contentContainerStyle={styles.sectionGap}
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
                 {renderFilterFields()}
                 <View style={styles.rowBtns}>
                   <Pressable
@@ -797,17 +1011,26 @@ export default function ReportsScreen() {
                   >
                     <Text style={[styles.ghostBtnText, { color: themeColors.textPrimary }]}>Back</Text>
                   </Pressable>
-                  <Pressable onPress={() => void previewReport()} style={[styles.fullBtn, loading && styles.disabledBtn]} disabled={loading}>
+                  <Pressable
+                    onPress={() => void previewReport()}
+                    style={[styles.fullBtn, (loading || !reportFiltersReady.ok) && styles.disabledBtn]}
+                    disabled={loading || !reportFiltersReady.ok}
+                  >
                     <Text style={styles.fullBtnText}>{loading ? "Generating…" : "Generate"}</Text>
                   </Pressable>
                 </View>
+                {!reportFiltersReady.ok ? (
+                  <Text style={[styles.subtleHint, { color: "#b45309" }]}>{reportFiltersReady.reason}</Text>
+                ) : null}
               </ScrollView>
             ) : null}
 
             {step === 3 ? (
               <ScrollView
+                style={{ maxHeight: windowHeight * 0.72 }}
                 contentContainerStyle={[styles.sectionGap, styles.resultScrollContent]}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
               >
                 <Text style={[styles.formSectionTitle, { color: themeColors.textPrimary }]}>Report name (for history)</Text>
@@ -851,7 +1074,7 @@ export default function ReportsScreen() {
                 <View style={styles.rowBtns}>
                   <Pressable onPress={() => void saveReport()} style={[styles.fullBtn, styles.fullBtnFlex]} disabled={loading}>
                     <Ionicons name="save-outline" size={18} color="#fff" />
-                    <Text style={styles.fullBtnText}>{loading ? "…" : "Save to history"}</Text>
+                    <Text style={styles.fullBtnText}>{loading ? "…" : "Save Report"}</Text>
                   </Pressable>
                 </View>
                 <View style={styles.rowBtns}>
@@ -889,10 +1112,17 @@ export default function ReportsScreen() {
                   >
                     <Text style={[styles.ghostBtnText, { color: themeColors.textPrimary }]}>Back to filters</Text>
                   </Pressable>
-                  <Pressable onPress={() => void previewReport()} style={[styles.fullBtn, loading && styles.disabledBtn]} disabled={loading}>
+                  <Pressable
+                    onPress={() => void previewReport()}
+                    style={[styles.fullBtn, (loading || !reportFiltersReady.ok) && styles.disabledBtn]}
+                    disabled={loading || !reportFiltersReady.ok}
+                  >
                     <Text style={styles.fullBtnText}>{loading ? "Regenerating…" : "Apply & regenerate"}</Text>
                   </Pressable>
                 </View>
+                {!reportFiltersReady.ok ? (
+                  <Text style={[styles.subtleHint, { color: "#b45309" }]}>{reportFiltersReady.reason}</Text>
+                ) : null}
               </ScrollView>
             ) : null}
             </View>
@@ -916,8 +1146,16 @@ export default function ReportsScreen() {
                 <Text style={{ color: themeColors.accent, fontWeight: "700" }}>Done</Text>
               </Pressable>
             </View>
-            <Text style={[styles.subtleHint, { marginBottom: 8 }]}>Select one or more. Leave all off to include every type.</Text>
-            <ScrollView style={{ maxHeight: windowHeight * 0.45 }} keyboardShouldPersistTaps="handled">
+            <Text style={[styles.subtleHint, { marginBottom: 8 }]}>
+              {reportType === "leader"
+                ? "Select at least one type for a leader report."
+                : "Select one or more. Leave all off to include every type."}
+            </Text>
+            <ScrollView
+              style={{ maxHeight: windowHeight * 0.45 }}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
               {mergedEventTypeSlugs.length === 0 ? (
                 <Text style={[styles.subtle, { color: themeColors.textSecondary }]}>No event types in scope.</Text>
               ) : (
@@ -1040,6 +1278,8 @@ function PreviewSummary({
             { label: "Tasks open", value: num(kpis.open_tasks) },
             { label: "Tasks done", value: num(kpis.completed_tasks) },
             { label: "Completion", value: pct(kpis.task_completion_rate_pct) },
+            { label: "Att. rate", value: pct(kpis.attendance_rate_pct) },
+            { label: "Att. total", value: num(kpis.attendance_total) },
           ];
   return (
     <View style={styles.kpiRow}>
@@ -1058,8 +1298,6 @@ function PreviewSummary({
     </View>
   );
 }
-
-const PREVIEW_TABLE_HIDDEN_KEYS = new Set<string>(["event_id"]);
 
 function formatPreviewTableCell(
   row: Record<string, unknown>,
@@ -1089,7 +1327,7 @@ function PreviewMobileTable({
 }) {
   if (!rows || rows.length === 0) return null;
   const columns = mergeCountPctColumns(
-    orderPreviewTableColumns(reportType, Object.keys(rows[0])).filter((c) => !PREVIEW_TABLE_HIDDEN_KEYS.has(c)),
+    orderPreviewTableColumns(reportType, filterReportTableKeys(Object.keys(rows[0]))),
     reportType,
   );
   const visible = rows.slice(0, 50);
@@ -1188,7 +1426,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    minHeight: 48,
   },
   ghostBtnFlat: {
     flexDirection: "row",
@@ -1255,9 +1494,25 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: "#EDE9FE", borderColor: "#C4B5FD" },
   chipText: { ...type.caption, color: colors.textPrimary },
   chipTextActive: { color: "#5B21B6" },
-  pickList: { maxHeight: 120, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 8, gap: 6 },
-  pickItem: { paddingVertical: 2 },
-  toggleRow: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: colors.bg },
+  pickListScroll: {
+    maxHeight: 280,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  pickItem: { paddingVertical: 12, paddingHorizontal: 4, minHeight: 44, justifyContent: "center" },
+  toggleRow: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 48,
+    backgroundColor: colors.bg,
+    justifyContent: "center",
+  },
   adjustFiltersBtn: {
     flexDirection: "row",
     alignItems: "center",

@@ -5,7 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import "../styles/index.css";
 import { LandingApp } from "./LandingApp";
 import { AuthProvider } from "../app/contexts/AuthContext";
-import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from "../auth/AuthPages";
+import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupCompletePage, SignupPage } from "../auth/AuthPages";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -19,6 +19,7 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/reset-password" element={<Navigate to="/cms/reset-password" replace />} />
           <Route path="/cms/login" element={<LoginPage />} />
           <Route path="/cms/signup" element={<SignupPage />} />
+          <Route path="/cms/signup/complete" element={<SignupCompletePage />} />
           <Route path="/cms/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/cms/reset-password" element={<ResetPasswordPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

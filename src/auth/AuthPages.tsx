@@ -4,11 +4,13 @@ import { CheckCircle2, Circle, CreditCard, Eye, EyeOff, Minus, Plus, Scale } fro
 import { useAuth } from "@/contexts/AuthContext";
 import sheepmugLogo from "../../apps/mobile/assets/sheepmug-logo.png";
 import { supabase } from "../app/utils/supabase";
+import type { BillingPlanId } from "../app/config/paidPlans";
 
 type PlanChoice = {
-  id: "monthly" | "yearly";
+  id: BillingPlanId;
+  billingPlanId: BillingPlanId;
   tier: "enterprise";
-  billingCycle: "monthly" | "yearly";
+  billingCycle: "monthly" | "biannual" | "yearly";
   label: string;
   priceLabel: string;
   summary: string;
@@ -16,35 +18,54 @@ type PlanChoice = {
 
 const PLAN_CHOICES: PlanChoice[] = [
   {
-    id: "monthly",
+    id: "core_monthly",
+    billingPlanId: "core_monthly",
     tier: "enterprise",
     billingCycle: "monthly",
-    label: "Core Monthly",
-    priceLabel: "GHC 400 / mo.",
-    summary: "Pay month-to-month with full Core features.",
+    label: "Core Plan",
+    priceLabel: "GH₵ 250 / mo",
+    summary: "Full SheepMug for your church, billed every month.",
   },
   {
-    id: "yearly",
+    id: "core_6months",
+    billingPlanId: "core_6months",
+    tier: "enterprise",
+    billingCycle: "biannual",
+    label: "6 Months",
+    priceLabel: "GH₵ 1,400 / 6 mo",
+    summary: "Save 100 GHS compared to paying monthly for the same period.",
+  },
+  {
+    id: "core_annual",
+    billingPlanId: "core_annual",
     tier: "enterprise",
     billingCycle: "yearly",
-    label: "Core Yearly",
-    priceLabel: "GHC 4,400 / yr.",
-    summary: "Pay yearly and get one month free (11 months billed).",
+    label: "All Year Bundle",
+    priceLabel: "GH₵ 2,750 / yr",
+    summary: "Save 250 GHS vs paying monthly for a full year.",
   },
 ];
 
+function planIdFromSearch(q: string | null): BillingPlanId {
+  const v = (q || "").toLowerCase().trim();
+  if (v === "core_6months" || v === "6m" || v === "six" || v === "biannual") return "core_6months";
+  if (v === "core_annual" || v === "yearly" || v === "annual" || v === "12m") return "core_annual";
+  if (v === "core_monthly" || v === "monthly" || v === "month") return "core_monthly";
+  return "core_monthly";
+}
+
 const FAQ_ITEMS = [
   {
-    q: "How does the 14-day trial work?",
-    a: "You choose monthly or yearly billing during setup. Hubtel is still pending approval, so payment remains in a UI-ready state.",
+    q: "How does billing work?",
+    a: "You pick a plan during signup and complete payment securely with Paystack. Your organization unlocks full limits after the first successful charge.",
   },
   {
-    q: "Why do we ask payment details for paid plans?",
-    a: "Core requires payment setup. Until Hubtel goes live, you can use the demo bypass path for onboarding and testing.",
+    q: "Can I cancel?",
+    a: "Yes. Organization owners can open Paystack’s subscription page from Settings → Subscription to turn off renewal. Access continues until the end of the paid period.",
   },
   {
-    q: "How do I cancel if I am not impressed?",
-    a: "You can downgrade or cancel from account billing once live payment integration is active.",
+    q: "Do you offer refunds?",
+    a: "We do not refund completed periods. If you cancel, your subscription stays active until the end of the current billing window.",
   },
 ];
 
@@ -313,14 +334,11 @@ export function LoginPage() {
 }
 
 export function SignupPage() {
-  const { signup, isAuthenticated, loading } = useAuth();
+  const { signup, signupCheckout, isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const initialPlanId =
-    new URLSearchParams(window.location.search).get("plan")?.toLowerCase() === "yearly"
-      ? "yearly"
-      : "monthly";
-  const [selectedPlanId, setSelectedPlanId] = useState<PlanChoice["id"]>(initialPlanId);
+  const initialPlanId = planIdFromSearch(new URLSearchParams(window.location.search).get("plan"));
+  const [selectedPlanId, setSelectedPlanId] = useState<BillingPlanId>(initialPlanId);
   const [fullName, setFullName] = useState("");
   const [churchName, setChurchName] = useState("");
   const [email, setEmail] = useState("");
@@ -352,8 +370,8 @@ export function SignupPage() {
       setError("Please confirm that you agree to continue.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
     if (password !== confirmPassword) {
@@ -372,7 +390,24 @@ export function SignupPage() {
 
     setSubmitting(true);
     try {
-      await signup({
+      if (demoBypass) {
+        await signup({
+          email: email.trim(),
+          password,
+          firstName,
+          lastName,
+          organizationName: churchName.trim() || undefined,
+          subscriptionTier: selectedPlan.tier,
+          billingCycle: selectedPlan.billingCycle,
+          billingPlanId: selectedPlan.billingPlanId,
+          demoBypass: true,
+        });
+        setSuccessMessage("Account ready. Redirecting to your workspace…");
+        window.location.href = "/cms";
+        return;
+      }
+
+      const { authorization_url } = await signupCheckout({
         email: email.trim(),
         password,
         firstName,
@@ -380,11 +415,9 @@ export function SignupPage() {
         organizationName: churchName.trim() || undefined,
         subscriptionTier: selectedPlan.tier,
         billingCycle: selectedPlan.billingCycle,
-        demoBypass,
+        billingPlanId: selectedPlan.billingPlanId,
       });
-
-      setSuccessMessage("Account created. Redirecting to your workspace...");
-      window.location.href = "/cms";
+      window.location.assign(authorization_url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Signup failed. Please try again.";
       setError(msg);
@@ -401,7 +434,7 @@ export function SignupPage() {
         {step === 1 ? (
           <div>
             <h2 className="text-[34px] font-bold leading-tight text-[#111827]">Select your billing</h2>
-            <p className="mt-2 text-[14px] text-[#667085]">Pay yearly and get one month free.</p>
+            <p className="mt-2 text-[14px] text-[#667085]">Pay yearly and save compared to twelve monthly payments.</p>
             <div className="mt-6 space-y-3">
               {PLAN_CHOICES.map((plan) => (
                 <PlanSelectionCard
@@ -531,7 +564,9 @@ export function SignupPage() {
         {step === 3 ? (
           <div>
             <h2 className="text-[30px] font-bold leading-tight text-[#111827]">Payment setup</h2>
-            <p className="mt-2 text-[14px] text-[#667085]">Hubtel payment is pending approval for live charging.</p>
+            <p className="mt-2 text-[14px] text-[#667085]">
+              Complete checkout with Paystack in a secure window. You can also finish payment later from Settings → Subscription.
+            </p>
 
             <div className="mt-5 rounded-lg border border-[#dbe3ec] bg-[#f8fbff] p-5">
               <div className="flex items-center justify-between">
@@ -560,19 +595,12 @@ export function SignupPage() {
             <div className="mt-5 space-y-3">
               <button
                 type="button"
-                disabled
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[#cbd5e1] bg-white px-4 py-3 text-[14px] font-semibold text-[#334155]"
+                disabled={submitting}
+                onClick={() => void submitSignup({ demoBypass: false })}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CreditCard className="h-4 w-4" />
-                Hubtel payment (Pending approval)
-              </button>
-
-              <button
-                type="button"
-                disabled
-                className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white opacity-70"
-              >
-                Complete payment (Coming soon)
+                {submitting ? "Working…" : "Create account & pay with Paystack"}
               </button>
 
               {DEMO_BYPASS_ENABLED ? (
@@ -580,9 +608,9 @@ export function SignupPage() {
                   type="button"
                   disabled={submitting}
                   onClick={() => void submitSignup({ demoBypass: true })}
-                  className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a8a] px-4 py-3 text-[15px] font-semibold text-white transition hover:bg-[#1b357a] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center rounded-lg border border-[#cbd5e1] bg-white px-4 py-3 text-[14px] font-semibold text-[#334155] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? "Creating account..." : "Continue with demo bypass"}
+                  {submitting ? "Creating account..." : "Continue with demo bypass (testing)"}
                 </button>
               ) : null}
             </div>
@@ -1103,6 +1131,83 @@ export function ResetPasswordPage() {
             {submitting ? "Updating..." : "Update password"}
           </button>
         </form>
+      </div>
+    </AuthShell>
+  );
+}
+
+/** Paystack redirects here after payment (`reference` or `trxref` query). */
+export function SignupCompletePage() {
+  const { completeSignupAfterPayment, isAuthenticated, loading } = useAuth();
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      window.location.href = "/cms";
+    }
+  }, [isAuthenticated, loading]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = (params.get("reference") || params.get("trxref") || "").trim();
+    if (!reference) {
+      setError("Missing payment reference. Return to signup and complete checkout.");
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await completeSignupAfterPayment(reference);
+        if (cancelled) return;
+        if (result.kind === "session") {
+          window.location.href = "/cms";
+          return;
+        }
+        setInfo(result.message || "Your subscription is active. Sign in with the password you chose during signup.");
+        setTimeout(() => {
+          window.location.href = `/login?email=${encodeURIComponent(result.email)}`;
+        }, 2000);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "Could not complete signup.";
+        if (/not completed yet|402|pending/i.test(msg)) {
+          setPending(true);
+        }
+        setError(msg);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount; completeSignupAfterPayment is stable enough for this flow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <AuthShell title="Finishing your account" subtitle="Confirming payment and creating your workspace.">
+      <div className="mx-auto w-full max-w-md text-center">
+        {!error && !info ? (
+          <p className="text-[15px] text-[#4b5563]">Confirming payment with Paystack…</p>
+        ) : null}
+        {pending && !error ? (
+          <p className="mt-3 text-[13px] text-[#92400e]">
+            Payment can take a few seconds to confirm. This page will retry when you refresh.
+          </p>
+        ) : null}
+        {info ? <p className="mt-4 text-[14px] text-emerald-800">{info}</p> : null}
+        {error ? <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p> : null}
+        {error ? (
+          <Link
+            to="/signup"
+            className="mt-6 inline-block font-semibold text-[#1e3a8a] hover:underline"
+          >
+            Back to signup
+          </Link>
+        ) : null}
       </div>
     </AuthShell>
   );

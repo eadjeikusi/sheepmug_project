@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { Alert, Platform, Share } from "react-native";
 import { API_BASE_URL } from "./api";
 import { getToken, getSelectedBranchId } from "./storage";

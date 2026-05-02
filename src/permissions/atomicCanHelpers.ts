@@ -142,6 +142,19 @@ export function canSeeAnyTaskPermission(can: CanFn): boolean {
   return some(can, ANY_TASK_VIEW_OR_WRITE);
 }
 
+/** Leaders list + `/leaders/:id` (explicit atom or legacy report/groups/analytics access). */
+const LEADERS_DIRECTORY_ACCESS: string[] = [
+  "leaders_profile_page",
+  "view_groups",
+  "report_view",
+  "report_leaders",
+  "view_analytics",
+];
+
+export function canAccessLeadersDirectory(can: CanFn): boolean {
+  return some(can, LEADERS_DIRECTORY_ACCESS);
+}
+
 export function canAccessEventAttendance(can: CanFn): boolean {
   return can("view_event_attendance") || can("record_event_attendance");
 }

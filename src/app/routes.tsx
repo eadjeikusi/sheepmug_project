@@ -11,6 +11,8 @@ import Tasks from "./components/pages/Tasks";
 import Messages from "./components/pages/Messages";
 import Notifications from "./components/pages/Notifications";
 import Reports from "./components/pages/Reports";
+import Leaders from "./components/pages/Leaders";
+import LeaderDetail from "./components/pages/LeaderDetail";
 import Settings from "./components/pages/Settings";
 import ImportantDates from "./components/pages/ImportantDates";
 import ProfileSettings from "./components/pages/ProfileSettings";
@@ -18,7 +20,7 @@ import SuperAdmin from "./components/pages/SuperAdmin";
 import NotFound from "./components/pages/NotFound";
 import PublicGroupPage from "./components/pages/PublicGroupPage";
 import JoinGroupPage from "./components/pages/JoinGroupPage";
-import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupPage } from "../auth/AuthPages";
+import { ForgotPasswordPage, LoginPage, ResetPasswordPage, SignupCompletePage, SignupPage } from "../auth/AuthPages";
 
 const CMS_BASENAME = (() => {
   const configuredRaw = String(import.meta.env.VITE_CMS_BASENAME || "/cms").trim() || "/cms";
@@ -34,6 +36,10 @@ export const router = createBrowserRouter([
   {
     path: "/signup",
     Component: SignupPage,
+  },
+  {
+    path: "/signup/complete",
+    Component: SignupCompletePage,
   },
   {
     path: "/forgot-password",
@@ -106,6 +112,14 @@ export const router = createBrowserRouter([
       {
         path: "reports",
         Component: Reports,
+      },
+      {
+        path: "leaders",
+        Component: Leaders,
+      },
+      {
+        path: "leaders/:profileId",
+        Component: LeaderDetail,
       },
       {
         path: "important-dates",

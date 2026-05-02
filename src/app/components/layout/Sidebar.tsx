@@ -8,11 +8,12 @@ import {
   ListTodo,
   MessageSquare,
   BarChart3,
+  UsersRound,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMyOpenTaskCount } from '@/hooks/useMyOpenTaskCount';
-import { canOpenSettings } from '../../../permissions/atomicCanHelpers';
+import { canAccessLeadersDirectory, canOpenSettings } from '../../../permissions/atomicCanHelpers';
 
 const navItems: {
   id: string;
@@ -49,6 +50,14 @@ const navItems: {
     showOpenTaskBadge: true,
   },
   { id: 'groups', icon: UserCircle2, label: 'Ministries', permission: 'view_groups' },
+  {
+    id: 'leaders',
+    icon: UsersRound,
+    label: 'Leaders',
+    permission: null,
+    /** Visibility uses `canAccessLeadersDirectory` in the filter below. */
+    anyPermissions: undefined,
+  },
   { id: 'messages', icon: MessageSquare, label: 'Messages', permission: 'send_messages' },
   { id: 'events', icon: Trophy, label: 'Events', permission: 'view_events' },
   {
@@ -81,6 +90,7 @@ export default function Sidebar({ activeTab, setActiveTab, mobileOpen, onMobileC
   const { can } = usePermissions();
   const { count: openTaskCount } = useMyOpenTaskCount();
   const visibleNav = navItems.filter((item) => {
+    if (item.id === 'leaders') return canAccessLeadersDirectory(can);
     if (item.anyPermissions?.length) return item.anyPermissions.some((p) => can(p));
     return item.permission == null || can(item.permission);
   });

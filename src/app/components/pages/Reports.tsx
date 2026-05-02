@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { formatDistanceToNowStrict } from "date-fns";
 import { ChevronDown, Download, FileSpreadsheet, FileText, Plus, Users, X } from "lucide-react";
 import { withBranchScope } from "@/utils/branchScopeHeaders";
@@ -13,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/components/ui/utils";
+import { capitalizeSentencesForUi } from "@/utils/sentenceCaseDisplay";
 import {
   displayMemberWords,
+  filterReportTableKeys,
   formatPreviewCountPctCell,
   formatReportTableCellValueForPreview,
   getReportTableColumnLabel,
@@ -41,6 +44,25 @@ function formatHistoryRelativeDate(iso: string | null | undefined): string {
 function formatHistoryReportName(name: string | null | undefined): string {
   const t = (name && String(name).trim()) || "Generated report";
   return displayMemberWords(t);
+}
+
+/** Title-case API-sourced lines for report modals (names, titles, table cells). */
+function reportPopupLine(s: string): string {
+  const t = String(s ?? "").trim();
+  if (!t) return "";
+  if (t === "—") return "—";
+  return displayMemberWords(t);
+}
+
+function reportPopupSlug(slug: string): string {
+  return reportPopupLine(String(slug || "").replace(/_/g, " "));
+}
+
+/** Sentence-case for multi-line user/system copy in report dialogs. */
+function reportPopupBody(s: string): string {
+  const t = String(s ?? "").trim();
+  if (!t) return t;
+  return capitalizeSentencesForUi(t);
 }
 
 type ReportType = "group" | "membership" | "leader";
@@ -74,12 +96,17 @@ const REPORT_TYPES: Array<{
   {
     value: "leader",
     label: "Leaders report",
-    description: "Task metrics for a leader and the groups they lead in the selected window.",
+    description: "Per-group tasks and attendance performance for a leader’s ministries in the selected window.",
     icon: <Users className="h-6 w-6 shrink-0" />,
   },
 ];
 
+function isUuidLike(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(s || "").trim());
+}
+
 export default function Reports() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { token } = useAuth();
   const { selectedBranch } = useBranch();
   const { can } = usePermissions();
@@ -104,6 +131,8 @@ export default function Reports() {
   const [selectedEventTypeSlugs, setSelectedEventTypeSlugs] = useState<string[]>([]);
   const [eventSearch, setEventSearch] = useState("");
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [groupReportSelectAllGroups, setGroupReportSelectAllGroups] = useState(false);
+  const [membershipSelectAllGroups, setMembershipSelectAllGroups] = useState(false);
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [selectAllEvents, setSelectAllEvents] = useState(true);
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -126,6 +155,11 @@ export default function Reports() {
   useEffect(() => {
     if (step !== 3) setFiltersOpen(false);
   }, [step]);
+
+  useEffect(() => {
+    setGroupReportSelectAllGroups(false);
+    setMembershipSelectAllGroups(false);
+  }, [reportType]);
 
   useEffect(() => {
     if (!filtersOpen) return;
@@ -242,6 +276,30 @@ export default function Reports() {
     void loadBaseData();
   }, [loadBaseData]);
 
+  const closeReportModal = useCallback(() => {
+    setModalOpen(false);
+    if (searchParams.has("leader")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("leader");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const lid = searchParams.get("leader");
+    if (!lid || !canLeaders || !isUuidLike(lid)) return;
+    setModalOpen(true);
+    setReportType("leader");
+    setLeaderId(lid.trim());
+    setStep(2);
+  }, [searchParams, canLeaders]);
+
+  useEffect(() => {
+    if (!modalOpen || reportType !== "leader") return;
+    if (allEventTypeSlugs.length === 0) return;
+    setSelectedEventTypeSlugs((prev) => (prev.length === 0 ? [...allEventTypeSlugs] : prev));
+  }, [modalOpen, reportType, allEventTypeSlugs]);
+
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
     if (!q) return members;
@@ -272,6 +330,8 @@ export default function Reports() {
     setSelectedEventTypeSlugs([]);
     setEventSearch("");
     setGroupIds([]);
+    setGroupReportSelectAllGroups(false);
+    setMembershipSelectAllGroups(false);
     setSelectedEventIds([]);
     setSelectAllEvents(true);
     setMemberIds([]);
@@ -286,6 +346,8 @@ export default function Reports() {
     const isMembership = reportType === "membership";
     const span = inclusiveLocalDayCount(reportDateRange.start, reportDateRange.end);
     const localBounds = localDayBoundsToIso(reportDateRange.start, reportDateRange.end);
+    const selectAllGroupsPayload =
+      reportType === "group" ? groupReportSelectAllGroups : reportType === "membership" ? membershipSelectAllGroups : false;
     return {
       range_days: span > 0 ? span : 90,
       range_start: reportDateRange.start,
@@ -293,7 +355,8 @@ export default function Reports() {
       range_start_utc: localBounds?.start,
       range_end_utc: localBounds?.end,
       client_clock_iso: new Date().toISOString(),
-      group_ids: reportType === "group" || reportType === "membership" ? groupIds : undefined,
+      select_all_groups: reportType === "group" || reportType === "membership" ? selectAllGroupsPayload : undefined,
+      group_ids: reportType === "group" || reportType === "membership" ? (selectAllGroupsPayload ? [] : groupIds) : undefined,
       event_types: reportType === "membership" ? [] : selectedEventTypeSlugs.map((s) => s), // slugs are lowercase; server normalizes
       event_search: isMembership ? undefined : eventSearch || undefined,
       event_ids: isMembership ? undefined : selectAllEvents ? undefined : selectedEventIds,
@@ -305,6 +368,42 @@ export default function Reports() {
     };
   }
 
+  const reportGenerateGate = useMemo(() => {
+    if (reportType === "group") {
+      if (groupReportSelectAllGroups || groupIds.length > 0) return { ok: true as const };
+      return { ok: false as const, reason: "Select at least one group, or choose All groups in scope." };
+    }
+    if (reportType === "membership") {
+      const hasGroups = membershipSelectAllGroups || groupIds.length > 0;
+      const hasStatus = selectedMemberStatuses.length > 0;
+      const hasMembers = selectAllMembers || memberIds.length > 0;
+      if (hasGroups || hasStatus || hasMembers) return { ok: true as const };
+      return {
+        ok: false as const,
+        reason: "Choose at least one: groups (or all groups), member status, or member(s) / all members.",
+      };
+    }
+    if (reportType === "leader") {
+      if (!leaderId.trim()) return { ok: false as const, reason: "Select a leader." };
+      if (allEventTypeSlugs.length > 0 && selectedEventTypeSlugs.length === 0) {
+        return { ok: false as const, reason: "Select at least one event type." };
+      }
+      return { ok: true as const };
+    }
+    return { ok: true as const };
+  }, [
+    reportType,
+    groupReportSelectAllGroups,
+    membershipSelectAllGroups,
+    groupIds.length,
+    selectedMemberStatuses.length,
+    selectAllMembers,
+    memberIds.length,
+    leaderId,
+    allEventTypeSlugs.length,
+    selectedEventTypeSlugs.length,
+  ]);
+
   const branchHeaderJson = withBranchScope(selectedBranch?.id ?? null, { Authorization: `Bearer ${token || ""}`, "Content-Type": "application/json" });
   const downloadAuthHeaders = useMemo(
     () => (token ? withBranchScope(selectedBranch?.id ?? null, { Authorization: `Bearer ${token}` }) : null),
@@ -313,6 +412,10 @@ export default function Reports() {
 
   async function runPreview() {
     if (!token) return;
+    if (!reportGenerateGate.ok) {
+      setError(reportGenerateGate.reason);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -428,7 +531,10 @@ export default function Reports() {
 
       {reportType !== "membership" ? (
         <div className="space-y-1">
-          <p className="text-xs text-gray-500">Event types</p>
+          <p className="text-xs text-gray-500">
+            Event types
+            {reportType === "leader" ? <span className="text-amber-800"> — select at least one</span> : null}
+          </p>
           <Popover>
             <PopoverTrigger asChild>
               <Button type="button" variant="outline" className="h-9 w-full justify-between text-left font-normal">
@@ -441,7 +547,9 @@ export default function Reports() {
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
               <div className="max-h-56 overflow-y-auto p-2">
                 {allEventTypeSlugs.length === 0 ? (
-                  <p className="p-2 text-xs text-gray-500">No event types found. Load events or configure event types in settings.</p>
+                  <p className="p-2 text-xs text-gray-500">
+                    {reportPopupBody("No event types found. Load events or configure event types in settings.")}
+                  </p>
                 ) : (
                   allEventTypeSlugs.map((slug) => (
                     <label key={slug} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-gray-800 hover:bg-gray-50">
@@ -455,7 +563,7 @@ export default function Reports() {
                           );
                         }}
                       />
-                      <span className="capitalize">{slug}</span>
+                      <span>{reportPopupSlug(slug)}</span>
                     </label>
                   ))
                 )}
@@ -465,14 +573,70 @@ export default function Reports() {
         </div>
       ) : null}
 
-      {reportType === "group" || reportType === "membership" ? (
+      {reportType === "group" ? (
         <div>
-          <p className="mb-1 text-xs text-gray-500">Groups {reportType === "membership" ? "(optional; union with member selection below)" : ""}</p>
+          <p className="mb-1 text-xs text-gray-500">Groups (required)</p>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" className="text-xs" onClick={() => setGroupModalOpen(true)}>
-              {groupIds.length === 0 ? "Select groups" : `${groupIds.length} group(s) selected`}
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={groupReportSelectAllGroups}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setGroupReportSelectAllGroups(on);
+                  if (on) setGroupIds([]);
+                }}
+              />
+              All groups in scope
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn("text-xs", groupReportSelectAllGroups && "pointer-events-none opacity-40")}
+              disabled={groupReportSelectAllGroups}
+              onClick={() => setGroupModalOpen(true)}
+            >
+              {groupReportSelectAllGroups ? "All groups" : groupIds.length === 0 ? "Select groups" : `${groupIds.length} group(s) selected`}
             </Button>
-            {groupIds.length > 0 ? (
+            {!groupReportSelectAllGroups && groupIds.length > 0 ? (
+              <Button type="button" variant="ghost" className="h-8 text-xs" onClick={() => setGroupIds([])}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {reportType === "membership" ? (
+        <div>
+          <p className="mb-1 text-xs text-gray-500">
+            Groups — pick specific groups, all groups, and/or member filters below (at least one filter required overall)
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={membershipSelectAllGroups}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setMembershipSelectAllGroups(on);
+                  if (on) setGroupIds([]);
+                }}
+              />
+              All groups in scope
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn("text-xs", membershipSelectAllGroups && "pointer-events-none opacity-40")}
+              disabled={membershipSelectAllGroups}
+              onClick={() => setGroupModalOpen(true)}
+            >
+              {membershipSelectAllGroups ? "All groups" : groupIds.length === 0 ? "Select groups" : `${groupIds.length} group(s) selected`}
+            </Button>
+            {!membershipSelectAllGroups && groupIds.length > 0 ? (
               <Button type="button" variant="ghost" className="h-8 text-xs" onClick={() => setGroupIds([])}>
                 Clear
               </Button>
@@ -502,7 +666,7 @@ export default function Reports() {
                     checked={selectedEventIds.includes(ev.id)}
                     onChange={() => setSelectedEventIds((prev) => (prev.includes(ev.id) ? prev.filter((v) => v !== ev.id) : [...prev, ev.id]))}
                   />
-                  {ev.title}
+                  {reportPopupLine(ev.title)}
                 </label>
               ))}
             </div>
@@ -526,7 +690,7 @@ export default function Reports() {
                         setSelectedMemberStatuses((prev) => (prev.includes(st) ? prev.filter((s) => s !== st) : [...prev, st]))
                       }
                     />
-                    {st}
+                    {reportPopupLine(st)}
                   </label>
                 ))}
               </div>
@@ -551,7 +715,7 @@ export default function Reports() {
                     checked={memberIds.includes(m.id)}
                     onChange={() => setMemberIds((prev) => (prev.includes(m.id) ? prev.filter((v) => v !== m.id) : [...prev, m.id]))}
                   />
-                  {m.name}
+                  {reportPopupLine(m.name)}
                 </label>
               ))}
             </div>
@@ -561,10 +725,14 @@ export default function Reports() {
 
       {reportType === "leader" ? (
         <select className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm" value={leaderId} onChange={(e) => setLeaderId(e.target.value)}>
-          <option value="">{leaders.length === 0 ? "No leaders found in your scope" : "Select leader"}</option>
+          <option value="">
+            {leaders.length === 0
+              ? reportPopupBody("No leaders found in your scope.")
+              : reportPopupBody("Select leader")}
+          </option>
           {leaders.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.name}
+              {reportPopupLine(l.name)}
               {l.email ? ` (${l.email})` : ""}
             </option>
           ))}
@@ -580,6 +748,11 @@ export default function Reports() {
         <button
           type="button"
           onClick={() => {
+            if (searchParams.has("leader")) {
+              const next = new URLSearchParams(searchParams);
+              next.delete("leader");
+              setSearchParams(next, { replace: true });
+            }
             resetFlow();
             setModalOpen(true);
           }}
@@ -590,7 +763,9 @@ export default function Reports() {
         </button>
       </div>
 
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{reportPopupBody(error)}</div>
+      ) : null}
 
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="overflow-x-auto">
@@ -675,13 +850,17 @@ export default function Reports() {
             <div>
               <p className="mb-1 text-xs font-semibold text-gray-500">Description</p>
               <p className="whitespace-pre-wrap text-gray-800">
-                {historyDetail?.description && String(historyDetail.description).trim() ? historyDetail.description : "—"}
+                {historyDetail?.description && String(historyDetail.description).trim()
+                  ? reportPopupBody(String(historyDetail.description))
+                  : "—"}
               </p>
             </div>
             <div>
               <p className="mb-1 text-xs font-semibold text-gray-500">Data filtered</p>
               <p className="whitespace-pre-wrap break-words text-gray-800">
-                {historyDetail?.data_filtered && String(historyDetail.data_filtered).trim() ? historyDetail.data_filtered : "—"}
+                {historyDetail?.data_filtered && String(historyDetail.data_filtered).trim()
+                  ? reportPopupBody(String(historyDetail.data_filtered))
+                  : "—"}
               </p>
             </div>
           </div>
@@ -692,15 +871,19 @@ export default function Reports() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Create report — step {step} of 3</h3>
-              <button type="button" className="text-xs text-gray-600" onClick={() => setModalOpen(false)}>
+              <h3 className="text-sm font-semibold text-gray-900">
+                Create report — Step {step} of 3
+              </h3>
+              <button type="button" className="text-xs text-gray-600" onClick={() => closeReportModal()}>
                 Close
               </button>
             </div>
 
             {step === 1 ? (
               <div className="space-y-4">
-                <p className="text-xs text-gray-500">Choose a report. You can set filters and generate results on the next step.</p>
+                <p className="text-xs text-gray-500">
+                  {reportPopupBody("Choose a report. You can set filters and generate results on the next step.")}
+                </p>
                 <div className="space-y-3">
                   {allowedTypes.map((t) => {
                     const active = reportType === t.value;
@@ -716,8 +899,10 @@ export default function Reports() {
                       >
                         <div className={active ? "text-violet-600" : "text-gray-500"}>{t.icon}</div>
                         <div className="min-w-0 flex-1">
-                          <div className={cn("text-sm font-semibold", active ? "text-violet-900" : "text-gray-900")}>{t.label}</div>
-                          <p className="mt-1 text-xs leading-relaxed text-gray-600">{t.description}</p>
+                          <div className={cn("text-sm font-semibold", active ? "text-violet-900" : "text-gray-900")}>
+                            {reportPopupLine(t.label)}
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-gray-600">{reportPopupBody(t.description)}</p>
                         </div>
                       </button>
                     );
@@ -742,17 +927,28 @@ export default function Reports() {
                     type="button"
                     className="rounded-full bg-violet-500 text-white hover:bg-violet-600"
                     onClick={() => void runPreview()}
-                    disabled={loading}
+                    disabled={loading || !reportGenerateGate.ok}
                   >
                     {loading ? "Generating…" : "Generate"}
                   </Button>
                 </div>
+                {!reportGenerateGate.ok ? (
+                  <p className="text-xs text-amber-800">{reportPopupBody(reportGenerateGate.reason)}</p>
+                ) : null}
               </div>
             ) : null}
 
             {step === 3 ? (
               <div className="space-y-4">
-                <div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="rounded-full bg-violet-500 text-white hover:bg-violet-600"
+                    onClick={() => void runPreview()}
+                    disabled={loading || !reportGenerateGate.ok}
+                  >
+                    {loading ? "Regenerating…" : "Apply filters & regenerate"}
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -762,6 +958,9 @@ export default function Reports() {
                     Adjust filters
                   </Button>
                 </div>
+                {!reportGenerateGate.ok ? (
+                  <p className="text-xs text-amber-800">{reportPopupBody(reportGenerateGate.reason)}</p>
+                ) : null}
                 {filtersOpen ? (
                   <div
                     className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
@@ -803,17 +1002,13 @@ export default function Reports() {
                     onChange={(e) => setResultReportName(e.target.value)}
                   />
                 </div>
-                {savedRunId ? <p className="text-xs text-green-700">Saved to history. You can export below.</p> : null}
+                {savedRunId ? (
+                  <p className="text-xs text-green-700">
+                    {reportPopupBody("Saved to history. You can export below.")}
+                  </p>
+                ) : null}
                 <PreviewTable rows={previewData?.raw_preview_rows || []} kpis={previewData?.kpis || null} reportType={reportType} />
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    className="rounded-full bg-violet-600 text-white"
-                    onClick={() => void runSave()}
-                    disabled={loading}
-                  >
-                    {loading ? "Saving…" : "Save to history"}
-                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -844,11 +1039,11 @@ export default function Reports() {
                   </Button>
                   <Button
                     type="button"
-                    className="rounded-full bg-violet-500 text-white"
-                    onClick={() => void runPreview()}
+                    className="rounded-full bg-violet-600 text-white hover:bg-violet-700"
+                    onClick={() => void runSave()}
                     disabled={loading}
                   >
-                    {loading ? "Regenerating…" : "Apply filters & regenerate"}
+                    {loading ? "Saving…" : "Save Report"}
                   </Button>
                 </div>
               </div>
@@ -868,17 +1063,14 @@ export default function Reports() {
   );
 }
 
-/** Keys omitted from the in-modal preview grid (exports/API unchanged). */
-const PREVIEW_TABLE_HIDDEN_COLUMNS = new Set<string>(["event_id"]);
-
 function formatPreviewTableCell(
   row: Record<string, unknown>,
   columnKey: string,
   reportType: "group" | "membership" | "leader",
 ): string {
   const combined = formatPreviewCountPctCell(row, columnKey, reportType);
-  if (combined !== null) return combined;
-  return formatReportTableCellValueForPreview(row[columnKey], columnKey);
+  if (combined !== null) return reportPopupLine(combined);
+  return reportPopupLine(formatReportTableCellValueForPreview(row[columnKey], columnKey));
 }
 
 function pickPrimaryKpis(reportType: "group" | "membership" | "leader", kpis: Record<string, unknown> | null) {
@@ -906,6 +1098,8 @@ function pickPrimaryKpis(reportType: "group" | "membership" | "leader", kpis: Re
     { label: "Open tasks", value: num(kpis.open_tasks) },
     { label: "Completed tasks", value: num(kpis.completed_tasks) },
     { label: "Task completion", value: fmtPct(kpis.task_completion_rate_pct) },
+    { label: "Attendance rate", value: fmtPct(kpis.attendance_rate_pct) },
+    { label: "Total attendance", value: num(kpis.attendance_total) },
   ];
 }
 
@@ -918,19 +1112,21 @@ function PreviewTable({ rows, kpis, reportType }: { rows: Array<Record<string, u
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {summary.map((k) => (
               <div key={k.label} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-[11px] font-medium text-gray-500">{k.label}</div>
-                <div className="text-sm font-semibold text-gray-900">{k.value}</div>
+                <div className="text-[11px] font-medium text-gray-500">{reportPopupLine(k.label)}</div>
+                <div className="text-sm font-semibold text-gray-900">{reportPopupLine(String(k.value))}</div>
               </div>
             ))}
           </div>
         ) : null}
-        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">No preview rows for the selected filters.</div>
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+          {reportPopupBody("No preview rows for the selected filters.")}
+        </div>
       </div>
     );
   }
 
   const columns = mergeCountPctColumns(
-    orderPreviewTableColumns(reportType, Object.keys(rows[0])).filter((c) => !PREVIEW_TABLE_HIDDEN_COLUMNS.has(c)),
+    orderPreviewTableColumns(reportType, filterReportTableKeys(Object.keys(rows[0]))),
     reportType,
   );
   const visible = rows.slice(0, 50);
@@ -940,18 +1136,19 @@ function PreviewTable({ rows, kpis, reportType }: { rows: Array<Record<string, u
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {summary.map((k) => (
             <div key={k.label} className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
-              <div className="text-[11px] font-medium text-gray-500">{k.label}</div>
-              <div className="text-sm font-semibold text-gray-900">{k.value}</div>
+              <div className="text-[11px] font-medium text-gray-500">{reportPopupLine(k.label)}</div>
+              <div className="text-sm font-semibold text-gray-900">{reportPopupLine(String(k.value))}</div>
             </div>
           ))}
         </div>
       ) : null}
       {reportType === "membership" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-950">
-          <p className="font-semibold">This is the usual source of “wrong numbers”</p>
+          <p className="font-semibold">{reportPopupBody('This is the usual source of "wrong numbers".')}</p>
           <p className="mt-1 text-amber-950/90">
             The member profile <strong>Attendance rate</strong> card (e.g. 50% · past 12 months) is the same as column{" "}
-            <strong>Use this to match profile: 12 mo. past rate</strong>. The column <strong>Not profile card: % for selected report dates only</strong> uses your
+            <strong>Use this to match profile: 12 mo. past rate</strong>. The column{" "}
+            <strong>Not profile card: % for selected report dates only</strong> uses your
             <strong> report date range</strong> in the modal — it is supposed to differ unless you picked the same window on purpose.
           </p>
         </div>
@@ -962,7 +1159,7 @@ function PreviewTable({ rows, kpis, reportType }: { rows: Array<Record<string, u
             <tr>
               {columns.map((c) => (
                 <th key={c} className="whitespace-nowrap px-3 py-2 font-semibold text-gray-700">
-                  {getReportTableColumnLabel(c, reportType)}
+                  {reportPopupLine(getReportTableColumnLabel(c, reportType))}
                 </th>
               ))}
             </tr>
@@ -981,7 +1178,7 @@ function PreviewTable({ rows, kpis, reportType }: { rows: Array<Record<string, u
         </table>
       </div>
       <div className="text-[11px] text-gray-500">
-        Showing {visible.length} of {rows.length} rows.
+        {reportPopupBody(`Showing ${visible.length} of ${rows.length} rows.`)}
       </div>
     </div>
   );

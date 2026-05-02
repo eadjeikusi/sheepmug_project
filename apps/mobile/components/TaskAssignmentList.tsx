@@ -134,6 +134,20 @@ function formatStatusLabel(status: string): string {
   return displayMemberWords(status.replace(/_/g, " "));
 }
 
+type TaskUrgency = "low" | "urgent" | "high";
+
+function taskUrgencyValue(t: TaskItem): TaskUrgency {
+  const u = String((t as { urgency?: string | null }).urgency ?? "").trim().toLowerCase();
+  if (u === "high" || u === "urgent" || u === "low") return u;
+  return "low";
+}
+
+function urgencyMeta(u: TaskUrgency): { bg: string; text: string; label: string } {
+  if (u === "high") return { bg: "#fee2e2", text: "#991b1b", label: "High" };
+  if (u === "urgent") return { bg: "#ffedd5", text: "#9a3412", label: "Urgent" };
+  return { bg: "#ecfdf5", text: "#065f46", label: "Low" };
+}
+
 /** Comma-separated API names (assignees, groups); each segment title-cased. */
 function formatCommaSeparatedDisplay(line: string): string {
   const t = line.trim();
@@ -153,6 +167,7 @@ function dueDateToIso(d: Date): string {
 
 type TaskStatusFilterId = "all" | "pending" | "in_progress" | "completed" | "cancelled";
 type TaskDueFilterId = "all" | "upcoming" | "past" | "none";
+type TaskUrgencyFilterId = "all" | TaskUrgency;
 
 const TASK_STATUS_FILTER_OPTIONS: { id: TaskStatusFilterId; label: string }[] = [
   { id: "all", label: "All statuses" },
@@ -167,6 +182,13 @@ const TASK_DUE_FILTER_OPTIONS: { id: TaskDueFilterId; label: string }[] = [
   { id: "upcoming", label: "Due upcoming" },
   { id: "past", label: "Past due" },
   { id: "none", label: "No due date" },
+];
+
+const TASK_URGENCY_FILTER_OPTIONS: { id: TaskUrgencyFilterId; label: string }[] = [
+  { id: "all", label: "All urgency" },
+  { id: "low", label: "Low" },
+  { id: "urgent", label: "Urgent" },
+  { id: "high", label: "High" },
 ];
 
 function taskDueCategory(t: TaskItem): "upcoming" | "past" | "none" {
@@ -229,10 +251,12 @@ export function TaskAssignmentList({
   const [newTodoDraft, setNewTodoDraft] = useState<Record<string, string>>({});
   const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilterId>("all");
   const [taskDueFilter, setTaskDueFilter] = useState<TaskDueFilterId>("all");
-  const [taskFilterMenuOpen, setTaskFilterMenuOpen] = useState<null | "status" | "due">(null);
+  const [taskUrgencyFilter, setTaskUrgencyFilter] = useState<TaskUrgencyFilterId>("all");
+  const [taskFilterMenuOpen, setTaskFilterMenuOpen] = useState<null | "status" | "due" | "urgency">(null);
   const [taskFilterAnchor, setTaskFilterAnchor] = useState<AnchorRect | null>(null);
   const taskStatusTriggerRef = useRef<View>(null);
   const taskDueTriggerRef = useRef<View>(null);
+  const taskUrgencyTriggerRef = useRef<View>(null);
   const [editingChecklist, setEditingChecklist] = useState<{ taskId: string; itemId: string } | null>(null);
   const [editChecklistLabelDraft, setEditChecklistLabelDraft] = useState("");
   const [showAddTask, setShowAddTask] = useState(false);
@@ -246,6 +270,7 @@ export function TaskAssignmentList({
   const [editAssigneeIds, setEditAssigneeIds] = useState<Set<string>>(() => new Set());
   const [editDueDate, setEditDueDate] = useState<Date | null>(null);
   const [editRelatedMemberIds, setEditRelatedMemberIds] = useState<Set<string>>(() => new Set());
+  const [editUrgency, setEditUrgency] = useState<TaskUrgency>("low");
   const [staffOptions, setStaffOptions] = useState<StaffRow[]>([]);
   const [branchMembersForEdit, setBranchMembersForEdit] = useState<Member[]>([]);
 
@@ -543,6 +568,7 @@ export function TaskAssignmentList({
       setEditDueDate(null);
       setEditRelatedMemberIds(new Set());
     }
+    setEditUrgency(taskUrgencyValue(t));
     setShowEditTask(true);
   }, [canStructuralEditOrDeleteTask]);
 
@@ -555,6 +581,7 @@ export function TaskAssignmentList({
     setEditAssigneeIds(new Set());
     setEditDueDate(null);
     setEditRelatedMemberIds(new Set());
+    setEditUrgency("low");
     setStaffOptions([]);
     setBranchMembersForEdit([]);
   }, []);
@@ -617,6 +644,7 @@ export function TaskAssignmentList({
         const res = await patchTask(t, {
           title,
           description: editDesc.trim() || null,
+          urgency: editUrgency,
         });
         mergeTask(tid, res.task);
         closeEditTaskModal();
@@ -635,6 +663,7 @@ export function TaskAssignmentList({
         assignee_profile_ids: [...editAssigneeIds],
         related_member_ids: related,
         due_at: editDueDate ? dueDateToIso(editDueDate) : null,
+        urgency: editUrgency,
       };
       const res = await patchTask(t, body);
       mergeTask(tid, res.task);
@@ -652,6 +681,7 @@ export function TaskAssignmentList({
     editAssigneeIds,
     editDueDate,
     editRelatedMemberIds,
+    editUrgency,
     tasks,
     canStructuralEditOrDeleteTask,
     patchTask,
@@ -684,15 +714,20 @@ export function TaskAssignmentList({
         const cat = taskDueCategory(t);
         if (cat !== taskDueFilter) return false;
       }
+      if (taskUrgencyFilter !== "all" && taskUrgencyValue(t) !== taskUrgencyFilter) return false;
       if (q) {
         const r = t as { assignee_name?: string | null; groups?: { name?: string | null }[] };
         const groupNames = taskGroupsLine(r.groups);
-        const blob = [t.title, t.description, st, r.assignee_name, groupNames].filter(Boolean).join(" ").toLowerCase();
+        const urgLabel = urgencyMeta(taskUrgencyValue(t)).label.toLowerCase();
+        const blob = [t.title, t.description, st, r.assignee_name, groupNames, urgLabel]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
         if (!blob.includes(q)) return false;
       }
       return true;
     });
-  }, [sortedTasks, taskStatusFilter, taskDueFilter, taskSearch, variant]);
+  }, [sortedTasks, taskStatusFilter, taskDueFilter, taskUrgencyFilter, taskSearch, variant]);
 
   const editTaskFooter = (
     <View style={styles.addTaskFooter}>
@@ -743,8 +778,8 @@ export function TaskAssignmentList({
         title="Edit task"
         subtitle={
           isEditingMemberTask
-            ? "Title, assignee, due date, and linked members (same as web)."
-            : "Update title and description."
+            ? "Title, urgency, assignee, due date, and linked members (same as web)."
+            : "Update title, description, and urgency."
         }
         headerIcon="create-outline"
         variant="compact"
@@ -770,6 +805,29 @@ export function TaskAssignmentList({
             style={[styles.addTaskInput, { minHeight: 70, textAlignVertical: "top" }]}
             multiline
           />
+        </View>
+        <View style={styles.addTaskFieldBlock}>
+          <Text style={styles.addTaskFieldLabel}>Urgency</Text>
+          <View style={styles.urgencyChipRow}>
+            {(["low", "urgent", "high"] as const).map((u) => {
+              const active = editUrgency === u;
+              const m = urgencyMeta(u);
+              return (
+                <Pressable
+                  key={u}
+                  onPress={() => setEditUrgency(u)}
+                  style={[
+                    styles.urgencyChip,
+                    active && { backgroundColor: m.bg, borderColor: m.text },
+                  ]}
+                >
+                  <Text style={[styles.urgencyChipText, { color: active ? m.text : colors.textSecondary }]}>
+                    {m.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
         {isEditingMemberTask && memberId ? (
           <>
@@ -931,6 +989,22 @@ export function TaskAssignmentList({
                     });
                   }}
                 />
+                <FilterTriggerButton
+                  ref={taskUrgencyTriggerRef}
+                  open={taskFilterMenuOpen === "urgency"}
+                  valueLabel={
+                    TASK_URGENCY_FILTER_OPTIONS.find((o) => o.id === taskUrgencyFilter)?.label ?? "Urgency"
+                  }
+                  accessibilityLabel={`Urgency, ${
+                    TASK_URGENCY_FILTER_OPTIONS.find((o) => o.id === taskUrgencyFilter)?.label ?? ""
+                  }. Double tap to change.`}
+                  onPress={() => {
+                    taskUrgencyTriggerRef.current?.measureInWindow((x, y, w, h) => {
+                      setTaskFilterAnchor({ x, y, width: w, height: h });
+                      setTaskFilterMenuOpen("urgency");
+                    });
+                  }}
+                />
               </View>
               {variant === "member" && canWriteMember ? (
                 <Pressable
@@ -969,6 +1043,7 @@ export function TaskAssignmentList({
                 members?: { id: string; first_name: string | null; last_name: string | null }[];
               };
               const status = String(raw.status ?? "pending");
+              const uMeta = urgencyMeta(taskUrgencyValue(t));
               const items = readChecklist(t);
               const expanded = expandedIds.has(t.id);
               const busy = busyTaskId === t.id;
@@ -1028,6 +1103,9 @@ export function TaskAssignmentList({
                                 </Text>
                               </View>
                             ) : null}
+                            <View style={[styles.urgencyPill, { backgroundColor: uMeta.bg }]}>
+                              <Text style={[styles.urgencyPillText, { color: uMeta.text }]}>{uMeta.label}</Text>
+                            </View>
                           </View>
                           {!expanded ? (
                             <Text style={styles.taskHint}>
@@ -1231,7 +1309,13 @@ export function TaskAssignmentList({
       <FilterPickerModal
         visible={taskFilterMenuOpen !== null && taskFilterAnchor !== null}
         title={
-          taskFilterMenuOpen === "status" ? "Status" : taskFilterMenuOpen === "due" ? "Due date" : ""
+          taskFilterMenuOpen === "status"
+            ? "Status"
+            : taskFilterMenuOpen === "due"
+              ? "Due date"
+              : taskFilterMenuOpen === "urgency"
+                ? "Urgency"
+                : ""
         }
         anchorRect={taskFilterAnchor}
         options={
@@ -1239,20 +1323,26 @@ export function TaskAssignmentList({
             ? TASK_STATUS_FILTER_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
             : taskFilterMenuOpen === "due"
               ? TASK_DUE_FILTER_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
-              : []
+              : taskFilterMenuOpen === "urgency"
+                ? TASK_URGENCY_FILTER_OPTIONS.map((o) => ({ value: o.id, label: o.label }))
+                : []
         }
         selectedValue={
           taskFilterMenuOpen === "status"
             ? taskStatusFilter
             : taskFilterMenuOpen === "due"
               ? taskDueFilter
-              : ""
+              : taskFilterMenuOpen === "urgency"
+                ? taskUrgencyFilter
+                : ""
         }
         onSelect={(v) => {
           if (taskFilterMenuOpen === "status") {
             setTaskStatusFilter(v as TaskStatusFilterId);
           } else if (taskFilterMenuOpen === "due") {
             setTaskDueFilter(v as TaskDueFilterId);
+          } else if (taskFilterMenuOpen === "urgency") {
+            setTaskUrgencyFilter(v as TaskUrgencyFilterId);
           }
         }}
         onClose={() => {
@@ -1292,6 +1382,33 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#5b21b6",
     textTransform: "uppercase",
+  },
+  urgencyPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+  urgencyPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  urgencyChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  urgencyChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  urgencyChipText: {
+    fontSize: type.caption.size,
+    fontWeight: "600",
   },
   taskLoadErrorBanner: {
     paddingHorizontal: 14,

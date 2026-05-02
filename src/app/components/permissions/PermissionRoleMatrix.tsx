@@ -1,10 +1,11 @@
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { Info, ChevronRight, ChevronDown } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { Info, ChevronRight, ChevronDown, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getPermissionDef } from '../../../permissions/catalog';
 import {
   CRUD_COLUMNS,
   type PermissionMatrixRow,
+  type PermissionMatrixSection,
   PERMISSION_MATRIX_SECTIONS,
 } from '../../../permissions/permissionMatrixLayout';
 import { cn } from '../ui/utils';
@@ -20,6 +21,35 @@ type Props = {
 function capFirst(s: string) {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function rowMatchesPermissionQuery(row: PermissionMatrixRow, q: string): boolean {
+  if (row.label.toLowerCase().includes(q)) return true;
+  for (const col of CRUD_COLUMNS) {
+    const id = row.cells[col.key];
+    if (!id) continue;
+    if (id.toLowerCase().includes(q)) return true;
+    const def = getPermissionDef(id);
+    if (def) {
+      if (def.name.toLowerCase().includes(q)) return true;
+      if (def.description.toLowerCase().includes(q)) return true;
+    }
+  }
+  return false;
+}
+
+function filterMatrixSections(query: string): PermissionMatrixSection[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return PERMISSION_MATRIX_SECTIONS;
+
+  return PERMISSION_MATRIX_SECTIONS.map((section) => {
+    if (section.title.toLowerCase().includes(q)) {
+      return section;
+    }
+    const matrixRows = section.matrixRows.filter((row) => rowMatchesPermissionQuery(row, q));
+    if (matrixRows.length === 0) return null;
+    return { ...section, matrixRows };
+  }).filter((s): s is PermissionMatrixSection => s != null);
 }
 
 function PermRowInfo({ row }: { row: PermissionMatrixRow }) {
@@ -132,6 +162,21 @@ function MatrixCell({
 
 export function PermissionRoleMatrix({ permDraft, impliedByOther, onToggle, onApplySection, disabled }: Props) {
   const [openSections, setOpenSections] = useState<Set<string>>(() => new Set());
+  const [permSearch, setPermSearch] = useState('');
+
+  const filteredSections = useMemo(() => filterMatrixSections(permSearch), [permSearch]);
+
+  useEffect(() => {
+    const q = permSearch.trim();
+    if (!q) return;
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      for (const s of filteredSections) {
+        next.add(s.id);
+      }
+      return next;
+    });
+  }, [permSearch, filteredSections]);
 
   const toggleSection = useCallback((id: string) => {
     setOpenSections((prev) => {
@@ -145,7 +190,34 @@ export function PermissionRoleMatrix({ permDraft, impliedByOther, onToggle, onAp
   return (
     <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={300}>
       <div className="space-y-2">
-        {PERMISSION_MATRIX_SECTIONS.map((section) => {
+        <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 sm:px-4">
+          <label htmlFor="perm-matrix-search" className="sr-only">
+            Search permissions
+          </label>
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              aria-hidden
+            />
+            <input
+              id="perm-matrix-search"
+              type="search"
+              value={permSearch}
+              onChange={(e) => setPermSearch(e.target.value)}
+              placeholder="Search by name, description, or permission id…"
+              autoComplete="off"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50/80 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+        </div>
+
+        {filteredSections.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-8 text-center text-sm text-gray-600">
+            No permissions match &ldquo;{permSearch.trim()}&rdquo;. Try another keyword.
+          </p>
+        ) : null}
+
+        {filteredSections.map((section) => {
           const isOpen = openSections.has(section.id);
           return (
             <section key={section.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">

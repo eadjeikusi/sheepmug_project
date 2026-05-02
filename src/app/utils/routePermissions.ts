@@ -4,6 +4,14 @@ export function permissionsForPath(pathname: string): string[] | null {
   const p = pathname === '/' ? '' : pathname.replace(/^\//, '').split('/')[0] || '';
 
   const multiMap: Record<string, string[]> = {
+    leaders: [
+      'leaders_profile_page',
+      'view_groups',
+      'report_view',
+      'report_leaders',
+      'view_analytics',
+      'assign_ministry_leaders',
+    ],
     tasks: [
       'view_member_tasks',
       'monitor_member_tasks',
@@ -20,7 +28,7 @@ export function permissionsForPath(pathname: string): string[] | null {
       'edit_group_task_checklist',
       'complete_group_task_checklist',
     ],
-    reports: ['report_view', 'view_analytics'],
+    reports: ['report_view', 'view_analytics', 'report_group', 'report_members', 'report_leaders'],
   };
   if (p in multiMap) return multiMap[p];
 

@@ -41,8 +41,23 @@ import { colors, radius, sizes, type } from "../../theme";
 
 type StatusScope = "all" | "pending" | "completed";
 type TaskTypeFilter = "all" | "member" | "group";
+type UrgencyFilter = "all" | "low" | "urgent" | "high";
+
+function taskUrgencyValue(t: TaskItem): "low" | "urgent" | "high" {
+  const r = t as Record<string, unknown>;
+  const u = String(r.urgency ?? "").trim().toLowerCase();
+  if (u === "urgent" || u === "high") return u;
+  return "low";
+}
+
+function urgencyFilterLabel(u: Exclude<UrgencyFilter, "all">): string {
+  if (u === "high") return "High";
+  if (u === "urgent") return "Urgent";
+  return "Low";
+}
 const PAGE_SIZE = 10;
 const TASKS_CACHE_KEY = "tasks:list";
+const MOBILE_TASK_SEARCH_PREFETCH_MAX = 5000;
 
 function taskSearchBlob(t: TaskItem): string {
   const r = t as Record<string, unknown>;
@@ -50,6 +65,23 @@ function taskSearchBlob(t: TaskItem): string {
   const parts: string[] = [];
   for (const x of [t.title, t.description, t.status, tt, r.assignee_name, r.created_by_name]) {
     if (x != null && String(x).trim()) parts.push(String(x).toLowerCase());
+  }
+  const members = r.members;
+  if (Array.isArray(members)) {
+    for (const m of members) {
+      const row = m as { first_name?: unknown; last_name?: unknown };
+      const name = [row.first_name, row.last_name].filter(Boolean).join(" ").trim().toLowerCase();
+      if (name) parts.push(name);
+    }
+  }
+  const groups = r.groups;
+  if (Array.isArray(groups)) {
+    for (const g of groups) {
+      const name = String((g as { name?: unknown })?.name ?? "")
+        .trim()
+        .toLowerCase();
+      if (name) parts.push(name);
+    }
   }
   return parts.join(" ");
 }
@@ -156,6 +188,48 @@ function taskDueMonthValue(task: TaskItem): string | null {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function filterMobileTasks(
+  list: TaskItem[],
+  opts: {
+    search: string;
+    pendingOnly: boolean;
+    statusScope: StatusScope;
+    typeFilter: TaskTypeFilter;
+    selectedGroupWithDescendants: Set<string>;
+    dueMonths: string[];
+    urgencyFilter: UrgencyFilter;
+  },
+): TaskItem[] {
+  const q = opts.search.trim().toLowerCase();
+  let out = list;
+  if (opts.pendingOnly) {
+    out = out.filter((t) => taskStatusValue(t) === "pending");
+  }
+  if (opts.statusScope !== "all") {
+    out = out.filter((t) => taskStatusValue(t) === opts.statusScope);
+  }
+  if (opts.urgencyFilter !== "all") {
+    out = out.filter((t) => taskUrgencyValue(t) === opts.urgencyFilter);
+  }
+  if (opts.typeFilter !== "all") {
+    out = out.filter((t) => (opts.typeFilter === "group" ? isGroupTask(t) : !isGroupTask(t)));
+  }
+  if (opts.typeFilter === "group" && opts.selectedGroupWithDescendants.size > 0) {
+    out = out.filter((t) =>
+      taskGroupIds(t).some((gid) => opts.selectedGroupWithDescendants.has(gid)),
+    );
+  }
+  if (opts.dueMonths.length > 0) {
+    const selectedMonths = new Set(opts.dueMonths);
+    out = out.filter((t) => {
+      const dueMonth = taskDueMonthValue(t);
+      return dueMonth ? selectedMonths.has(dueMonth) : false;
+    });
+  }
+  if (!q) return out;
+  return out.filter((t) => taskSearchBlob(t).includes(q));
+}
+
 export default function TaskScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -178,12 +252,14 @@ export default function TaskScreen() {
   const [statusScope, setStatusScope] = useState<StatusScope>("pending");
   const [typeFilter, setTypeFilter] = useState<TaskTypeFilter>("all");
   const [groupFilterId, setGroupFilterId] = useState("");
+  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
 
   const [dueMonths, setDueMonths] = useState<string[]>([]);
   const [draftStatusScope, setDraftStatusScope] = useState<StatusScope>("pending");
   const [draftTypeFilter, setDraftTypeFilter] = useState<TaskTypeFilter>("all");
   const [draftGroupFilterId, setDraftGroupFilterId] = useState("");
   const [draftDueMonths, setDraftDueMonths] = useState<string[]>([]);
+  const [draftUrgencyFilter, setDraftUrgencyFilter] = useState<UrgencyFilter>("all");
   const [dueMonthPickerOpen, setDueMonthPickerOpen] = useState(false);
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -240,6 +316,8 @@ export default function TaskScreen() {
       const normalizedDueMonths = [...new Set(dueMonths.filter((m) => m.trim()))].sort();
       const dueFromMonth = normalizedDueMonths[0] ?? "";
       const dueToMonth = normalizedDueMonths[normalizedDueMonths.length - 1] ?? "";
+      const urg =
+        urgencyFilter !== "all" ? (urgencyFilter as "low" | "urgent" | "high") : ("all" as const);
       if (isElevatedTaskViewer) {
         return api.tasks.branch({
           status: wantAll ? "all" : "open",
@@ -247,11 +325,17 @@ export default function TaskScreen() {
           month: undefined,
           dueFromIso: monthStartIso(dueFromMonth.trim()),
           dueToIso: monthEndIso(dueToMonth.trim()),
+          urgency: urg,
           offset,
           limit: PAGE_SIZE,
         });
       }
-      return api.tasks.mine({ status: wantAll ? "all" : "open", offset, limit: PAGE_SIZE });
+      return api.tasks.mine({
+        status: wantAll ? "all" : "open",
+        urgency: urg,
+        offset,
+        limit: PAGE_SIZE,
+      });
     },
     [
       canSeeTaskList,
@@ -259,6 +343,7 @@ export default function TaskScreen() {
       isElevatedTaskViewer,
       pendingOnly,
       statusScope,
+      urgencyFilter,
     ]
   );
 
@@ -272,7 +357,7 @@ export default function TaskScreen() {
     }
     let hasCachedRows = false;
     try {
-      const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}`;
+      const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}:u:${urgencyFilter}`;
       const cached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(cacheKey);
       const fallbackCached = await getOfflineResourceCache<{ tasks: TaskItem[]; total_count: number }>(
         "tasks:list:bootstrap"
@@ -306,6 +391,8 @@ export default function TaskScreen() {
     pendingOnly,
     statusScope,
     dueMonths,
+    urgencyFilter,
+    isElevatedTaskViewer,
   ]);
 
   const loadMoreTasks = useCallback(async () => {
@@ -317,7 +404,7 @@ export default function TaskScreen() {
       const { tasks: next, total_count } = payload;
       setTasks((prev) => {
         const merged = [...prev, ...next];
-        const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}`;
+        const cacheKey = `${TASKS_CACHE_KEY}:${isElevatedTaskViewer ? "branch" : "mine"}:${statusScope}:${[...dueMonths].sort().join(",")}:${pendingOnly ? "pending" : "all"}:u:${urgencyFilter}`;
         void setOfflineResourceCache(cacheKey, { tasks: merged, total_count });
         return merged;
       });
@@ -326,7 +413,20 @@ export default function TaskScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [canSeeTaskList, dueMonths, fetchTaskPage, hasMore, isElevatedTaskViewer, loading, loadingMore, pendingOnly, refreshing, statusScope, tasks.length]);
+  }, [
+    canSeeTaskList,
+    dueMonths,
+    fetchTaskPage,
+    hasMore,
+    isElevatedTaskViewer,
+    loading,
+    loadingMore,
+    pendingOnly,
+    refreshing,
+    statusScope,
+    tasks.length,
+    urgencyFilter,
+  ]);
 
   useEffect(() => {
     let mounted = true;
@@ -365,7 +465,8 @@ export default function TaskScreen() {
     setDraftTypeFilter(typeFilter);
     setDraftGroupFilterId(groupFilterId);
     setDraftDueMonths(dueMonths);
-  }, [filtersOpen, statusScope, typeFilter, groupFilterId, dueMonths]);
+    setDraftUrgencyFilter(urgencyFilter);
+  }, [filtersOpen, statusScope, typeFilter, groupFilterId, dueMonths, urgencyFilter]);
 
   useEffect(() => {
     if (draftTypeFilter !== "group" && draftGroupFilterId) {
@@ -400,35 +501,39 @@ export default function TaskScreen() {
     }, [])
   );
 
-  const filteredTasks = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let list = tasks;
-    if (pendingOnly) {
-      list = list.filter((t) => taskStatusValue(t) === "pending");
-    }
-    if (statusScope !== "all") {
-      list = list.filter((t) => taskStatusValue(t) === statusScope);
-    }
-    if (typeFilter !== "all") {
-      list = list.filter((t) =>
-        typeFilter === "group" ? isGroupTask(t) : !isGroupTask(t)
-      );
-    }
-    if (typeFilter === "group" && selectedGroupWithDescendants.size > 0) {
-      list = list.filter((t) =>
-        taskGroupIds(t).some((gid) => selectedGroupWithDescendants.has(gid))
-      );
-    }
-    if (dueMonths.length > 0) {
-      const selectedMonths = new Set(dueMonths);
-      list = list.filter((t) => {
-        const dueMonth = taskDueMonthValue(t);
-        return dueMonth ? selectedMonths.has(dueMonth) : false;
-      });
-    }
-    if (!q) return list;
-    return list.filter((t) => taskSearchBlob(t).includes(q));
-  }, [tasks, search, statusScope, typeFilter, pendingOnly, selectedGroupWithDescendants, dueMonths]);
+  const filteredTasks = useMemo(
+    () =>
+      filterMobileTasks(tasks, {
+        search,
+        pendingOnly,
+        statusScope,
+        typeFilter,
+        selectedGroupWithDescendants,
+        dueMonths,
+        urgencyFilter,
+      }),
+    [tasks, search, statusScope, typeFilter, pendingOnly, selectedGroupWithDescendants, dueMonths, urgencyFilter],
+  );
+
+  useEffect(() => {
+    if (!canSeeTaskList) return;
+    if (!search.trim()) return;
+    if (loading || refreshing || loadingMore) return;
+    if (filteredTasks.length > 0) return;
+    if (!hasMore) return;
+    if (tasks.length >= MOBILE_TASK_SEARCH_PREFETCH_MAX) return;
+    void loadMoreTasks();
+  }, [
+    canSeeTaskList,
+    search,
+    loading,
+    refreshing,
+    loadingMore,
+    filteredTasks.length,
+    hasMore,
+    tasks.length,
+    loadMoreTasks,
+  ]);
 
   const taskHeaderCount = useMemo(() => {
     if (!canSeeTaskList) return 0;
@@ -438,7 +543,8 @@ export default function TaskScreen() {
       typeFilter !== "all" ||
       groupFilterId ||
       pendingOnly ||
-      dueMonths.length > 0
+      dueMonths.length > 0 ||
+      urgencyFilter !== "all"
     ) {
       return filteredTasks.length;
     }
@@ -451,6 +557,7 @@ export default function TaskScreen() {
     groupFilterId,
     pendingOnly,
     dueMonths.length,
+    urgencyFilter,
     filteredTasks.length,
     tasksTotalCount,
   ]);
@@ -493,6 +600,13 @@ export default function TaskScreen() {
     if (pendingOnly) {
       chips.push({ key: "pending", label: "Pending", onLabelPress: () => router.setParams({ pending: undefined }) });
     }
+    if (urgencyFilter !== "all") {
+      chips.push({
+        key: "urgency",
+        label: `Urgency: ${urgencyFilterLabel(urgencyFilter)}`,
+        onLabelPress: () => setFiltersOpen(true),
+      });
+    }
     return chips;
   }, [
     statusScope,
@@ -501,6 +615,7 @@ export default function TaskScreen() {
     groupFilterName,
     dueMonths,
     pendingOnly,
+    urgencyFilter,
     router,
   ]);
 
@@ -509,6 +624,7 @@ export default function TaskScreen() {
     setTypeFilter("all");
     setGroupFilterId("");
     setDueMonths([]);
+    setUrgencyFilter("all");
     router.setParams({ pending: undefined });
   }, [router]);
 
@@ -519,6 +635,7 @@ export default function TaskScreen() {
       else if (key === "group") setGroupFilterId("");
       else if (key === "dueMonths") setDueMonths([]);
       else if (key === "pending") router.setParams({ pending: undefined });
+      else if (key === "urgency") setUrgencyFilter("all");
     },
     [router]
   );
@@ -565,6 +682,7 @@ export default function TaskScreen() {
     setDraftTypeFilter("all");
     setDraftGroupFilterId("");
     setDraftDueMonths([]);
+    setDraftUrgencyFilter("all");
     setDueMonthPickerOpen(false);
     setGroupPickerOpen(false);
   }
@@ -574,6 +692,7 @@ export default function TaskScreen() {
     setTypeFilter(draftTypeFilter);
     setGroupFilterId(draftTypeFilter === "group" ? draftGroupFilterId : "");
     setDueMonths([...new Set(draftDueMonths)].sort());
+    setUrgencyFilter(draftUrgencyFilter);
     setDueMonthPickerOpen(false);
     setGroupPickerOpen(false);
     setFiltersOpen(false);
@@ -713,6 +832,26 @@ export default function TaskScreen() {
                     >
                       <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
                         {val === "all" ? "All types" : val === "member" ? "Member" : "Group"}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={styles.filterBlock}>
+              <Text style={styles.filterLabel}>Urgency</Text>
+              <View style={styles.choiceRow}>
+                {(["all", "low", "urgent", "high"] as UrgencyFilter[]).map((val) => {
+                  const active = draftUrgencyFilter === val;
+                  return (
+                    <Pressable
+                      key={val}
+                      style={[styles.choiceChip, active && styles.choiceChipActive]}
+                      onPress={() => setDraftUrgencyFilter(val)}
+                    >
+                      <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>
+                        {val === "all" ? "Any" : urgencyFilterLabel(val)}
                       </Text>
                     </Pressable>
                   );

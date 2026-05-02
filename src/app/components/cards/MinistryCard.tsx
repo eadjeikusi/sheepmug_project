@@ -8,6 +8,8 @@ interface MinistryCardProps {
   ministry: Group;
   onEdit?: (ministry: Group) => void;
   onDelete?: (id: string) => void;
+  /** When true, the group detail link opens in a new browser tab (e.g. leader profile). */
+  openGroupInNewTab?: boolean;
 }
 
 const PreviewFace: React.FC<{
@@ -39,7 +41,7 @@ const PreviewFace: React.FC<{
   );
 };
 
-const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete }) => {
+const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete, openGroupInNewTab }) => {
   const hasActions = Boolean(onEdit || onDelete);
   const memberCount = ministry.member_count ?? 0;
   const preview = ministry.member_preview ?? [];
@@ -55,6 +57,8 @@ const MinistryCard: React.FC<MinistryCardProps> = ({ ministry, onEdit, onDelete 
     <div className="relative bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 overflow-hidden group">
       <Link
         to={`/groups/${ministry.id}`}
+        target={openGroupInNewTab ? '_blank' : undefined}
+        rel={openGroupInNewTab ? 'noopener noreferrer' : undefined}
         className={`block p-6 text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset rounded-2xl ${hasActions ? 'pr-24' : 'pr-14'}`}
       >
         <div className="flex items-start justify-between gap-3">

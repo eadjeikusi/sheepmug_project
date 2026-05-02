@@ -43,7 +43,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { colors, radius, sizes, type } from "../../theme";
-import { ymdToDueAtIso } from "../../lib/dateTimeFormat";
+import { parseYmdToLocalDate, toYmd, ymdToDueAtIso } from "../../lib/dateTimeFormat";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { getMemberJoinRegisterUrl } from "../../lib/memberJoinRegisterUrl";
 import { getOfflineResourceCache, setOfflineResourceCache } from "../../lib/storage";
@@ -128,7 +128,28 @@ function memberAgeFromDob(member: Member): number | null {
   return age >= 0 ? age : null;
 }
 
+/** Local calendar YYYY-MM-DD for church join (`date_joined`), or null. */
+function memberJoinedYmdMobile(member: Member): string | null {
+  const raw = String(
+    (member as { date_joined?: string | null }).date_joined ??
+      (member as { dateJoined?: string | null }).dateJoined ??
+      "",
+  ).trim();
+  if (!raw) return null;
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return toYmd(d);
+}
+
 const GROUP_FILTER_ALL_TOKEN = "__all_groups__";
+const GENDER_FILTER_NONE = "__gender_none__";
+
+function memberGenderFromMember(member: Member): string {
+  const v = member["gender"];
+  return typeof v === "string" ? v.trim() : "";
+}
 const AGE_FILTER_MIN = 0;
 const AGE_FILTER_MAX = 100;
 const PAGE_SIZE = 10;
@@ -170,17 +191,28 @@ function normalizeAgeRange(minAge: number | null, maxAge: number | null): { min:
 function memberMatchesFilters(
   member: Member,
   statuses: Set<string>,
+  genderFilter: string,
   ageMin: number | null,
   ageMax: number | null,
   pendingOnly: boolean,
   selectedGroupIds: Set<string>,
-  memberPendingTaskIds: Set<string>
+  memberPendingTaskIds: Set<string>,
+  joinedStartYmd: string,
+  joinedEndYmd: string,
 ): boolean {
   const memberStatus = String(member.status || "active").trim().toLowerCase();
   const statusAll = statuses.has("All") || statuses.size === 0;
   if (!statusAll) {
     const includeByStatus = Array.from(statuses).some((s) => s.toLowerCase() === memberStatus);
     if (!includeByStatus) return false;
+  }
+
+  const gf = genderFilter.trim();
+  if (gf === GENDER_FILTER_NONE) {
+    if (memberGenderFromMember(member)) return false;
+  } else if (gf) {
+    const target = gf.toLowerCase();
+    if (memberGenderFromMember(member).toLowerCase() !== target) return false;
   }
 
   const groupsAll = selectedGroupIds.has(GROUP_FILTER_ALL_TOKEN) || selectedGroupIds.size === 0;
@@ -196,6 +228,22 @@ function memberMatchesFilters(
     if (age == null) return false;
     if (ageMin != null && age < ageMin) return false;
     if (ageMax != null && age > ageMax) return false;
+  }
+
+  const jStart = joinedStartYmd.trim();
+  const jEnd = joinedEndYmd.trim();
+  if (jStart || jEnd) {
+    let s = jStart;
+    let e = jEnd;
+    if (s && e && s > e) {
+      const t = s;
+      s = e;
+      e = t;
+    }
+    const ymd = memberJoinedYmdMobile(member);
+    if (!ymd) return false;
+    if (s && ymd < s) return false;
+    if (e && ymd > e) return false;
   }
 
   if (pendingOnly && !memberPendingTaskIds.has(String(member.id))) return false;
@@ -218,13 +266,19 @@ export default function MembersScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterAgeMin, setFilterAgeMin] = useState<number | null>(null);
   const [filterAgeMax, setFilterAgeMax] = useState<number | null>(null);
+  const [filterJoinedStart, setFilterJoinedStart] = useState("");
+  const [filterJoinedEnd, setFilterJoinedEnd] = useState("");
   const [filterPendingOnly, setFilterPendingOnly] = useState(false);
   const [selectedFilterGroupIds, setSelectedFilterGroupIds] = useState<Set<string>>(
     new Set([GROUP_FILTER_ALL_TOKEN])
   );
+  const [filterGender, setFilterGender] = useState("");
+  const [draftFilterGender, setDraftFilterGender] = useState("");
   const [draftFilterStatus, setDraftFilterStatus] = useState<Set<string>>(new Set(["All"]));
   const [draftAgeMinInput, setDraftAgeMinInput] = useState("");
   const [draftAgeMaxInput, setDraftAgeMaxInput] = useState("");
+  const [draftJoinedStart, setDraftJoinedStart] = useState("");
+  const [draftJoinedEnd, setDraftJoinedEnd] = useState("");
   const [draftFilterPendingOnly, setDraftFilterPendingOnly] = useState(false);
   const [draftSelectedFilterGroupIds, setDraftSelectedFilterGroupIds] = useState<Set<string>>(
     new Set([GROUP_FILTER_ALL_TOKEN])
@@ -364,9 +418,22 @@ export default function MembersScreen() {
     setDraftFilterStatus(new Set(statusFilter));
     setDraftAgeMinInput(filterAgeMin != null ? String(filterAgeMin) : "");
     setDraftAgeMaxInput(filterAgeMax != null ? String(filterAgeMax) : "");
+    setDraftJoinedStart(filterJoinedStart);
+    setDraftJoinedEnd(filterJoinedEnd);
     setDraftFilterPendingOnly(filterPendingOnly);
     setDraftSelectedFilterGroupIds(new Set(selectedFilterGroupIds));
-  }, [filterOpen, statusFilter, filterAgeMin, filterAgeMax, filterPendingOnly, selectedFilterGroupIds]);
+    setDraftFilterGender(filterGender);
+  }, [
+    filterOpen,
+    statusFilter,
+    filterGender,
+    filterAgeMin,
+    filterAgeMax,
+    filterJoinedStart,
+    filterJoinedEnd,
+    filterPendingOnly,
+    selectedFilterGroupIds,
+  ]);
 
   const toggleDraftStatus = useCallback((label: string) => {
     setDraftFilterStatus((prev) => {
@@ -435,6 +502,25 @@ export default function MembersScreen() {
     [statusOptions]
   );
 
+  const genderFilterOptions = useMemo(() => {
+    const base = ["Male", "Female"];
+    const seen = new Set(base.map((b) => b.toLowerCase()));
+    const extras: string[] = [];
+    for (const m of members) {
+      const raw = memberGenderFromMember(m);
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        extras.push(raw);
+      }
+    }
+    extras.sort((a, b) => a.localeCompare(b));
+    return [...base, ...extras];
+  }, [members]);
+
+  const hasMembersWithoutGender = useMemo(() => members.some((m) => !memberGenderFromMember(m)), [members]);
+
   const draftMinistryFilterSummary = useMemo(() => {
     if (draftSelectedFilterGroupIds.has(GROUP_FILTER_ALL_TOKEN) || draftSelectedFilterGroupIds.size === 0) {
       return { label: "All groups", count: 0, all: true as const };
@@ -454,11 +540,14 @@ export default function MembersScreen() {
         !memberMatchesFilters(
           m,
           statusFilter,
+          filterGender,
           filterAgeMin,
           filterAgeMax,
           filterPendingOnly,
           selectedFilterGroupIds,
-          memberPendingTaskIds
+          memberPendingTaskIds,
+          filterJoinedStart,
+          filterJoinedEnd,
         )
       ) {
         return false;
@@ -467,7 +556,19 @@ export default function MembersScreen() {
       if (!q) return true;
       return full.includes(q);
     });
-  }, [members, query, statusFilter, selectedFilterGroupIds, filterAgeMin, filterAgeMax, filterPendingOnly, memberPendingTaskIds]);
+  }, [
+    members,
+    query,
+    statusFilter,
+    filterGender,
+    selectedFilterGroupIds,
+    filterAgeMin,
+    filterAgeMax,
+    filterJoinedStart,
+    filterJoinedEnd,
+    filterPendingOnly,
+    memberPendingTaskIds,
+  ]);
 
   const liveApplyCount = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -479,11 +580,14 @@ export default function MembersScreen() {
         !memberMatchesFilters(
           m,
           draftFilterStatus,
+          draftFilterGender,
           normalized.min,
           normalized.max,
           draftFilterPendingOnly,
           draftSelectedFilterGroupIds,
-          memberPendingTaskIds
+          memberPendingTaskIds,
+          draftJoinedStart,
+          draftJoinedEnd,
         )
       ) {
         return false;
@@ -496,11 +600,14 @@ export default function MembersScreen() {
     members,
     query,
     draftFilterStatus,
+    draftFilterGender,
     draftAgeMinInput,
     draftAgeMaxInput,
     draftFilterPendingOnly,
     draftSelectedFilterGroupIds,
     memberPendingTaskIds,
+    draftJoinedStart,
+    draftJoinedEnd,
   ]);
 
   const activeFilterLabels = useMemo(() => {
@@ -510,6 +617,11 @@ export default function MembersScreen() {
       Array.from(statusFilter)
         .sort((a, b) => a.localeCompare(b))
         .forEach((s) => labels.push({ key: `status:${s}`, label: s }));
+    }
+    if (filterGender.trim()) {
+      const gl =
+        filterGender === GENDER_FILTER_NONE ? "Gender: Not set" : `Gender: ${filterGender}`;
+      labels.push({ key: "gender", label: gl });
     }
     if (filterAgeMin != null || filterAgeMax != null) {
       labels.push({
@@ -532,8 +644,24 @@ export default function MembersScreen() {
         });
     }
     if (filterPendingOnly) labels.push({ key: "pending", label: "Pending tasks" });
+    if (filterJoinedStart.trim() || filterJoinedEnd.trim()) {
+      labels.push({
+        key: "joined",
+        label: `Joined ${filterJoinedStart.trim() || "…"}–${filterJoinedEnd.trim() || "…"}`,
+      });
+    }
     return labels;
-  }, [statusFilter, filterAgeMin, filterAgeMax, selectedFilterGroupIds, filterPendingOnly, groups]);
+  }, [
+    statusFilter,
+    filterGender,
+    filterAgeMin,
+    filterAgeMax,
+    filterJoinedStart,
+    filterJoinedEnd,
+    selectedFilterGroupIds,
+    filterPendingOnly,
+    groups,
+  ]);
 
   const hasAppliedFilters = activeFilterLabels.length > 0;
 
@@ -548,8 +676,11 @@ export default function MembersScreen() {
 
   const clearAppliedFilters = useCallback(() => {
     setStatusFilter(new Set(["All"]));
+    setFilterGender("");
     setFilterAgeMin(null);
     setFilterAgeMax(null);
+    setFilterJoinedStart("");
+    setFilterJoinedEnd("");
     setFilterPendingOnly(false);
     setSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
   }, []);
@@ -557,8 +688,11 @@ export default function MembersScreen() {
   const resetMemberFilters = useCallback(() => {
     clearAppliedFilters();
     setDraftFilterStatus(new Set(["All"]));
+    setDraftFilterGender("");
     setDraftAgeMinInput("");
     setDraftAgeMaxInput("");
+    setDraftJoinedStart("");
+    setDraftJoinedEnd("");
     setDraftFilterPendingOnly(false);
     setDraftSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
     setMembersFilterSheet("main");
@@ -574,6 +708,10 @@ export default function MembersScreen() {
         if (next.size === 0) return new Set(["All"]);
         return next;
       });
+      return;
+    }
+    if (key === "gender") {
+      setFilterGender("");
       return;
     }
     if (key === "age") {
@@ -593,6 +731,11 @@ export default function MembersScreen() {
     }
     if (key === "pending") {
       setFilterPendingOnly(false);
+      return;
+    }
+    if (key === "joined") {
+      setFilterJoinedStart("");
+      setFilterJoinedEnd("");
     }
   }, []);
 
@@ -1606,8 +1749,11 @@ export default function MembersScreen() {
               style={styles.filterClearBtn}
               onPress={() => {
                 setDraftFilterStatus(new Set(["All"]));
+                setDraftFilterGender("");
                 setDraftAgeMinInput("");
                 setDraftAgeMaxInput("");
+                setDraftJoinedStart("");
+                setDraftJoinedEnd("");
                 setDraftFilterPendingOnly(false);
                 setDraftSelectedFilterGroupIds(new Set([GROUP_FILTER_ALL_TOKEN]));
               }}
@@ -1621,8 +1767,11 @@ export default function MembersScreen() {
                 const parsedMax = parseAgeBound(draftAgeMaxInput);
                 const normalized = normalizeAgeRange(parsedMin, parsedMax);
                 setStatusFilter(new Set(draftFilterStatus));
+                setFilterGender(draftFilterGender);
                 setFilterAgeMin(normalized.min);
                 setFilterAgeMax(normalized.max);
+                setFilterJoinedStart(draftJoinedStart.trim());
+                setFilterJoinedEnd(draftJoinedEnd.trim());
                 setFilterPendingOnly(draftFilterPendingOnly);
                 setSelectedFilterGroupIds(new Set(draftSelectedFilterGroupIds));
                 setFilterOpen(false);
@@ -1655,6 +1804,53 @@ export default function MembersScreen() {
         <View style={styles.filterSectionDivider} />
 
         <View style={styles.filterBlock}>
+          <Text style={styles.filterSectionTitle}>Gender</Text>
+          <View style={styles.statusGrid}>
+            <Pressable
+              style={[styles.statusCard, draftFilterGender === "" && styles.statusCardActive]}
+              onPress={() => setDraftFilterGender("")}
+            >
+              <Text style={[styles.statusCardText, draftFilterGender === "" && styles.statusCardTextActive]}>
+                All
+              </Text>
+            </Pressable>
+            {hasMembersWithoutGender ? (
+              <Pressable
+                style={[
+                  styles.statusCard,
+                  draftFilterGender === GENDER_FILTER_NONE && styles.statusCardActive,
+                ]}
+                onPress={() =>
+                  setDraftFilterGender((prev) => (prev === GENDER_FILTER_NONE ? "" : GENDER_FILTER_NONE))
+                }
+              >
+                <Text
+                  style={[
+                    styles.statusCardText,
+                    draftFilterGender === GENDER_FILTER_NONE && styles.statusCardTextActive,
+                  ]}
+                >
+                  Not set
+                </Text>
+              </Pressable>
+            ) : null}
+            {genderFilterOptions.map((label) => {
+              const active = draftFilterGender === label;
+              return (
+                <Pressable
+                  key={label}
+                  style={[styles.statusCard, active && styles.statusCardActive]}
+                  onPress={() => setDraftFilterGender((prev) => (prev === label ? "" : label))}
+                >
+                  <Text style={[styles.statusCardText, active && styles.statusCardTextActive]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+        <View style={styles.filterSectionDivider} />
+
+        <View style={styles.filterBlock}>
           <View style={styles.ageRangeRow}>
             <Text style={styles.filterSectionTitle}>Age range</Text>
             <TextInput
@@ -1673,6 +1869,28 @@ export default function MembersScreen() {
               placeholderTextColor={colors.textSecondary}
               keyboardType="number-pad"
               style={[styles.input, styles.ageRangeInlineInput]}
+            />
+          </View>
+        </View>
+        <View style={styles.filterSectionDivider} />
+
+        <View style={styles.filterBlock}>
+          <Text style={styles.filterSectionTitle}>Date joined (church)</Text>
+          <Text style={styles.filterHint}>
+            Uses each member join date. Members without a join date are excluded when a range is set.
+          </Text>
+          <View style={{ marginTop: 10, gap: 10 }}>
+            <DatePickerField
+              value={draftJoinedStart}
+              onChange={setDraftJoinedStart}
+              placeholder="From (optional)"
+              maximumDate={draftJoinedEnd.trim() ? parseYmdToLocalDate(draftJoinedEnd) ?? undefined : undefined}
+            />
+            <DatePickerField
+              value={draftJoinedEnd}
+              onChange={setDraftJoinedEnd}
+              placeholder="Through (optional)"
+              minimumDate={draftJoinedStart.trim() ? parseYmdToLocalDate(draftJoinedStart) ?? undefined : undefined}
             />
           </View>
         </View>

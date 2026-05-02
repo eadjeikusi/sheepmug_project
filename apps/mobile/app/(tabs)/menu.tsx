@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBranch } from "../../contexts/BranchContext";
@@ -19,6 +19,7 @@ import { useNotifications } from "../../contexts/NotificationContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useOfflineSync } from "../../contexts/OfflineSyncContext";
 import { usePermissions } from "../../hooks/usePermissions";
+import { canAccessLeadersDirectory } from "@sheepmug/permissions-helpers";
 import { radius, type } from "../../theme";
 import Constants from "expo-constants";
 import { FilterPickerModal, type AnchorRect } from "../../components/FilterPickerModal";
@@ -188,7 +189,13 @@ export default function MenuScreen() {
   const selectedBranchName = selectedBranch?.name?.trim()
     ? displayMemberWords(selectedBranch.name)
     : "Select branch";
-  const canViewReports = can("report_view") || can("view_analytics");
+  const canViewReports =
+    can("report_view") ||
+    can("view_analytics") ||
+    can("report_group") ||
+    can("report_members") ||
+    can("report_leaders");
+  const canSeeLeaders = canAccessLeadersDirectory(can);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -275,6 +282,15 @@ export default function MenuScreen() {
             colors={settingsColors}
             rightNode={
               canViewReports ? undefined : <Text style={styles.menuRowMeta}>No access</Text>
+            }
+          />
+          <MenuRow
+            icon="people-circle-outline"
+            label="Leaders"
+            onPress={() => router.push("/leaders" as Href)}
+            colors={settingsColors}
+            rightNode={
+              canSeeLeaders ? undefined : <Text style={styles.menuRowMeta}>No access</Text>
             }
           />
         </View>

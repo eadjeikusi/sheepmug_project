@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
   Building2,
   Users,
@@ -6,18 +7,30 @@ import {
   Search,
   Shield,
   TrendingUp,
-  GitBranch,
-  LayoutDashboard,
   CreditCard,
   Loader2,
   Save,
   X,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { superadminApi } from '@/utils/api';
-import { SUBSCRIPTION_PLANS, type SubscriptionTierId } from '@/config/subscriptionPlans';
+import {
+  DEFAULT_SUBSCRIPTION_TIER,
+  SUBSCRIPTION_PLANS,
+  SUBSCRIPTION_TIER_IDS,
+  type SubscriptionTierId,
+} from '@/config/subscriptionPlans';
+import { PAID_PLANS, PAID_PLAN_IDS, DEFAULT_PAYSTACK_PLAN_CODES } from '@/config/paidPlans';
+import { useApp } from '@/contexts/AppContext';
+import { useBranch } from '@/contexts/BranchContext';
+import type { Organization } from '@/types';
 
-type Tab = 'overview' | 'organizations' | 'branches' | 'users' | 'billing';
+const SA_ACT_KEY = 'superadmin_act_as';
+
+type Tab = 'organizations' | 'admins' | 'billing';
 
 type SuperStats = {
   total_organizations: number;
@@ -42,6 +55,9 @@ type OrgRow = {
     branches: number;
     events_this_month: number;
     staff: number;
+    tasks?: number;
+    leaders?: number;
+    reports?: number;
   };
   limits: {
     max_members: number;
@@ -57,12 +73,54 @@ type OrgRow = {
     max_events_per_month: number | null;
     max_staff: number | null;
   };
+  /** When false, staff cannot use the app (super admins exempt). Default true if omitted. */
+  is_enabled?: boolean;
 };
 
+type BranchStatRow = {
+  branch_id: string;
+  name: string;
+  is_enabled?: boolean;
+  stats: {
+    members: number;
+    groups: number;
+    events_this_month: number;
+    tasks: number;
+    leaders: number;
+    reports: number;
+  };
+};
+
+function orgRowToOrganization(o: OrgRow): Organization {
+  const now = new Date().toISOString();
+  return {
+    id: o.id,
+    name: o.name,
+    slug: o.slug,
+    subdomain: null,
+    logo_url: o.logo_url ?? null,
+    address: null,
+    phone: null,
+    email: null,
+    website: null,
+    timezone: 'Africa/Accra',
+    currency: 'GHS',
+    subscription_tier: o.subscription_tier,
+    subscription_status: 'active',
+    subscription_plan: o.subscription_tier || 'basic',
+    trial_ends_at: null,
+    settings: {},
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 export default function SuperAdmin() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const navigate = useNavigate();
+  const { setCurrentOrganization } = useApp();
+  const { refreshBranches } = useBranch();
+  const [tab, setTab] = useState<Tab>('organizations');
   const [stats, setStats] = useState<SuperStats | null>(null);
-  const [growth, setGrowth] = useState<Record<string, number>>({});
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
   const [orgsTotal, setOrgsTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -77,7 +135,7 @@ export default function SuperAdmin() {
     branches: unknown[];
     staff: unknown[];
   } | null>(null);
-  const [editTier, setEditTier] = useState<SubscriptionTierId>('free');
+  const [editTier, setEditTier] = useState<SubscriptionTierId>(DEFAULT_SUBSCRIPTION_TIER);
   const [editMax, setEditMax] = useState({
     max_members: '' as string,
     max_groups: '' as string,
@@ -85,9 +143,35 @@ export default function SuperAdmin() {
     max_events_per_month: '' as string,
     max_staff: '' as string,
   });
-  const [branchRows, setBranchRows] = useState<unknown[]>([]);
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
+  const [branchStatsByOrg, setBranchStatsByOrg] = useState<Record<string, BranchStatRow[]>>({});
+  const [branchStatsLoading, setBranchStatsLoading] = useState<string | null>(null);
+  const [orgEnableBusyId, setOrgEnableBusyId] = useState<string | null>(null);
+  const [branchEnableBusyKey, setBranchEnableBusyKey] = useState<string | null>(null);
   const [userRows, setUserRows] = useState<unknown[]>([]);
   const [userSearch, setUserSearch] = useState('');
+  const [adminForm, setAdminForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+  });
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
+  const [paymentsCfg, setPaymentsCfg] = useState<{
+    paystack?: { has_secret_key?: boolean; has_public_key?: boolean; plan_codes?: Record<string, string> };
+    crypto?: { encrypted_storage?: boolean };
+  } | null>(null);
+  const [paystackSecretKey, setPaystackSecretKey] = useState('');
+  const [paystackPublicKey, setPaystackPublicKey] = useState('');
+  const [paystackPlanCodes, setPaystackPlanCodes] = useState<Record<string, string>>({
+    basic: '',
+    pro: '',
+    enterprise: '',
+    core_monthly: '',
+    core_6months: '',
+    core_annual: '',
+  });
+  const [paymentsSaving, setPaymentsSaving] = useState(false);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -98,15 +182,6 @@ export default function SuperAdmin() {
       toast.error(e instanceof Error ? e.message : 'Failed to load stats');
     } finally {
       setStatsLoading(false);
-    }
-  }, []);
-
-  const loadGrowth = useCallback(async () => {
-    try {
-      const g = (await superadminApi.growth()) as { new_orgs_by_month?: Record<string, number> };
-      setGrowth(g.new_orgs_by_month || {});
-    } catch {
-      /* optional */
     }
   }, []);
 
@@ -130,38 +205,112 @@ export default function SuperAdmin() {
 
   useEffect(() => {
     void loadStats();
-    void loadGrowth();
-  }, [loadStats, loadGrowth]);
+  }, [loadStats]);
 
   useEffect(() => {
     if (tab === 'organizations') void loadOrgs();
   }, [tab, loadOrgs]);
 
   useEffect(() => {
-    if (tab === 'branches') {
+    if (tab === 'billing') {
       void (async () => {
         try {
-          const r = (await superadminApi.branches()) as { branches: unknown[] };
-          setBranchRows(r.branches || []);
+          const c = (await superadminApi.paymentConfig()) as any;
+          setPaymentsCfg(c);
+          const codes = (c?.paystack?.plan_codes && typeof c.paystack.plan_codes === 'object' ? c.paystack.plan_codes : {}) as Record<
+            string,
+            string
+          >;
+          setPaystackPlanCodes((prev) => ({ ...prev, ...codes }));
         } catch (e: unknown) {
-          toast.error(e instanceof Error ? e.message : 'Failed to load branches');
+          toast.error(e instanceof Error ? e.message : 'Failed to load payment config');
         }
       })();
     }
   }, [tab]);
 
   useEffect(() => {
-    if (tab === 'users') {
+    if (tab === 'admins') {
       void (async () => {
         try {
-          const r = (await superadminApi.users({ search: userSearch.trim() || undefined })) as { users: unknown[] };
+          const r = (await superadminApi.users({
+            search: userSearch.trim() || undefined,
+            superadmin_only: true,
+          })) as { users: unknown[] };
           setUserRows(r.users || []);
         } catch (e: unknown) {
-          toast.error(e instanceof Error ? e.message : 'Failed to load users');
+          toast.error(e instanceof Error ? e.message : 'Failed to load admins');
         }
       })();
     }
   }, [tab, userSearch]);
+
+  const toggleOrgBranches = async (org: OrgRow) => {
+    if (expandedOrgId === org.id) {
+      setExpandedOrgId(null);
+      return;
+    }
+    setExpandedOrgId(org.id);
+    if (branchStatsByOrg[org.id]) return;
+    setBranchStatsLoading(org.id);
+    try {
+      const d = (await superadminApi.orgById(org.id)) as { branch_stats?: BranchStatRow[] };
+      setBranchStatsByOrg((prev) => ({ ...prev, [org.id]: d.branch_stats || [] }));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load branches');
+    } finally {
+      setBranchStatsLoading(null);
+    }
+  };
+
+  const setOrgEnabled = useCallback(async (orgId: string, enabled: boolean) => {
+    setOrgEnableBusyId(orgId);
+    try {
+      await superadminApi.patchOrg(orgId, { is_enabled: enabled });
+      setOrgs((prev) => prev.map((x) => (x.id === orgId ? { ...x, is_enabled: enabled } : x)));
+      setDetailOrg((d) =>
+        d && String(d.organization.id) === orgId
+          ? { ...d, organization: { ...d.organization, is_enabled: enabled } }
+          : d,
+      );
+      toast.success(enabled ? 'Organization enabled' : 'Organization disabled');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setOrgEnableBusyId(null);
+    }
+  }, []);
+
+  const setBranchEnabled = useCallback(async (orgId: string, row: BranchStatRow, enabled: boolean) => {
+    const key = `${orgId}:${row.branch_id}`;
+    setBranchEnableBusyKey(key);
+    try {
+      await superadminApi.patchBranch(row.branch_id, { is_enabled: enabled });
+      setBranchStatsByOrg((prev) => ({
+        ...prev,
+        [orgId]: (prev[orgId] || []).map((r) =>
+          r.branch_id === row.branch_id ? { ...r, is_enabled: enabled } : r,
+        ),
+      }));
+      toast.success(enabled ? 'Branch enabled' : 'Branch disabled');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setBranchEnableBusyKey(null);
+    }
+  }, []);
+
+  const openBranchDashboard = (org: OrgRow, branchId: string) => {
+    try {
+      localStorage.setItem(SA_ACT_KEY, JSON.stringify({ organization_id: org.id, branch_id: branchId }));
+      setCurrentOrganization(orgRowToOrganization(org));
+      void refreshBranches();
+      navigate('/');
+      toast.success('Opened dashboard for selected branch');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to switch context');
+    }
+  };
 
   const openOrg = async (id: string) => {
     try {
@@ -173,10 +322,8 @@ export default function SuperAdmin() {
         staff: unknown[];
       };
       setDetailOrg(d);
-      const t = String(d.organization.subscription_tier || 'free').toLowerCase();
-      setEditTier(
-        t === 'basic' || t === 'pro' || t === 'enterprise' || t === 'free' ? (t as SubscriptionTierId) : 'free',
-      );
+      const t = String(d.organization.subscription_tier || DEFAULT_SUBSCRIPTION_TIER).toLowerCase();
+      setEditTier(SUBSCRIPTION_TIER_IDS.includes(t as SubscriptionTierId) ? (t as SubscriptionTierId) : DEFAULT_SUBSCRIPTION_TIER);
       setEditMax({
         max_members: d.organization.max_members != null ? String(d.organization.max_members) : '',
         max_groups: d.organization.max_groups != null ? String(d.organization.max_groups) : '',
@@ -214,11 +361,9 @@ export default function SuperAdmin() {
   const pct = (u: number, lim: number) => (lim <= 0 ? 0 : Math.min(100, Math.round((u / lim) * 100)));
 
   const tabs: { id: Tab; label: string; icon: typeof Shield }[] = [
-    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'organizations', label: 'Organizations', icon: Building2 },
-    { id: 'branches', label: 'Branches', icon: GitBranch },
-    { id: 'users', label: 'Staff', icon: Users },
-    { id: 'billing', label: 'Billing', icon: CreditCard },
+    { id: 'admins', label: 'Admins', icon: Users },
+    { id: 'billing', label: 'Billing & plans', icon: CreditCard },
   ];
 
   return (
@@ -251,70 +396,28 @@ export default function SuperAdmin() {
         </div>
       </div>
 
-      {tab === 'overview' && statsLoading && (
-        <div className="flex justify-center py-24">
-          <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+      {tab === 'organizations' && statsLoading && (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       )}
-      {tab === 'overview' && !statsLoading && !stats && (
-        <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-8 text-center text-sm text-amber-900">
-          <p className="mb-3">Could not load platform stats.</p>
-          <button
-            type="button"
-            onClick={() => void loadStats()}
-            className="rounded-xl bg-amber-600 px-4 py-2 text-white text-sm font-medium hover:bg-amber-700"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-      {tab === 'overview' && !statsLoading && stats && (
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Organizations</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.total_organizations}</p>
+      {tab === 'organizations' && !statsLoading && stats && (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {(
+            [
+              ['Orgs', stats.total_organizations],
+              ['Members', stats.total_members],
+              ['Branches', stats.total_branches],
+              ['Groups', stats.total_groups],
+              ['Staff', stats.total_staff],
+              ['Events (30d)', stats.events_last_30_days],
+            ] as const
+          ).map(([label, n]) => (
+            <div key={label} className="rounded-xl border border-gray-100 bg-white p-3 text-center shadow-sm">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{label}</p>
+              <p className="text-lg font-semibold text-gray-900">{typeof n === 'number' ? n.toLocaleString() : n}</p>
             </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Members (all orgs)</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.total_members.toLocaleString()}</p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Branches</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.total_branches}</p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Staff profiles</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.total_staff}</p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Ministry groups</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.total_groups}</p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <p className="text-sm text-gray-500 mb-1">Events (last 30 days)</p>
-              <p className="text-3xl font-semibold text-gray-900">{stats.events_last_30_days}</p>
-              <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" /> Platform-wide
-              </p>
-            </div>
-          </div>
-          {Object.keys(growth).length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">New organizations by month</h2>
-              <div className="flex flex-wrap gap-3">
-                {Object.entries(growth)
-                  .sort()
-                  .slice(-12)
-                  .map(([m, c]) => (
-                    <div key={m} className="px-3 py-2 bg-gray-50 rounded-lg text-sm">
-                      <span className="text-gray-500">{m}</span>{' '}
-                      <span className="font-semibold text-gray-900">{c}</span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
+          ))}
         </div>
       )}
 
@@ -338,10 +441,11 @@ export default function SuperAdmin() {
               className="min-h-11 w-full border border-gray-200 bg-white px-3 py-2 text-sm rounded-xl sm:w-auto"
             >
               <option value="all">All tiers</option>
-              <option value="free">free</option>
-              <option value="basic">basic</option>
-              <option value="pro">pro</option>
-              <option value="enterprise">enterprise</option>
+              {SUBSCRIPTION_TIER_IDS.map((tid) => (
+                <option key={tid} value={tid}>
+                  {tid}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -358,44 +462,139 @@ export default function SuperAdmin() {
             </div>
           ) : (
             <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[920px] text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
+                    <th className="text-left px-2 py-3 font-semibold w-10"></th>
                     <th className="text-left px-4 py-3 font-semibold">Organization</th>
                     <th className="text-left px-4 py-3 font-semibold">Tier</th>
-                    <th className="text-right px-4 py-3 font-semibold">Members</th>
-                    <th className="text-right px-4 py-3 font-semibold">Groups</th>
-                    <th className="text-right px-4 py-3 font-semibold">Branches</th>
-                    <th className="text-right px-4 py-3"></th>
+                    <th className="text-center px-2 py-3 font-semibold text-xs w-[72px]">On</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Mmb</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Grp</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Br</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Evt</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Task</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Ldr</th>
+                    <th className="text-right px-2 py-3 font-semibold text-xs">Rpt</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orgs.map((o) => (
-                    <tr key={o.id} className="border-b border-gray-50 hover:bg-gray-50/80">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{o.name}</p>
-                        <p className="text-xs text-gray-500">{o.slug}</p>
-                      </td>
-                      <td className="px-4 py-3 capitalize">{o.subscription_tier || 'free'}</td>
-                      <td className="px-4 py-3 text-right">
-                        {o.usage.members} / {o.limits.max_members}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {o.usage.groups} / {o.limits.max_groups}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {o.usage.branches} / {o.limits.max_branches}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => void openOrg(o.id)}
-                          className="text-blue-600 hover:underline"
-                        >
-                          Manage
-                        </button>
-                      </td>
-                    </tr>
+                    <Fragment key={o.id}>
+                      <tr className="border-b border-gray-50 hover:bg-gray-50/80">
+                        <td className="px-2 py-2">
+                          <button
+                            type="button"
+                            aria-label="Toggle branches"
+                            onClick={() => void toggleOrgBranches(o)}
+                            className="rounded p-1 text-gray-600 hover:bg-gray-100"
+                          >
+                            {expandedOrgId === o.id ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => void openOrg(o.id)}
+                            className="w-full rounded-lg -m-1 p-1 text-left hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                            title="Manage subscription tier and limits"
+                          >
+                            <p className="font-medium text-gray-900">{o.name}</p>
+                            <p className="text-xs text-gray-500">{o.slug}</p>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 capitalize">{o.subscription_tier || DEFAULT_SUBSCRIPTION_TIER}</td>
+                        <td className="px-2 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={o.is_enabled !== false}
+                            disabled={orgEnableBusyId === o.id}
+                            title="Organization enabled"
+                            aria-label={`Organization ${o.name} enabled`}
+                            onChange={(e) => void setOrgEnabled(o.id, e.target.checked)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.members}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.groups}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.branches}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.events_this_month}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.tasks ?? '—'}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.leaders ?? '—'}</td>
+                        <td className="px-2 py-3 text-right text-xs">{o.usage.reports ?? '—'}</td>
+                      </tr>
+                      {expandedOrgId === o.id ? (
+                        <tr key={`${o.id}-exp`} className="bg-gray-50/90">
+                          <td colSpan={11} className="px-4 py-3">
+                            {branchStatsLoading === o.id ? (
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading branches…
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <p className="text-xs font-semibold text-gray-700">Branches</p>
+                                <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                                  <table className="w-full min-w-[800px] text-xs">
+                                    <thead>
+                                      <tr className="border-b bg-gray-50 text-left">
+                                        <th className="px-3 py-2">Branch</th>
+                                        <th className="px-2 py-2 text-center">On</th>
+                                        <th className="px-2 py-2 text-right">Mmb</th>
+                                        <th className="px-2 py-2 text-right">Grp</th>
+                                        <th className="px-2 py-2 text-right">Evt</th>
+                                        <th className="px-2 py-2 text-right">Task</th>
+                                        <th className="px-2 py-2 text-right">Ldr</th>
+                                        <th className="px-2 py-2 text-right">Rpt</th>
+                                        <th className="px-3 py-2 text-right">Open app</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(branchStatsByOrg[o.id] || []).map((row) => (
+                                        <tr key={row.branch_id} className="border-b border-gray-100">
+                                          <td className="px-3 py-2 font-medium text-gray-900">{row.name}</td>
+                                          <td className="px-2 py-2 text-center">
+                                            <input
+                                              type="checkbox"
+                                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                              checked={row.is_enabled !== false}
+                                              disabled={branchEnableBusyKey === `${o.id}:${row.branch_id}`}
+                                              title="Branch enabled"
+                                              aria-label={`Branch ${row.name} enabled`}
+                                              onChange={(e) => void setBranchEnabled(o.id, row, e.target.checked)}
+                                            />
+                                          </td>
+                                          <td className="px-2 py-2 text-right">{row.stats.members}</td>
+                                          <td className="px-2 py-2 text-right">{row.stats.groups}</td>
+                                          <td className="px-2 py-2 text-right">{row.stats.events_this_month}</td>
+                                          <td className="px-2 py-2 text-right">{row.stats.tasks}</td>
+                                          <td className="px-2 py-2 text-right">{row.stats.leaders}</td>
+                                          <td className="px-2 py-2 text-right">{row.stats.reports}</td>
+                                          <td className="px-3 py-2 text-right">
+                                            <button
+                                              type="button"
+                                              onClick={() => openBranchDashboard(o, row.branch_id)}
+                                              className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-white hover:bg-blue-700"
+                                            >
+                                              <ExternalLink className="h-3 w-3" />
+                                              Dashboard
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -427,48 +626,108 @@ export default function SuperAdmin() {
         </div>
       )}
 
-      {tab === 'branches' && (
-        <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="text-left px-4 py-3">Branch</th>
-                <th className="text-left px-4 py-3">Organization</th>
-                <th className="text-left px-4 py-3">Main</th>
-              </tr>
-            </thead>
-            <tbody>
-              {branchRows.map((b) => {
-                const row = b as Record<string, unknown>;
-                return (
-                  <tr key={String(row.id)} className="border-b border-gray-50">
-                    <td className="px-4 py-3">{String(row.name ?? '')}</td>
-                    <td className="px-4 py-3">{String(row.organization_name ?? row.organization_id ?? '')}</td>
-                    <td className="px-4 py-3">{row.is_main_branch ? 'Yes' : ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {tab === 'admins' && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900">Add platform admin</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Creates a staff profile with super-admin access in your organization. If{' '}
+              <code className="rounded bg-gray-100 px-1">AUTH_EMAIL_AUTO_CONFIRM=false</code>, Supabase sends a confirmation
+              email before first login.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="block text-sm">
+                <span className="text-gray-600">First name</span>
+                <input
+                  value={adminForm.first_name}
+                  onChange={(e) => setAdminForm((p) => ({ ...p, first_name: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600">Last name</span>
+                <input
+                  value={adminForm.last_name}
+                  onChange={(e) => setAdminForm((p) => ({ ...p, last_name: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600">Email</span>
+                <input
+                  type="email"
+                  autoComplete="off"
+                  value={adminForm.email}
+                  onChange={(e) => setAdminForm((p) => ({ ...p, email: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-gray-600">Password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={adminForm.password}
+                  onChange={(e) => setAdminForm((p) => ({ ...p, password: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              disabled={adminSubmitting}
+              onClick={() => {
+                void (async () => {
+                  try {
+                    setAdminSubmitting(true);
+                    const res = (await superadminApi.createAdmin({
+                      first_name: adminForm.first_name.trim(),
+                      last_name: adminForm.last_name.trim(),
+                      email: adminForm.email.trim(),
+                      password: adminForm.password,
+                    })) as { note?: string; verification_email_sent?: boolean };
+                    toast.success(
+                      res.verification_email_sent
+                        ? 'Admin created — confirmation email sent.'
+                        : 'Admin created.',
+                    );
+                    setAdminForm({ first_name: '', last_name: '', email: '', password: '' });
+                    const r = (await superadminApi.users({
+                      search: userSearch.trim() || undefined,
+                      superadmin_only: true,
+                    })) as { users: unknown[] };
+                    setUserRows(r.users || []);
+                  } catch (e: unknown) {
+                    toast.error(e instanceof Error ? e.message : 'Failed to create admin');
+                  } finally {
+                    setAdminSubmitting(false);
+                  }
+                })();
+              }}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {adminSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Create admin
+            </button>
+          </div>
 
-      {tab === 'users' && (
-        <div className="space-y-4">
-          <input
-            type="search"
-            placeholder="Search email or name…"
-            value={userSearch}
-            onChange={(e) => setUserSearch(e.target.value)}
-            className="min-h-11 w-full max-w-md border border-gray-200 px-3 py-2 text-base sm:text-sm rounded-xl"
-          />
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              placeholder="Search admins by email or name…"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              className="min-h-11 w-full rounded-xl border border-gray-200 py-2 pl-9 pr-3 text-base sm:text-sm"
+            />
+          </div>
           <div className="overflow-x-auto touch-pan-x overscroll-x-contain rounded-2xl border border-gray-100 bg-white">
-            <table className="w-full text-sm min-w-[720px]">
-              <thead className="bg-gray-50 border-b">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b bg-gray-50">
                 <tr>
-                  <th className="text-left px-4 py-3">Name</th>
-                  <th className="text-left px-4 py-3">Email</th>
-                  <th className="text-left px-4 py-3">Active</th>
+                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left">Email</th>
+                  <th className="px-4 py-3 text-left">Active</th>
                 </tr>
               </thead>
               <tbody>
@@ -504,14 +763,22 @@ export default function SuperAdmin() {
                 <DollarSign className="w-5 h-5 text-blue-600" />
                 Revenue estimate (GHS / month)
               </h2>
-              <p className="text-xs text-gray-500 mb-4">Sum of plan prices × orgs per tier (Hubtel integration pending).</p>
+              <p className="text-xs text-gray-500 mb-4">
+                Uses each org&apos;s <span className="font-mono text-gray-700">subscription_tier</span> and default tier
+                prices from <code className="rounded bg-gray-100 px-1">subscriptionPlans</code>. Paystack Core
+                checkouts (monthly / 6&nbsp;mo / annual) are billed on their own cadence — see Core plans below.
+              </p>
               <ul className="space-y-2 text-sm">
-                {(['free', 'basic', 'pro', 'enterprise'] as const).map((tid) => {
+                {SUBSCRIPTION_TIER_IDS.map((tid) => {
                   const n = stats.orgs_by_tier?.[tid] ?? 0;
                   const price = SUBSCRIPTION_PLANS[tid].price_ghs;
+                  const label = SUBSCRIPTION_PLANS[tid].label;
                   return (
                     <li key={tid} className="flex justify-between border-b border-gray-100 py-2">
-                      <span className="capitalize">{tid}</span>
+                      <span>
+                        <span className="font-medium text-gray-900">{label}</span>{' '}
+                        <span className="text-gray-500 capitalize">({tid})</span>
+                      </span>
                       <span>
                         {n} × ₵{price} = <strong>₵{(n * price).toLocaleString()}</strong>
                       </span>
@@ -521,18 +788,182 @@ export default function SuperAdmin() {
               </ul>
             </div>
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Default plan limits</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Default tier limits</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Org overrides use <span className="font-mono">organizations.max_*</span>. Paystack Core plans grant{' '}
+                <strong>enterprise</strong> limits after checkout.
+              </p>
               <ul className="text-xs text-gray-600 space-y-2 font-mono">
-                {(['free', 'basic', 'pro', 'enterprise'] as const).map((tid) => {
+                {SUBSCRIPTION_TIER_IDS.map((tid) => {
                   const p = SUBSCRIPTION_PLANS[tid];
                   return (
                     <li key={tid}>
-                      <strong className="capitalize text-gray-900">{tid}</strong>: members {p.max_members}, groups{' '}
-                      {p.max_groups}, branches {p.max_branches}, events/mo {p.max_events_per_month}, staff {p.max_staff}
+                      <strong className="capitalize text-gray-900">{p.label}</strong> ({tid}): members {p.max_members},
+                      groups {p.max_groups}, branches {p.max_branches}, events/mo {p.max_events_per_month}, staff{' '}
+                      {p.max_staff}
                     </li>
                   );
                 })}
               </ul>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" />
+              Paystack Core plans (checkout)
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">
+              These are the paid SKUs from <code className="rounded bg-gray-100 px-1">paidPlans.ts</code>. Checkout sends{' '}
+              <span className="font-mono">billing_plan_id</span> (e.g. <span className="font-mono">core_monthly</span>).
+              Each maps to Paystack plan codes in the section below.
+            </p>
+            <div className="overflow-x-auto rounded-xl border border-gray-100">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="border-b bg-gray-50 text-left">
+                  <tr>
+                    <th className="px-4 py-2 font-semibold">Plan</th>
+                    <th className="px-4 py-2 font-semibold">Billing</th>
+                    <th className="px-4 py-2 font-semibold text-right">Price (GHS)</th>
+                    <th className="px-4 py-2 font-semibold">Grants</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PAID_PLAN_IDS.map((id) => {
+                    const p = PAID_PLANS[id];
+                    return (
+                      <tr key={id} className="border-b border-gray-50">
+                        <td className="px-4 py-2">
+                          <span className="font-medium text-gray-900">{p.title}</span>
+                          <p className="text-xs font-mono text-gray-500">{id}</p>
+                        </td>
+                        <td className="px-4 py-2 text-gray-700">{p.intervalLabel}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">₵{p.priceGhs.toLocaleString()}</td>
+                        <td className="px-4 py-2 capitalize text-gray-700">{p.grantsTier} limits</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <ul className="mt-3 space-y-1 text-xs text-gray-600">
+              {PAID_PLAN_IDS.map((id) => {
+                const p = PAID_PLANS[id];
+                if (!p.savingsLine) return null;
+                return (
+                  <li key={`save-${id}`}>
+                    <strong className="text-gray-800">{p.title}:</strong> {p.savingsLine}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-blue-600" />
+              Paystack keys
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Stored {paymentsCfg?.crypto?.encrypted_storage ? 'encrypted' : 'as plaintext (set PLATFORM_SECRET_KEY)'}.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Paystack secret key</span>
+                <input
+                  value={paystackSecretKey}
+                  onChange={(e) => setPaystackSecretKey(e.target.value)}
+                  placeholder={paymentsCfg?.paystack?.has_secret_key ? 'Configured (enter to rotate)' : 'sk_...'}
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Paystack public key</span>
+                <input
+                  value={paystackPublicKey}
+                  onChange={(e) => setPaystackPublicKey(e.target.value)}
+                  placeholder={paymentsCfg?.paystack?.has_public_key ? 'Configured (enter to rotate)' : 'pk_...'}
+                  className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-1">Plan codes — Core (subscriptions)</h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Required for Paystack initialize / subscription flows. Default codes from app config are shown as
+                placeholders when empty.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {PAID_PLAN_IDS.map((tid) => {
+                  const p = PAID_PLANS[tid];
+                  const def = DEFAULT_PAYSTACK_PLAN_CODES[tid];
+                  return (
+                    <label key={tid} className="block">
+                      <span className="text-xs font-medium text-gray-700">
+                        {p.title} <span className="font-mono text-gray-500">({tid})</span>
+                      </span>
+                      <input
+                        value={paystackPlanCodes[tid] || ''}
+                        onChange={(e) => setPaystackPlanCodes((prev) => ({ ...prev, [tid]: e.target.value }))}
+                        placeholder={def || 'PLN_...'}
+                        className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-gray-900 mb-1">Plan codes — Tiers (optional)</h3>
+              <p className="text-xs text-gray-500 mb-3">Only if you use Paystack plans keyed by subscription tier name.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {SUBSCRIPTION_TIER_IDS.map((tid) => (
+                  <label key={tid} className="block">
+                    <span className="text-xs font-medium text-gray-700 capitalize">{tid} plan code</span>
+                    <input
+                      value={paystackPlanCodes[tid] || ''}
+                      onChange={(e) => setPaystackPlanCodes((p) => ({ ...p, [tid]: e.target.value }))}
+                      placeholder="PLN_..."
+                      className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <button
+                type="button"
+                disabled={paymentsSaving}
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      setPaymentsSaving(true);
+                      await superadminApi.patchPaymentConfig({
+                        paystack_secret_key: paystackSecretKey.trim() || undefined,
+                        paystack_public_key: paystackPublicKey.trim() || undefined,
+                        paystack_plan_codes: paystackPlanCodes,
+                      });
+                      toast.success('Saved');
+                      setPaystackSecretKey('');
+                      setPaystackPublicKey('');
+                      const c = (await superadminApi.paymentConfig()) as any;
+                      setPaymentsCfg(c);
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : 'Save failed');
+                    } finally {
+                      setPaymentsSaving(false);
+                    }
+                  })();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm disabled:opacity-60"
+              >
+                {paymentsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Paystack config
+              </button>
             </div>
           </div>
         </div>
@@ -549,7 +980,19 @@ export default function SuperAdmin() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">{String(detailOrg.organization.slug ?? '')}</p>
+            <p className="text-sm text-gray-500 mb-3">{String(detailOrg.organization.slug ?? '')}</p>
+
+            <label className="mb-4 flex cursor-pointer flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                checked={detailOrg.organization.is_enabled !== false}
+                disabled={orgEnableBusyId === String(detailOrg.organization.id)}
+                onChange={(e) => void setOrgEnabled(String(detailOrg.organization.id), e.target.checked)}
+              />
+              <span className="font-medium text-gray-800">Organization enabled</span>
+              <span className="text-xs text-gray-500">Staff blocked when off. Super admins exempt.</span>
+            </label>
 
             <div className="space-y-3 mb-6">
               <h3 className="text-sm font-semibold text-gray-800">Usage vs limits</h3>
@@ -581,6 +1024,11 @@ export default function SuperAdmin() {
                   </div>
                 );
               })}
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                <span>Tasks: {detailOrg.usage.tasks ?? '—'}</span>
+                <span>Leaders: {detailOrg.usage.leaders ?? '—'}</span>
+                <span>Reports: {detailOrg.usage.reports ?? '—'}</span>
+              </div>
             </div>
 
             <label className="block text-sm font-medium text-gray-700 mb-1">Subscription tier</label>
@@ -589,9 +1037,9 @@ export default function SuperAdmin() {
               onChange={(e) => setEditTier(e.target.value as SubscriptionTierId)}
               className="w-full mb-4 px-3 py-2 border border-gray-200 rounded-xl text-sm"
             >
-              {(['free', 'basic', 'pro', 'enterprise'] as const).map((tid) => (
+              {SUBSCRIPTION_TIER_IDS.map((tid) => (
                 <option key={tid} value={tid}>
-                  {SUBSCRIPTION_PLANS[tid].label} (₵{SUBSCRIPTION_PLANS[tid].price_ghs}/mo)
+                  {SUBSCRIPTION_PLANS[tid].label} (₵{SUBSCRIPTION_PLANS[tid].price_ghs}/mo est.)
                 </option>
               ))}
             </select>

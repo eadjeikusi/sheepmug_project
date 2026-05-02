@@ -27,7 +27,8 @@ import type { MemberStatusOption, GroupTypeOption, CustomFieldDefinition, Organi
 import EventTypes from './EventTypes';
 import EventOutlineTemplates from './EventOutlineTemplates';
 import { SortableSettingsOrderList } from '../settings/SortableSettingsOrderList';
-import { SettingsSubscription, isSubscriptionSubTab, type SubscriptionSubTab } from './SettingsSubscription';
+import { SettingsSubscription, type SubscriptionSubTab } from './SettingsSubscription';
+import { isSubscriptionSubTab } from '@/utils/subscriptionTabs';
 
 type ApiRoleRow = { id: string; name: string; permissions: string[] };
 

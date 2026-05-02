@@ -6,7 +6,6 @@ export const COUNT_PCT_COMBINED_PREFIX = "__cp::";
 
 /** Membership report: preferred column order (web + mobile preview). */
 export const MEMBERSHIP_PREVIEW_COLUMN_ORDER: string[] = [
-  "member_id",
   "member_name",
   "status",
   "profile_past_12m_rate_pct",
@@ -28,16 +27,45 @@ export const MEMBERSHIP_PREVIEW_COLUMN_ORDER: string[] = [
   "attendance_rate_pct",
 ];
 
+/** Align with CSV/PDF column order from `LEADER_KEY_ORDER` in reportColumnLabels. */
+export const LEADER_PREVIEW_COLUMN_ORDER: string[] = [
+  "group_name",
+  "member_count",
+  "events_in_range",
+  "group_tasks_pending",
+  "group_tasks_completed",
+  "group_tasks_all",
+  "attendance_present",
+  "attendance_absent",
+  "attendance_unsure",
+  "attendance_not_marked",
+  "attendance_total",
+  "attendance_present_pct",
+  "attendance_absent_pct",
+  "attendance_unsure_pct",
+  "attendance_not_marked_pct",
+  "attendance_rate_pct",
+];
+
 export function orderPreviewTableColumns(
   reportType: "group" | "membership" | "leader",
   keys: string[],
 ): string[] {
-  if (reportType !== "membership") return keys;
-  const rank = (k: string) => {
-    const i = MEMBERSHIP_PREVIEW_COLUMN_ORDER.indexOf(k);
-    return i === -1 ? 1_000 + k.charCodeAt(0) : i;
-  };
-  return [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  if (reportType === "membership") {
+    const rank = (k: string) => {
+      const i = MEMBERSHIP_PREVIEW_COLUMN_ORDER.indexOf(k);
+      return i === -1 ? 1_000 + k.charCodeAt(0) : i;
+    };
+    return [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  }
+  if (reportType === "leader") {
+    const rank = (k: string) => {
+      const i = LEADER_PREVIEW_COLUMN_ORDER.indexOf(k);
+      return i === -1 ? 1_000 + k.charCodeAt(0) : i;
+    };
+    return [...keys].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  }
+  return keys;
 }
 
 const GROUP_COUNT_PCT_PAIRS: Array<{ count: string; pct: string }> = [
@@ -54,11 +82,15 @@ const MEMBERSHIP_COUNT_PCT_PAIRS: Array<{ count: string; pct: string }> = [
   { count: "attendance_not_marked", pct: "attendance_not_marked_pct" },
 ];
 
+/** Leaders report: same merged attendance columns as membership (group-scoped roster). */
+const LEADER_COUNT_PCT_PAIRS: Array<{ count: string; pct: string }> = MEMBERSHIP_COUNT_PCT_PAIRS;
+
 export function getCountPctPairs(
   reportType: "group" | "membership" | "leader",
 ): Array<{ count: string; pct: string }> {
   if (reportType === "group") return GROUP_COUNT_PCT_PAIRS;
   if (reportType === "membership") return MEMBERSHIP_COUNT_PCT_PAIRS;
+  if (reportType === "leader") return LEADER_COUNT_PCT_PAIRS;
   return [];
 }
 
@@ -155,7 +187,10 @@ export function humanizeCountPctCombinedHeader(
   reportType: "group" | "membership" | "leader",
   membershipHeaderByCountKey?: Record<string, string>,
 ): string {
-  if (reportType === "membership" && membershipHeaderByCountKey?.[countKey]) {
+  if (
+    (reportType === "membership" || reportType === "leader") &&
+    membershipHeaderByCountKey?.[countKey]
+  ) {
     return membershipHeaderByCountKey[countKey]!;
   }
   return String(countKey)

@@ -9,7 +9,7 @@ import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { toast } from 'sonner';
 import AddMembersModal from '../modals/AddMembersModal';
 import ManageSubgroupModal from '../modals/ManageSubgroupModal';
-import MemberDetailPanel from '../panels/MemberDetailPanel';
+import { useMemberProfileModal } from '@/contexts/MemberProfileModalContext';
 import DeleteModal from '../modals/DeleteModal';
 import MinistryCard from '../cards/MinistryCard';
 import CustomFieldsSection from '../CustomFieldsSection';
@@ -510,6 +510,7 @@ const MinistryDetail: React.FC = () => {
   const [launchAssignFromUrl] = useState(() => searchParams.get('assign') === '1');
   const { token } = useAuth();
   const { selectedBranch } = useBranch();
+  const memberProfile = useMemberProfileModal();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [pubContactNational, setPubContactNational] = useState('');
@@ -553,7 +554,6 @@ const MinistryDetail: React.FC = () => {
   const [qrPublic, setQrPublic] = useState('');
   const [qrJoin, setQrJoin] = useState('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-  const [viewingMemberDetail, setViewingMemberDetail] = useState<Member | null>(null);
   const [removeFromGroupConfirmOpen, setRemoveFromGroupConfirmOpen] = useState(false);
   const [deleteMinistryModalOpen, setDeleteMinistryModalOpen] = useState(false);
   const [subgroupToDeleteId, setSubgroupToDeleteId] = useState<string | null>(null);
@@ -1159,7 +1159,22 @@ const MinistryDetail: React.FC = () => {
     if (!mid) return;
     const raw = rosterById.get(mid);
     if (raw) {
-      setViewingMemberDetail(normalizeMemberForDetailPanel(raw as Record<string, unknown> & { id: string }));
+      const m = normalizeMemberForDetailPanel(raw as Record<string, unknown> & { id: string });
+      memberProfile.openMember(m, {
+        familyGroups: [],
+        allMembers: availableMembers as Member[],
+        onUpdated: (updated: Member) => {
+          setAvailableMembers((prev) => {
+            const u = updated;
+            if (prev.some((x) => x.id === u.id)) {
+              return prev.map((x) => (x.id === u.id ? { ...x, ...u } : x));
+            }
+            return [...prev, u as any];
+          });
+          void fetchGroupMembers();
+          void fetchAvailableMembers();
+        },
+      });
     }
   };
 
@@ -1297,7 +1312,6 @@ const MinistryDetail: React.FC = () => {
   }, [activeTab, groupId, token, fetchPendingRequests]);
 
   useEffect(() => {
-    setViewingMemberDetail(null);
     setMemberSearchQuery('');
   }, [groupId]);
 
@@ -1849,7 +1863,23 @@ const MinistryDetail: React.FC = () => {
 
                       const openPanel = () => {
                         const m = memberFromGroupRow(gm, availableMembers as Record<string, unknown>[]);
-                        if (m) setViewingMemberDetail(m);
+                        if (m) {
+                          memberProfile.openMember(m, {
+                            familyGroups: [],
+                            allMembers: availableMembers as Member[],
+                            onUpdated: (updated: Member) => {
+                              setAvailableMembers((prev) => {
+                                const u = updated;
+                                if (prev.some((x) => x.id === u.id)) {
+                                  return prev.map((x) => (x.id === u.id ? { ...x, ...u } : x));
+                                }
+                                return [...prev, u as any];
+                              });
+                              void fetchGroupMembers();
+                              void fetchAvailableMembers();
+                            },
+                          });
+                        }
                       };
 
                       return (
@@ -2558,26 +2588,6 @@ const MinistryDetail: React.FC = () => {
           fetchGroupMembers();
           fetchGroupDetails();
           fetchPendingRequests();
-          fetchAvailableMembers();
-        }}
-      />
-
-      <MemberDetailPanel
-        isOpen={!!viewingMemberDetail}
-        onClose={() => setViewingMemberDetail(null)}
-        member={viewingMemberDetail as any}
-        familyGroups={[]}
-        allMembers={availableMembers as any}
-        onEdit={(updated) => {
-          setAvailableMembers((prev) => {
-            const u = updated as Member;
-            if (prev.some((x) => x.id === u.id)) {
-              return prev.map((x) => (x.id === u.id ? { ...x, ...u } : x));
-            }
-            return [...prev, u as any];
-          });
-          setViewingMemberDetail(normalizeMemberForDetailPanel(updated as Record<string, unknown> & { id: string }));
-          fetchGroupMembers();
           fetchAvailableMembers();
         }}
       />

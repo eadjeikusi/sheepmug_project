@@ -1,19 +1,17 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Plus, Search, MoreVertical, Edit2, Trash2, Download, Upload, Mic, Users as UsersIcon, Home, QrCode, Share2, ExternalLink, CheckSquare, Square, X, Clock, Check, Eye, XCircle, Copy, Loader2, RotateCcw, GitFork, ListTodo, Filter, UsersRound, CalendarDays } from 'lucide-react';
-import { mockGroups } from '../../utils/mockData';
+import { Plus, Search, MoreVertical, Edit2, Trash2, Download, Upload, Users as UsersIcon, Home, QrCode, Share2, ExternalLink, CheckSquare, X, Clock, Check, Eye, XCircle, Copy, Loader2, RotateCcw, GitFork, ListTodo, Filter, CalendarDays, ChevronRight } from 'lucide-react';
 import { Member, Family } from '@/types';
 import { familyApi, memberApi, memberFamiliesApi } from '../../utils/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import MemberModal from '../modals/MemberModal';
 import DeleteModal from '../modals/DeleteModal';
-import AIVoiceNoteModal from '../modals/AIVoiceNoteModal';
 import FamilyGroupModal from '../modals/FamilyGroupModal';
 import FamilyGroupDetailModal from '../modals/FamilyGroupDetailModal';
 import AssignMenuModal from '../modals/AssignMenuModal';
 import AssignToFamilyModal from '../modals/AssignToFamilyModal';
 import AssignMinistryModal from '../modals/AssignMinistryModal';
-import MemberDetailPanel from '../panels/MemberDetailPanel';
+import { useMemberProfileModal } from '@/contexts/MemberProfileModalContext';
 import ExportModal from '../modals/ExportModal';
 import MemberRegistrationFormModal from '../modals/MemberRegistrationFormModal';
 import { toast } from 'sonner';
@@ -23,22 +21,32 @@ import MemberLinkModal from '../modals/MemberLinkModal';
 import QRCodeLib from 'qrcode';
 import { useBranch } from '../../contexts/BranchContext';
 import { useAuth } from '../../contexts/AuthContext';
+import type { FamilyGroup } from '../../utils/mockData';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { memberStatusBadgePair } from '../../utils/memberStatusBadge';
 import { useMemberStatusOptions } from '../../hooks/useMemberStatusOptions';
 import { usePermissions } from '@/hooks/usePermissions';
-import { DatePickerField } from '@/components/datetime';
+import { DatePickerField, parseIsoDateOnly } from '@/components/datetime';
 import { MemberTableBodySkeleton } from '@/components/skeletons/data-skeletons';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatLongWeekdayDate } from '@/utils/dateDisplayFormat';
+import { ReportGroupTreeModal } from '../reports/ReportGroupTreeModal';
 
 function isMemberDbId(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id).trim());
 }
 
+/** Small native checkboxes for member list (accent = filled color in supporting browsers). */
+const MEMBER_ROW_CHECKBOX_CLASS =
+  'h-[15px] w-[15px] cursor-pointer rounded-[3px] border border-gray-300 bg-white accent-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35 focus-visible:ring-offset-0';
+const MEMBER_ROW_CHECKBOX_DELETED_CLASS =
+  'h-[15px] w-[15px] cursor-pointer rounded-[3px] border border-gray-300 bg-white accent-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/35 focus-visible:ring-offset-0';
+
 type ViewType = 'members' | 'families' | 'requests';
 
 const STATUS_FILTER_NONE = '__none__';
+const GENDER_FILTER_NONE = '__gender_none__';
 const MEMBERS_PAGE_SIZE = 10;
 
 type ImportIssue = {
@@ -171,6 +179,24 @@ function memberAgeFromDob(member: Member): number | null {
   return age >= 0 ? age : null;
 }
 
+/** Local calendar YYYY-MM-DD for member church join (`date_joined`), or null if unknown. */
+function memberJoinedYmd(member: Member): string | null {
+  const raw = String(
+    (member as { date_joined?: string | null }).date_joined ??
+      (member as { dateJoined?: string | null }).dateJoined ??
+      '',
+  ).trim();
+  if (!raw) return null;
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
 export interface MemberRequest {
   id: string;
   // The form_data will contain original fields from MemberRegistration.tsx
@@ -243,6 +269,7 @@ export default function Members() {
   const { selectedBranch, branches } = useBranch();
   const { user, token, loading: authLoading } = useAuth();
   const { can } = usePermissions();
+  const memberProfile = useMemberProfileModal();
   const { options: memberStatusPicklistForBadges } = useMemberStatusOptions(true);
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -253,9 +280,18 @@ export default function Members() {
   const [familyMembersCache, setFamilyMembersCache] = useState<Record<string, Member[]>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [memberStatusFilter, setMemberStatusFilter] = useState('');
+  const [memberGenderFilter, setMemberGenderFilter] = useState('');
   const [membersFilterPanelOpen, setMembersFilterPanelOpen] = useState(false);
   const [memberGroupFilterIds, setMemberGroupFilterIds] = useState<Set<string>>(new Set());
+  const [memberGroupTreeOpen, setMemberGroupTreeOpen] = useState(false);
+  /** Branch-scoped ministries from API (same source as Reports / ministries list). */
+  const [branchGroupsForFilter, setBranchGroupsForFilter] = useState<
+    { id: string; name: string; parent_group_id: string | null }[]
+  >([]);
+  const [branchGroupsFilterLoading, setBranchGroupsFilterLoading] = useState(false);
   const [memberAgeRangeFilter, setMemberAgeRangeFilter] = useState<'all' | 'u18' | '18_35' | '36_55' | '56p'>('all');
+  const [memberJoinedFilterStart, setMemberJoinedFilterStart] = useState('');
+  const [memberJoinedFilterEnd, setMemberJoinedFilterEnd] = useState('');
   const [memberPendingTaskOnly, setMemberPendingTaskOnly] = useState(false);
   const [viewType, setViewType] = useState<ViewType>(() => {
     const savedViewType = localStorage.getItem('viewType');
@@ -275,7 +311,6 @@ export default function Members() {
   const [bulkPurgeLoading, setBulkPurgeLoading] = useState(false);
   const [deletingFamily, setDeletingFamily] = useState<Family | undefined>();
   const [memberToRemove, setMemberToRemove] = useState<{ member: Member, familyId: string } | undefined>();
-  const [aiNoteMember, setAiNoteMember] = useState<Member | undefined>();
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [showRegistrationQR, setShowRegistrationQR] = useState(false);
   const [registrationQRCode, setRegistrationQRCode] = useState('');
@@ -283,7 +318,6 @@ export default function Members() {
   const [selectedDeletedMembers, setSelectedDeletedMembers] = useState<Set<string>>(new Set());
   const [isAssignMenuModalOpen, setIsAssignMenuModalOpen] = useState(false);
   const [isAssignToFamilyModalOpen, setIsAssignToFamilyModalOpen] = useState(false);
-  const [viewingMemberDetail, setViewingMemberDetail] = useState<Member | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [memberRequests, setMemberRequests] = useState<MemberRequest[]>([]); // Initialize empty, will fetch from API
   const [membersTotalCount, setMembersTotalCount] = useState<number | null>(null);
@@ -299,11 +333,12 @@ export default function Members() {
   const [isAssignMinistryModalOpen, setIsAssignMinistryModalOpen] = useState(false);
   const [isAssignToGroupModalOpen, setIsAssignToGroupModalOpen] = useState(false);
   const [memberToAssign, setMemberToAssign] = useState<Member | null>(null);
-  const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null);
   const [assignTaskModalOpen, setAssignTaskModalOpen] = useState(false);
   const [assignTaskInitialMemberIds, setAssignTaskInitialMemberIds] = useState<string[]>([]);
   const [assignTaskLockMemberSelection, setAssignTaskLockMemberSelection] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const membersSelectAllRef = useRef<HTMLInputElement>(null);
+  const deletedSelectAllRef = useRef<HTMLInputElement>(null);
   const [importCheckingOpen, setImportCheckingOpen] = useState(false);
   const [importSummaryOpen, setImportSummaryOpen] = useState(false);
   const [importPrecheck, setImportPrecheck] = useState<ImportPrecheckResponse | null>(null);
@@ -317,7 +352,6 @@ export default function Members() {
   const [showDuplicateEditor, setShowDuplicateEditor] = useState(false);
   const [duplicateDraftRows, setDuplicateDraftRows] = useState<ImportCsvRow[]>([]);
   const [duplicateRechecking, setDuplicateRechecking] = useState(false);
-  const [familiesPickerOpen, setFamiliesPickerOpen] = useState(false);
   const membersSentinelRef = useRef<HTMLDivElement | null>(null);
   const membersLoadedCountRef = useRef(0);
 
@@ -434,6 +468,81 @@ export default function Members() {
     setShowDeletedMembers(false);
   }, [familyFilterId]);
 
+  useEffect(() => {
+    if (!membersFilterPanelOpen) setMemberGroupTreeOpen(false);
+  }, [membersFilterPanelOpen]);
+
+  useEffect(() => {
+    if (!token) {
+      setBranchGroupsForFilter([]);
+      setBranchGroupsFilterLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBranchGroupsFilterLoading(true);
+      try {
+        const headers = withBranchScope(selectedBranch?.id ?? null, { Authorization: `Bearer ${token}` });
+        const res = await fetch(new URL('/api/groups?tree=1', window.location.origin).toString(), { headers });
+        const json = await res.json().catch(() => []);
+        const rows = Array.isArray(json)
+          ? json
+          : Array.isArray((json as { groups?: unknown[] }).groups)
+            ? (json as { groups: unknown[] }).groups
+            : [];
+        const mapped = (rows as Record<string, unknown>[])
+          .map((g) => {
+            const id = String(g.id ?? '').trim();
+            if (!id) return null;
+            const rawParent = g.parent_group_id;
+            const parent =
+              rawParent != null && String(rawParent).trim().length > 0 ? String(rawParent).trim() : null;
+            const isSystem = g.is_system === true || (g.system_kind != null && String(g.system_kind).length > 0);
+            return {
+              id,
+              name: String(g.name ?? 'Group').trim() || 'Group',
+              parent_group_id: parent,
+              isSystem,
+            };
+          })
+          .filter((x): x is { id: string; name: string; parent_group_id: string | null; isSystem: boolean } => x != null);
+        const visible = mapped.filter((g) => !g.isSystem);
+        if (!cancelled) {
+          setBranchGroupsForFilter(
+            visible.map(({ id, name, parent_group_id }) => ({ id, name, parent_group_id })),
+          );
+        }
+      } catch {
+        if (!cancelled) setBranchGroupsForFilter([]);
+      } finally {
+        if (!cancelled) setBranchGroupsFilterLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedBranch?.id]);
+
+  useEffect(() => {
+    if (branchGroupsFilterLoading) return;
+    const allowed = new Set(branchGroupsForFilter.map((g) => g.id));
+    setMemberGroupFilterIds((prev) => {
+      if (prev.size === 0) return prev;
+      if (allowed.size === 0) return new Set();
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+      }
+      if (next.size === prev.size) {
+        for (const id of prev) {
+          if (!next.has(id)) return next;
+        }
+        return prev;
+      }
+      return next;
+    });
+  }, [branchGroupsForFilter, branchGroupsFilterLoading]);
+
   const fetchMembers = useCallback(async (reset = true) => {
     if (!token) {
       if (!authLoading) setIsLoading(false);
@@ -448,7 +557,12 @@ export default function Members() {
     try {
       const offset = reset ? 0 : membersLoadedCountRef.current;
       const url = new URL('/api/members', window.location.origin);
-      url.searchParams.set('include_deleted', 'true');
+      /** Deleted tab: server returns only trash rows (first page is real deleted data). Active tab: non-deleted only (no mixed list + client filter). */
+      if (showDeletedMembers && can('view_deleted_members')) {
+        url.searchParams.set('deleted_only', 'true');
+      } else {
+        url.searchParams.set('include_deleted', 'false');
+      }
       url.searchParams.set('offset', String(offset));
       url.searchParams.set('limit', String(MEMBERS_PAGE_SIZE));
       if (selectedBranch) {
@@ -510,7 +624,19 @@ export default function Members() {
         setLoadingMoreMembers(false);
       }
     }
-  }, [token, selectedBranch, authLoading]);
+  }, [token, selectedBranch, authLoading, showDeletedMembers, can]);
+
+  const handleOpenMemberProfile = useCallback(
+    (m: Member) => {
+      memberProfile.openMember(m, {
+        familyGroups: familyGroups as unknown as FamilyGroup[],
+        allMembers: members,
+        onUpdated: (u: Member) =>
+          setMembers((prev) => prev.map((row) => (row.id === u.id ? ({ ...row, ...u } as Member) : row))),
+      });
+    },
+    [memberProfile, familyGroups, members],
+  );
 
   const handleAssignToGroupClick = useCallback((member: Member) => {
     setMemberToAssign(member);
@@ -630,7 +756,7 @@ export default function Members() {
     if (viewType === 'members' && token && selectedBranch && !authLoading) {
       fetchMembers();
     }
-  }, [fetchFamilyGroups, fetchMemberRequests, fetchPendingTaskMembers, fetchMembers, token, selectedBranch, authLoading, viewType]);
+  }, [fetchFamilyGroups, fetchMemberRequests, fetchPendingTaskMembers, fetchMembers, token, selectedBranch, authLoading, viewType, showDeletedMembers]);
 
   useEffect(() => {
     if (!token || !selectedBranch) {
@@ -758,9 +884,9 @@ export default function Members() {
     if (viewType !== 'members') {
       setViewType('members');
     }
-    setViewingMemberDetail(match);
+    handleOpenMemberProfile(match);
     navigate(location.pathname, { replace: true, state: null });
-  }, [location.pathname, location.state, members, navigate, viewType]);
+  }, [location.pathname, location.state, members, navigate, viewType, handleOpenMemberProfile]);
 
   useEffect(() => {
     const routeState = (location.state ?? null) as { openMemberId?: string; openFamilyId?: string } | null;
@@ -776,6 +902,23 @@ export default function Members() {
     setViewingFamily(match);
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, familyGroups, loadingFamilies, navigate, viewType]);
+
+  const openMemberFromQuery = searchParams.get('openMember');
+  useEffect(() => {
+    if (!openMemberFromQuery || !isMemberDbId(openMemberFromQuery) || members.length === 0) return;
+    const match = members.find((m) => m.id === openMemberFromQuery);
+    if (!match) return;
+    if (viewType !== 'members') setViewType('members');
+    handleOpenMemberProfile(match);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('openMember');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [openMemberFromQuery, members, setSearchParams, viewType, handleOpenMemberProfile]);
 
   const handleApproveRequest = useCallback(async (requestId: string) => {
     if (!token) {
@@ -986,16 +1129,6 @@ export default function Members() {
     toast.success('Registration link copied to clipboard!');
   };
 
-  const toggleMemberSelection = (memberId: string) => {
-    const newSelection = new Set(selectedMembers);
-    if (newSelection.has(memberId)) {
-      newSelection.delete(memberId);
-    } else {
-      newSelection.add(memberId);
-    }
-    setSelectedMembers(newSelection);
-  };
-
   const toggleRequestSelection = (requestId: string) => {
     const newSelection = new Set(selectedRequests);
     if (newSelection.has(requestId)) {
@@ -1040,6 +1173,65 @@ export default function Members() {
     });
   }, [members, selectedBranch, showDeletedMembers]);
 
+  const memberGenderFilterOptions = useMemo(() => {
+    const base = ['Male', 'Female'];
+    const seen = new Set(base.map((b) => b.toLowerCase()));
+    const extras: string[] = [];
+    for (const m of members) {
+      const raw = (m.gender || '').trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        extras.push(raw);
+      }
+    }
+    extras.sort((a, b) => a.localeCompare(b));
+    return [...base, ...extras];
+  }, [members]);
+
+  const hasMembersWithoutGender = useMemo(() => {
+    return members.some((m) => {
+      const matchBranch = !selectedBranch || m.churchId === selectedBranch.id;
+      const matchDeleted = m.is_deleted === showDeletedMembers;
+      return matchBranch && matchDeleted && !(m.gender || '').trim();
+    });
+  }, [members, selectedBranch, showDeletedMembers]);
+
+  const memberGroupNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of branchGroupsForFilter) m.set(g.id, g.name);
+    return m;
+  }, [branchGroupsForFilter]);
+
+  const memberFilterGroupRows = useMemo(
+    () =>
+      branchGroupsForFilter.map((g) => ({
+        id: g.id,
+        name: g.name,
+        parent_group_id: g.parent_group_id,
+      })),
+    [branchGroupsForFilter],
+  );
+
+  const memberGroupFilterButtonLabel = useMemo(() => {
+    if (branchGroupsFilterLoading && branchGroupsForFilter.length === 0) return 'Loading ministries…';
+    if (!branchGroupsFilterLoading && branchGroupsForFilter.length === 0) {
+      return 'No ministries in this branch';
+    }
+    if (memberGroupFilterIds.size === 0) return 'Any ministry';
+    if (memberGroupFilterIds.size === 1) {
+      const only = Array.from(memberGroupFilterIds)[0];
+      return memberGroupNameById.get(only) ?? `${only.slice(0, 8)}…`;
+    }
+    return `${memberGroupFilterIds.size} ministries selected`;
+  }, [
+    memberGroupFilterIds,
+    branchGroupsForFilter.length,
+    branchGroupsFilterLoading,
+    memberGroupNameById,
+  ]);
+
   // Filter members by selected branch first, then by search query
   const filteredMembers = useMemo(() => {
     if (isLoading || viewType !== 'members') {
@@ -1062,6 +1254,15 @@ export default function Members() {
       const target = memberStatusFilter.trim().toLowerCase();
       currentMembers = currentMembers.filter(
         (m) => (m.status || '').trim().toLowerCase() === target,
+      );
+    }
+
+    if (memberGenderFilter === GENDER_FILTER_NONE) {
+      currentMembers = currentMembers.filter((m) => !(m.gender || '').trim());
+    } else if (memberGenderFilter.trim()) {
+      const target = memberGenderFilter.trim().toLowerCase();
+      currentMembers = currentMembers.filter(
+        (m) => (m.gender || '').trim().toLowerCase() === target,
       );
     }
 
@@ -1091,6 +1292,25 @@ export default function Members() {
       currentMembers = currentMembers.filter((m) => memberPendingTaskIds.has(String(m.id)));
     }
 
+    const joinedStartRaw = memberJoinedFilterStart.trim();
+    const joinedEndRaw = memberJoinedFilterEnd.trim();
+    if (joinedStartRaw || joinedEndRaw) {
+      let joinedStart = joinedStartRaw;
+      let joinedEnd = joinedEndRaw;
+      if (joinedStart && joinedEnd && joinedStart > joinedEnd) {
+        const t = joinedStart;
+        joinedStart = joinedEnd;
+        joinedEnd = t;
+      }
+      currentMembers = currentMembers.filter((m) => {
+        const ymd = memberJoinedYmd(m);
+        if (!ymd) return false;
+        if (joinedStart && ymd < joinedStart) return false;
+        if (joinedEnd && ymd > joinedEnd) return false;
+        return true;
+      });
+    }
+
     const searchStr = searchQuery.toLowerCase();
     return currentMembers.filter(member => {
       const matchSearch = (
@@ -1111,12 +1331,31 @@ export default function Members() {
     viewType,
     showDeletedMembers,
     memberStatusFilter,
+    memberGenderFilter,
     familyFilterId,
     memberGroupFilterIds,
     memberAgeRangeFilter,
+    memberJoinedFilterStart,
+    memberJoinedFilterEnd,
     memberPendingTaskOnly,
     memberPendingTaskIds,
   ]);
+
+  useEffect(() => {
+    const el = membersSelectAllRef.current;
+    if (!el) return;
+    const t = filteredMembers.length;
+    const n = filteredMembers.filter((m) => selectedMembers.has(m.id)).length;
+    el.indeterminate = t > 0 && n > 0 && n < t;
+  }, [filteredMembers, selectedMembers]);
+
+  useEffect(() => {
+    const el = deletedSelectAllRef.current;
+    if (!el) return;
+    const t = filteredMembers.length;
+    const n = filteredMembers.filter((m) => selectedDeletedMembers.has(m.id)).length;
+    el.indeterminate = t > 0 && n > 0 && n < t;
+  }, [filteredMembers, selectedDeletedMembers]);
 
   // Filter families by selected branch first, then by search query
   const filteredFamilies = useMemo(() => {
@@ -1165,6 +1404,13 @@ export default function Members() {
           : `Status: ${memberStatusFilter}`;
       chips.push({ id: 'status', label, onRemove: () => setMemberStatusFilter('') });
     }
+    if (memberGenderFilter) {
+      const label =
+        memberGenderFilter === GENDER_FILTER_NONE
+          ? 'Gender: Not set'
+          : `Gender: ${memberGenderFilter}`;
+      chips.push({ id: 'gender', label, onRemove: () => setMemberGenderFilter('') });
+    }
     if (memberAgeRangeFilter !== 'all') {
       const map: Record<string, string> = {
         u18: 'Under 18',
@@ -1178,11 +1424,25 @@ export default function Members() {
         onRemove: () => setMemberAgeRangeFilter('all'),
       });
     }
+    if (memberJoinedFilterStart.trim() || memberJoinedFilterEnd.trim()) {
+      const a = memberJoinedFilterStart.trim();
+      const b = memberJoinedFilterEnd.trim();
+      const labelA = a ? formatLongWeekdayDate(a) : 'Any start';
+      const labelB = b ? formatLongWeekdayDate(b) : 'Any end';
+      chips.push({
+        id: 'joined',
+        label: `Joined: ${labelA} – ${labelB}`,
+        onRemove: () => {
+          setMemberJoinedFilterStart('');
+          setMemberJoinedFilterEnd('');
+        },
+      });
+    }
     for (const gid of memberGroupFilterIds) {
-      const g = mockGroups.find((x) => String(x.id) === gid);
+      const name = memberGroupNameById.get(gid);
       chips.push({
         id: `group-${gid}`,
-        label: `Group: ${g?.name ?? gid.slice(0, 8)}`,
+        label: `Group: ${name ?? gid.slice(0, 8)}`,
         onRemove: () =>
           setMemberGroupFilterIds((prev) => {
             const next = new Set(prev);
@@ -1217,8 +1477,12 @@ export default function Members() {
     viewType,
     searchQuery,
     memberStatusFilter,
+    memberGenderFilter,
     memberAgeRangeFilter,
+    memberJoinedFilterStart,
+    memberJoinedFilterEnd,
     memberGroupFilterIds,
+    memberGroupNameById,
     memberPendingTaskOnly,
     familyFilterId,
     familyGroups,
@@ -1228,7 +1492,10 @@ export default function Members() {
   const clearAllMemberFilters = useCallback(() => {
     setSearchQuery('');
     setMemberStatusFilter('');
+    setMemberGenderFilter('');
     setMemberAgeRangeFilter('all');
+    setMemberJoinedFilterStart('');
+    setMemberJoinedFilterEnd('');
     setMemberGroupFilterIds(new Set());
     setMemberPendingTaskOnly(false);
     setSearchParams((prev) => {
@@ -1885,15 +2152,6 @@ export default function Members() {
           <p className="mt-2 text-gray-500 text-[12px]">Manage your church members and family groups</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => setFamiliesPickerOpen(true)}
-            title="Families — browse by household"
-            aria-label="Open families list"
-            className="inline-flex min-h-11 min-w-11 items-center justify-center text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-all shadow-sm"
-          >
-            <UsersRound className="w-4 h-4" />
-          </button>
           {viewType === 'members' && (
             <button
               onClick={async () => {
@@ -2020,9 +2278,13 @@ export default function Members() {
             <button
               type="button"
               onClick={() => setMembersFilterPanelOpen(true)}
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-[14px] text-gray-900 hover:bg-gray-50 shadow-sm sm:w-auto"
+              className={`inline-flex min-h-11 w-full items-center justify-center gap-2 px-4 py-3 rounded-xl text-[14px] shadow-sm sm:w-auto border transition-colors ${
+                membersFilterPanelOpen || memberFilterChips.length > 0
+                  ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100/80'
+                  : 'bg-white border-gray-200 text-gray-900 hover:bg-gray-50'
+              }`}
             >
-              <Filter className="w-4 h-4 text-gray-500" />
+              <Filter className="w-4 h-4 shrink-0 opacity-80" />
               Filters
             </button>
           )}
@@ -2062,16 +2324,11 @@ export default function Members() {
                 className="bg-blue-50 border border-blue-200 rounded-2xl p-4"
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center space-x-4 min-w-0">
-                    <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-semibold shrink-0">
-                      {selectedMembers.size}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900">
-                        {selectedMembers.size} {selectedMembers.size === 1 ? 'Member' : 'Members'} Selected
-                      </p>
-                      <p className="text-sm text-gray-600">Choose an action below</p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900">
+                      {selectedMembers.size} {selectedMembers.size === 1 ? 'Member' : 'Members'} Selected
+                    </p>
+                    <p className="text-sm text-gray-600">Choose an action below</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <button
@@ -2127,17 +2384,12 @@ export default function Members() {
                 className="bg-red-50 border border-red-200 rounded-2xl p-4"
               >
                 <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center space-x-4 min-w-0">
-                    <div className="w-10 h-10 bg-red-600 text-white rounded-xl flex items-center justify-center font-semibold shrink-0">
-                      {selectedDeletedMembers.size}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-900">
-                        {selectedDeletedMembers.size}{' '}
-                        {selectedDeletedMembers.size === 1 ? 'member' : 'members'} selected
-                      </p>
-                      <p className="text-sm text-gray-600">Remove from trash permanently</p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900">
+                      {selectedDeletedMembers.size}{' '}
+                      {selectedDeletedMembers.size === 1 ? 'member' : 'members'} selected
+                    </p>
+                    <p className="text-sm text-gray-600">Remove from trash permanently</p>
                   </div>
                   <div className="flex items-center space-x-3">
                     <button
@@ -2168,47 +2420,99 @@ export default function Members() {
             )}
           </AnimatePresence>
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-
-          <div className="overflow-x-auto touch-pan-x overscroll-x-contain">
-            <table className="w-full border-collapse min-w-[720px]">
+          <div className="group overflow-x-auto touch-pan-x overscroll-x-contain">
+            <table className="w-full border-collapse min-w-[960px]">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-6 py-4 w-16">
-                    {viewType === 'members' && showDeletedMembers && filteredMembers.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (selectedDeletedMembers.size === filteredMembers.length) {
-                            setSelectedDeletedMembers(new Set());
-                          } else {
-                            setSelectedDeletedMembers(new Set(filteredMembers.map(m => m.id)));
-                          }
-                        }}
-                        className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                          selectedDeletedMembers.size === filteredMembers.length && filteredMembers.length > 0
-                            ? 'bg-red-600 border-red-600 text-white'
-                            : 'bg-white border-gray-300 hover:border-red-400'
-                        }`}
-                      >
-                        {selectedDeletedMembers.size === filteredMembers.length && filteredMembers.length > 0 && (
-                          <CheckSquare className="w-3 h-3" />
-                        )}
-                      </button>
-                    )}
+                  <th className="w-10 px-2 py-3" scope="col">
+                    {viewType === 'members' && filteredMembers.length > 0 ? (
+                      !showDeletedMembers ? (
+                        <div
+                          className={`flex justify-center transition-opacity duration-150 ${
+                            selectedMembers.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          <input
+                            ref={membersSelectAllRef}
+                            type="checkbox"
+                            className={MEMBER_ROW_CHECKBOX_CLASS}
+                            checked={
+                              filteredMembers.length > 0 &&
+                              filteredMembers.every((m) => selectedMembers.has(m.id))
+                            }
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const allOn =
+                                filteredMembers.length > 0 &&
+                                filteredMembers.every((m) => selectedMembers.has(m.id));
+                              if (allOn) {
+                                setSelectedMembers(new Set());
+                              } else {
+                                setSelectedMembers(new Set(filteredMembers.map((m) => m.id)));
+                              }
+                            }}
+                            aria-label="Select all members in list"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className={`flex justify-center transition-opacity duration-150 ${
+                            selectedDeletedMembers.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          <input
+                            ref={deletedSelectAllRef}
+                            type="checkbox"
+                            className={MEMBER_ROW_CHECKBOX_DELETED_CLASS}
+                            checked={
+                              filteredMembers.length > 0 &&
+                              filteredMembers.every((m) => selectedDeletedMembers.has(m.id))
+                            }
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const allOn =
+                                filteredMembers.length > 0 &&
+                                filteredMembers.every((m) => selectedDeletedMembers.has(m.id));
+                              if (allOn) {
+                                setSelectedDeletedMembers(new Set());
+                              } else {
+                                setSelectedDeletedMembers(new Set(filteredMembers.map((m) => m.id)));
+                              }
+                            }}
+                            aria-label="Select all deleted members in list"
+                          />
+                        </div>
+                      )
+                    ) : null}
                   </th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Member</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Phone</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Email</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Address</th>
-                  {!showDeletedMembers && (
-                    <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Joined Date</th>
-                  )}
-                  {!showDeletedMembers && (
-                    <th className="text-left text-xs font-semibold text-gray-500 px-6 py-4">Status</th>
-                  )}
-                  {!showDeletedMembers && (
-                    <th className="text-center text-xs font-semibold text-gray-500 px-6 py-4 w-20">Actions</th>
-                  )}
+                  <th className="w-14 px-2 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                    Photo
+                  </th>
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                    Name
+                  </th>
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                    Phone
+                  </th>
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                    Email
+                  </th>
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                    Address
+                  </th>
+                  {!showDeletedMembers ? (
+                    <>
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                        Joined
+                      </th>
+                      <th className="px-4 py-4 text-left text-xs font-semibold text-gray-500" scope="col">
+                        Status
+                      </th>
+                      <th className="w-14 px-2 py-4 text-center text-xs font-semibold text-gray-500" scope="col">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -2216,200 +2520,196 @@ export default function Members() {
                   <MemberTableBodySkeleton showDeletedMembers={showDeletedMembers} rows={10} />
                 ) : (
                   <AnimatePresence>
-                    {filteredMembers.map((member, index) => (
-                      <motion.tr
-                        key={member.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ delay: index * 0.02 }}
-                        onMouseEnter={() => setHoveredMemberId(member.id)}
-                        onMouseLeave={() => setHoveredMemberId(null)}
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest('button')) return;
-                          setViewingMemberDetail(member);
-                        }}
-                        className={`border-b border-gray-100 hover:bg-gray-50 transition-all cursor-pointer ${
-                          (selectedMembers.has(member.id) && !showDeletedMembers) || (selectedDeletedMembers.has(member.id) && showDeletedMembers) ? 'bg-blue-50' : ''
-                        } ${member.familyIds && member.familyIds.length > 0 ? 'opacity-50' : ''}`}
-                      >
-                        {/* Cell 1: Member (Flex Container with Image + Name) */}
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-3">
-                            {/* Selection Checkbox */}
-                            {(hoveredMemberId === member.id || selectedMembers.size > 0 || (showDeletedMembers && selectedDeletedMembers.size > 0)) && (
-                              <button
-                                onClick={(e) => {
+                    {filteredMembers.map((member, index) => {
+                      const joinedLabel =
+                        formatLongWeekdayDate(member.date_joined) ||
+                        (member.created_at ? formatLongWeekdayDate(member.created_at) : '') ||
+                        '—';
+                      const rowSelected =
+                        (!showDeletedMembers && selectedMembers.has(member.id)) ||
+                        (showDeletedMembers && selectedDeletedMembers.has(member.id));
+                      return (
+                        <motion.tr
+                          key={member.id}
+                          role="button"
+                          tabIndex={0}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ delay: index * 0.02 }}
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('button')) return;
+                            handleOpenMemberProfile(member);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              if ((e.target as HTMLElement).closest('button')) return;
+                              e.preventDefault();
+                              handleOpenMemberProfile(member);
+                            }
+                          }}
+                          className={`group/row border-b border-gray-100 transition-colors hover:bg-gray-50 ${
+                            rowSelected ? 'bg-blue-50' : ''
+                          } ${member.familyIds && member.familyIds.length > 0 ? 'opacity-50' : ''} cursor-pointer`}
+                        >
+                          <td className="w-10 px-2 py-3 align-middle">
+                            <div
+                              className={`flex justify-center transition-opacity duration-150 ${
+                                rowSelected ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                className={
+                                  showDeletedMembers ? MEMBER_ROW_CHECKBOX_DELETED_CLASS : MEMBER_ROW_CHECKBOX_CLASS
+                                }
+                                checked={rowSelected}
+                                onChange={(e) => {
                                   e.stopPropagation();
                                   if (showDeletedMembers) {
-                                    const newSelection = new Set(selectedDeletedMembers);
-                                    if (newSelection.has(member.id)) {
-                                      newSelection.delete(member.id);
-                                    } else {
-                                      newSelection.add(member.id);
-                                    }
-                                    setSelectedDeletedMembers(newSelection);
+                                    const next = new Set(selectedDeletedMembers);
+                                    if (e.target.checked) next.add(member.id);
+                                    else next.delete(member.id);
+                                    setSelectedDeletedMembers(next);
                                   } else {
-                                    toggleMemberSelection(member.id);
+                                    const next = new Set(selectedMembers);
+                                    if (e.target.checked) next.add(member.id);
+                                    else next.delete(member.id);
+                                    setSelectedMembers(next);
                                   }
                                 }}
-                                className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 ${
-                                  (showDeletedMembers && selectedDeletedMembers.has(member.id))
-                                    ? 'bg-red-600 border-red-600 text-white'
-                                    : (selectedMembers.has(member.id)
-                                      ? 'bg-blue-600 border-blue-600 text-white'
-                                      : 'bg-white border-gray-300 hover:border-blue-400')
-                                }`}
-                              >
-                                {(showDeletedMembers && selectedDeletedMembers.has(member.id)) && <CheckSquare className="w-3 h-3" />}
-                                {(!showDeletedMembers && selectedMembers.has(member.id)) && <CheckSquare className="w-3 h-3" />}
-                              </button>
-                            )}
-
-                            {/* Avatar */}
+                                aria-label={rowSelected ? 'Deselect member' : 'Select member'}
+                              />
+                            </div>
+                          </td>
+                          <td className="w-14 px-2 py-4 align-middle">
                             <img
-                              src={member.profileImage}
-                              alt={member.fullName}
-                              className="w-10 h-10 rounded-full object-cover flex-shrink-0 bg-gray-100"
+                              src={member.profileImage || ''}
+                              alt=""
+                              className="mx-auto h-10 w-10 rounded-full bg-gray-100 object-cover ring-1 ring-gray-100"
                               referrerPolicy="no-referrer"
                             />
-
-                            {/* Name */}
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-medium text-gray-900 truncate text-[14px]">{member.fullName}</span>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Cell 3: Phone */}
-                        <td className="px-6 py-4">
-                          <span className="text-gray-900 text-[14px]">{member.phoneNumber || 'N/A'}</span>
-                        </td>
-
-                        {/* Cell 2: Email */}
-                        <td className="px-6 py-4">
-                          <span className="text-gray-900 truncate block text-[14px]">{member.email || 'N/A'}</span>
-                        </td>
-
-                        {/* Cell 4: Address */}
-                        <td className="px-6 py-4">
-                          <span className="text-gray-600 text-[14px]">{member.location || 'N/A'}</span>
-                        </td>
-
-                        {/* Conditional rendering for other cells */}
-                        {!showDeletedMembers && (
-                          <>
-                            {/* Cell 5: Joined Date */}
-                            <td className="px-6 py-4">
-                              <span className="text-gray-600 text-[14px]">
-                                N/A
-                              </span>
-                            </td>
-
-                            {/* Cell 6: Status */}
-                            <td className="px-6 py-4">
-                              {(() => {
-                                const { chipClass, dotClass, text } = memberStatusBadgePair(
-                                  member.status,
-                                  memberStatusPicklistForBadges,
-                                );
-                                return (
-                                  <span
-                                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${chipClass}`}
-                                  >
-                                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 shrink-0 ${dotClass}`} />
-                                    {text}
-                                  </span>
-                                );
-                              })()}
-                            </td>
-
-                            {/* Cell 7: Actions */}
-                            <td className="px-6 py-4">
-                              <div className="relative flex justify-center">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveMenu(activeMenu === member.id ? null : member.id);
-                                  }}
-                                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
-                                >
-                                  <MoreVertical className="w-4 h-4" />
-                                </button>
-
-                                {activeMenu === member.id && (
-                                  <>
-                                    <div
-                                      className="fixed inset-0 z-10"
-                                      onClick={() => setActiveMenu(null)}
-                                    />
-                                    <motion.div
-                                      initial={{ opacity: 0, scale: 0.95 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-20"
+                          </td>
+                          <td className="min-w-0 max-w-[200px] px-4 py-4 align-middle">
+                            <span className="block truncate font-medium text-[14px] text-gray-900">
+                              {member.fullName}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-4 align-middle">
+                            <span className="text-[14px] text-gray-900">{member.phoneNumber || '—'}</span>
+                          </td>
+                          <td className="min-w-0 w-[1%] max-w-[120px] px-4 py-4 align-middle sm:max-w-[140px]">
+                            <span
+                              className="block truncate text-[14px] text-gray-900"
+                              title={member.email || undefined}
+                            >
+                              {member.email || '—'}
+                            </span>
+                          </td>
+                          <td className="min-w-0 max-w-[200px] px-4 py-4 align-middle">
+                            <span className="block truncate text-[14px] text-gray-600">{member.location || '—'}</span>
+                          </td>
+                          {!showDeletedMembers ? (
+                            <>
+                              <td className="whitespace-nowrap px-4 py-4 align-middle">
+                                <span className="text-[14px] text-gray-600">{joinedLabel}</span>
+                              </td>
+                              <td className="px-4 py-4 align-middle">
+                                {(() => {
+                                  const { chipClass, dotClass, text } = memberStatusBadgePair(
+                                    member.status,
+                                    memberStatusPicklistForBadges,
+                                  );
+                                  return (
+                                    <span
+                                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${chipClass}`}
                                     >
-                                      <button
-                                        onClick={() => {
-                                          setEditingMember(member);
-                                          setActiveMenu(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                      <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+                                      {text}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                              <td className="w-14 px-2 py-4 align-middle">
+                                <div className="relative flex justify-center">
+                                  <button
+                                    type="button"
+                                    aria-label="Member actions"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveMenu(activeMenu === member.id ? null : member.id);
+                                    }}
+                                    className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                                  >
+                                    <MoreVertical className="h-4 w-4" />
+                                  </button>
+                                  {activeMenu === member.id ? (
+                                    <>
+                                      <div className="fixed inset-0 z-10" onClick={() => setActiveMenu(null)} />
+                                      <motion.div
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-gray-200 bg-white py-2 shadow-lg"
                                       >
-                                        <Edit2 className="w-4 h-4 mr-3" />
-                                        Edit
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setAiNoteMember(member);
-                                          setActiveMenu(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                      >
-                                        <Mic className="w-4 h-4 mr-3" />
-                                        AI Voice Note
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleAssignToGroupClick(member);
-                                          setActiveMenu(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                      >
-                                        <GitFork className="w-4 h-4 mr-3" />
-                                        Assign to Group
-                                      </button>
-                                      {can('add_member_tasks') && (
                                         <button
+                                          type="button"
                                           onClick={() => {
-                                            openAssignTaskModal([member]);
+                                            setEditingMember(member);
                                             setActiveMenu(null);
                                           }}
-                                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                          className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                         >
-                                          <ListTodo className="w-4 h-4 mr-3" />
-                                          Assign task
+                                          <Edit2 className="mr-3 h-4 w-4" />
+                                          Edit
                                         </button>
-                                      )}
-                                      <div className="border-t border-gray-100 my-1"></div>
-                                      <button
-                                        onClick={() => {
-                                          setDeletingMember(member);
-                                          setActiveMenu(null);
-                                        }}
-                                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                      >
-                                        <Trash2 className="w-4 h-4 mr-3" />
-                                        Delete
-                                      </button>
-                                    </motion.div>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </motion.tr>
-                    ))}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            handleAssignToGroupClick(member);
+                                            setActiveMenu(null);
+                                          }}
+                                          className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                          <GitFork className="mr-3 h-4 w-4" />
+                                          Assign to Group
+                                        </button>
+                                        {can('add_member_tasks') ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              openAssignTaskModal([member]);
+                                              setActiveMenu(null);
+                                            }}
+                                            className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                          >
+                                            <ListTodo className="mr-3 h-4 w-4" />
+                                            Assign task
+                                          </button>
+                                        ) : null}
+                                        <div className="my-1 border-t border-gray-100" />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setDeletingMember(member);
+                                            setActiveMenu(null);
+                                          }}
+                                          className="flex w-full items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                                        >
+                                          <Trash2 className="mr-3 h-4 w-4" />
+                                          Delete
+                                        </button>
+                                      </motion.div>
+                                    </>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </>
+                          ) : null}
+                        </motion.tr>
+                      );
+                    })}
                   </AnimatePresence>
                 )}
               </tbody>
@@ -2432,7 +2732,7 @@ export default function Members() {
                 <Search className="w-8 h-8 text-gray-400" />
               </div>
               <p className="text-gray-500">
-                {searchQuery.trim() || memberStatusFilter
+                {memberFilterChips.length > 0
                   ? 'No members match your current filters.'
                   : 'No members in this view.'}
               </p>
@@ -2603,16 +2903,11 @@ export default function Members() {
                 className="bg-blue-50 border border-blue-200 rounded-2xl p-4"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-semibold">
-                      {selectedRequests.size}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">
-                        {selectedRequests.size} {selectedRequests.size === 1 ? 'Request' : 'Requests'} Selected
-                      </p>
-                      <p className="text-sm text-gray-600">Choose an action below</p>
-                    </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {selectedRequests.size} {selectedRequests.size === 1 ? 'Request' : 'Requests'} Selected
+                    </p>
+                    <p className="text-sm text-gray-600">Choose an action below</p>
                   </div>
                   <div className="flex items-center space-x-3">
                     <button
@@ -2783,35 +3078,28 @@ export default function Members() {
         </div>
       )}
 
-      <AnimatePresence>
-        {membersFilterPanelOpen && viewType === 'members' && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMembersFilterPanelOpen(false)}
-              className="fixed inset-0 bg-black/30 z-40"
-            />
-            <motion.div
-              initial={{ y: 30, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 30, opacity: 0 }}
-              className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl border border-gray-200 shadow-2xl max-h-[85vh] overflow-y-auto"
-            >
-              <div className="px-6 py-5 border-b border-dashed border-gray-200 flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Filter members</h3>
-                  <p className="text-sm text-gray-500 mt-1">Group, subgroup, status, age range, and pending task</p>
-                </div>
-                <button
-                  onClick={() => setMembersFilterPanelOpen(false)}
-                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="px-6 py-5 space-y-5">
+      <Dialog
+        open={membersFilterPanelOpen && viewType === 'members'}
+        onOpenChange={(open) => setMembersFilterPanelOpen(open)}
+      >
+        <DialogContent
+          className={`flex max-h-[min(90vh,720px)] flex-col gap-0 p-0 sm:max-w-lg ${
+            memberGroupTreeOpen ? "overflow-visible" : "overflow-hidden"
+          }`}
+        >
+          <DialogHeader className="space-y-1 border-b border-dashed border-gray-200 px-6 py-5 text-left">
+            <DialogTitle className="pr-8 text-lg font-semibold">Filter members</DialogTitle>
+            <DialogDescription className="text-sm text-gray-500">
+              Ministry tree, status, gender, age range, date joined, and pending task
+            </DialogDescription>
+            <p className="text-sm font-semibold tabular-nums text-blue-800" aria-live="polite">
+              {isLoading
+                ? '…'
+                : `${filteredMembers.length} ${filteredMembers.length === 1 ? 'member' : 'members'} match`}
+            </p>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div className="space-y-5">
                 <div>
                   <p className="text-sm font-semibold text-gray-900 mb-2">Status</p>
                   <select
@@ -2822,6 +3110,24 @@ export default function Members() {
                     <option value="">All statuses</option>
                     {hasMembersWithoutStatus && <option value={STATUS_FILTER_NONE}>No status</option>}
                     {memberStatusFilterOptions.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Gender</p>
+                  <select
+                    value={memberGenderFilter}
+                    onChange={(e) => setMemberGenderFilter(e.target.value)}
+                    className="w-full px-3 py-3 border border-gray-200 rounded-xl bg-white text-sm"
+                  >
+                    <option value="">All</option>
+                    {hasMembersWithoutGender && (
+                      <option value={GENDER_FILTER_NONE}>Not set</option>
+                    )}
+                    {memberGenderFilterOptions.map((label) => (
                       <option key={label} value={label}>
                         {label}
                       </option>
@@ -2843,32 +3149,54 @@ export default function Members() {
                   </select>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900 mb-2">Groups and subgroups</p>
-                  <div className="flex flex-wrap gap-2">
-                    {mockGroups.map((g) => {
-                      const gid = String(g.id);
-                      const active = memberGroupFilterIds.has(gid);
-                      return (
-                        <button
-                          key={gid}
-                          type="button"
-                          onClick={() =>
-                            setMemberGroupFilterIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(gid)) next.delete(gid);
-                              else next.add(gid);
-                              return next;
-                            })
-                          }
-                          className={`px-3 py-2 rounded-full text-sm border ${
-                            active ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white text-gray-700 border-gray-200'
-                          }`}
-                        >
-                          {g.name}
-                        </button>
-                      );
-                    })}
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Date joined (church)</p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Uses each member&apos;s join date. Members without a join date are hidden when this filter is on.
+                  </p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-gray-600">From</p>
+                      <DatePickerField
+                        value={memberJoinedFilterStart}
+                        onChange={setMemberJoinedFilterStart}
+                        placeholder="Any"
+                        maxDate={memberJoinedFilterEnd.trim() ? parseIsoDateOnly(memberJoinedFilterEnd) ?? undefined : undefined}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-gray-600">Through</p>
+                      <DatePickerField
+                        value={memberJoinedFilterEnd}
+                        onChange={setMemberJoinedFilterEnd}
+                        placeholder="Any"
+                        minDate={memberJoinedFilterStart.trim() ? parseIsoDateOnly(memberJoinedFilterStart) ?? undefined : undefined}
+                      />
+                    </div>
                   </div>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 mb-2">Select groups</p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Ministries and subgroups for this branch (from your account). Choosing a main ministry selects every
+                    nested subgroup in the tree.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setMemberGroupTreeOpen(true)}
+                    disabled={
+                      branchGroupsFilterLoading ||
+                      (!branchGroupsFilterLoading && branchGroupsForFilter.length === 0)
+                    }
+                    className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium text-gray-500">Current selection</span>
+                      <span className="block truncate text-sm font-semibold text-gray-900">
+                        {memberGroupFilterButtonLabel}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+                  </button>
                 </div>
                 <div className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-3">
                   <div>
@@ -2887,32 +3215,42 @@ export default function Members() {
                     />
                   </button>
                 </div>
-              </div>
-              <div className="px-6 py-4 border-t border-dashed border-gray-200 flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMemberStatusFilter('');
-                    setMemberAgeRangeFilter('all');
-                    setMemberPendingTaskOnly(false);
-                    setMemberGroupFilterIds(new Set());
-                  }}
-                  className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMembersFilterPanelOpen(false)}
-                  className="flex-1 px-4 py-3 rounded-xl bg-gray-900 text-white hover:bg-black"
-                >
-                  Apply
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 border-t border-dashed border-gray-200 px-6 py-4">
+            <button
+              type="button"
+              onClick={() => {
+                setMemberStatusFilter('');
+                setMemberGenderFilter('');
+                setMemberAgeRangeFilter('all');
+                setMemberJoinedFilterStart('');
+                setMemberJoinedFilterEnd('');
+                setMemberPendingTaskOnly(false);
+                setMemberGroupFilterIds(new Set());
+              }}
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              Clear
+            </button>
+            <DialogClose asChild>
+              <button
+                type="button"
+                className="flex-1 px-4 py-3 rounded-xl bg-gray-900 text-white hover:bg-black"
+              >
+                Done
+              </button>
+            </DialogClose>
+          </div>
+          <ReportGroupTreeModal
+            open={memberGroupTreeOpen}
+            onClose={() => setMemberGroupTreeOpen(false)}
+            groups={memberFilterGroupRows}
+            selectedIds={Array.from(memberGroupFilterIds)}
+            onChangeSelectedIds={(ids) => setMemberGroupFilterIds(new Set(ids))}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Request Review/Edit Panel */}
       <AnimatePresence>
@@ -3280,12 +3618,6 @@ export default function Members() {
         message={`Are you sure you want to delete ${deletingFamily?.familyName}? This action cannot be undone.`}
       />
 
-      <AIVoiceNoteModal
-        isOpen={!!aiNoteMember}
-        onClose={() => setAiNoteMember(undefined)}
-        memberName={aiNoteMember?.fullName || ''}
-      />
-
       <AssignToFamilyModal
         isOpen={isAssignToFamilyModalOpen}
         onClose={() => setIsAssignToFamilyModalOpen(false)}
@@ -3337,105 +3669,12 @@ export default function Members() {
         shareLink={shareRegistrationLink}
       />
 
-      <MemberDetailPanel
-        isOpen={!!viewingMemberDetail}
-        onClose={() => setViewingMemberDetail(null)}
-        member={viewingMemberDetail as any}
-        familyGroups={familyGroups as any}
-        allMembers={members as any}
-        onEdit={(updated) => {
-          setMembers((prev) =>
-            prev.map((m) => (m.id === updated.id ? { ...m, ...updated } as Member : m))
-          );
-          setViewingMemberDetail(updated as Member);
-        }}
-      />
-
       <ExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         token={token}
         branchId={selectedBranch?.id}
       />
-
-      <AnimatePresence>
-        {familiesPickerOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
-            onClick={() => setFamiliesPickerOpen(false)}
-          >
-            <motion.div
-              initial={{ y: 8, opacity: 0, scale: 0.98 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 8, opacity: 0, scale: 0.98 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-2xl overflow-hidden flex flex-col max-h-[min(480px,85vh)]"
-            >
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">Families</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Select a family to view its members</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFamiliesPickerOpen(false)}
-                  className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="overflow-y-auto flex-1 p-3">
-                {loadingFamilies ? (
-                  <div className="flex justify-center py-12">
-                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                  </div>
-                ) : (
-                  <>
-                    {familyGroups
-                      .filter((f) => !selectedBranch || f.churchId === selectedBranch.id)
-                      .sort((a, b) =>
-                        (a.familyName || '').localeCompare(b.familyName || '', undefined, { sensitivity: 'base' }),
-                      )
-                      .map((family) => {
-                        const count = (familyMembersCache[family.id] || []).length;
-                        return (
-                          <button
-                            key={family.id}
-                            type="button"
-                            onClick={() => {
-                              setViewType('members');
-                              setShowDeletedMembers(false);
-                              setSearchParams((prev) => {
-                                const next = new URLSearchParams(prev);
-                                next.set('family', family.id);
-                                return next;
-                              });
-                              setFamiliesPickerOpen(false);
-                            }}
-                            className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors mb-1"
-                          >
-                            <span className="font-medium text-gray-900 truncate min-w-0">{family.familyName}</span>
-                            <span className="shrink-0 text-xs font-semibold tabular-nums px-2 py-0.5 rounded-lg bg-gray-100 text-gray-700">
-                              {count} {count === 1 ? 'member' : 'members'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    {familyGroups.filter((f) => !selectedBranch || f.churchId === selectedBranch.id).length === 0 &&
-                      !loadingFamilies && (
-                        <p className="text-sm text-gray-500 text-center py-10">No families in this branch yet.</p>
-                      )}
-                  </>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {importHelpOpen && (

@@ -29,7 +29,7 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
     phone: '',
   });
   
-  const { login, signup } = useAuth();
+  const { login, signupCheckout } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,14 +66,9 @@ export function AuthModal({ isOpen, onClose, defaultMode = 'login', onSuccess }:
           organizationName: formData.organizationName || 'My Organization',
         };
         
-        await signup(signupData);
-        
-        toast.success('Account created successfully!');
-        
-        if (onSuccess) {
-          onSuccess();
-        }
-        onClose();
+        const { authorization_url } = await signupCheckout(signupData);
+        toast.success('Redirecting to secure checkout…');
+        window.location.assign(authorization_url);
       } else {
         
         const result = await login(formData.email, formData.password);

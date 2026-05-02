@@ -198,6 +198,11 @@ const RAW_SECTIONS: PermissionMatrixSection[] = [
         cells: { edit: 'assign_groups' },
       },
       {
+        rowId: 'ministry-leader-formal',
+        label: 'Ministry leader (formal)',
+        cells: { edit: 'assign_ministry_leaders' },
+      },
+      {
         rowId: 'group-type-labels',
         label: 'Group type labels',
         cells: {

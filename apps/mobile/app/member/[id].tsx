@@ -17,6 +17,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useNavigation } from "@react-navigation/native";
+import type { Href } from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -82,6 +84,14 @@ function firstValidImageUri(member: Member): string | null {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return null;
+}
+
+function normalizeReturnToParam(v: unknown): string | null {
+  const raw = Array.isArray(v) ? v[0] : v;
+  const s = typeof raw === "string" ? decodeURIComponent(raw.trim()) : "";
+  if (!s.startsWith("/") || s.startsWith("//")) return null;
+  if (s.length > 512) return null;
+  return s;
 }
 
 function asTrimmed(v: unknown): string {
@@ -290,8 +300,10 @@ function attendancePillColors(status: string | null | undefined): { bg: string; 
 
 export default function MemberProfileScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id: string | string[] }>();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ id: string | string[]; returnTo?: string | string[] }>();
   const memberId = normalizeRouteId(params.id);
+  const returnToHref = normalizeReturnToParam(params.returnTo);
   const { can } = usePermissions();
   const { isOnline, queueAttendanceUpdate, queueMemberNoteCreate, queueMemberNoteUpdate, queueMemberNoteDelete } =
     useOfflineSync();
@@ -322,6 +334,18 @@ export default function MemberProfileScreen() {
   const memberWhenTriggerRef = useRef<View>(null);
   const memberAttendanceTriggerRef = useRef<View>(null);
   const insets = useSafeAreaInsets();
+
+  const handleScreenBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    if (returnToHref) {
+      router.replace(returnToHref as Href);
+      return;
+    }
+    router.back();
+  }, [navigation, returnToHref, router]);
   const { width: windowW, height: windowH } = useWindowDimensions();
   const [accordionOpen, setAccordionOpen] = useState<Record<OverviewSectionId, boolean>>({
     contact: true,
@@ -899,7 +923,7 @@ export default function MemberProfileScreen() {
       >
         <View style={styles.topBar}>
           <View style={styles.topBarLeft}>
-            <HeaderIconCircleButton onPress={() => router.back()} accessibilityLabel="Go back">
+            <HeaderIconCircleButton onPress={handleScreenBack} accessibilityLabel="Go back">
               <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
             </HeaderIconCircleButton>
             <Text style={styles.topTitle} numberOfLines={1}>

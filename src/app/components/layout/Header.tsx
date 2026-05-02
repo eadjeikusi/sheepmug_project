@@ -2,6 +2,8 @@ import { Bell, MessageSquare, X, LogOut, User, Menu } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useApp } from '@/contexts/AppContext';
+import { useBranch } from '@/contexts/BranchContext';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -16,14 +18,28 @@ interface HeaderProps {
   onOpenMobileNav?: () => void;
 }
 
+const SA_ACT_KEY = 'superadmin_act_as';
+
 export default function Header({ setActiveTab, onOpenMobileNav }: HeaderProps) {
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [saActBanner, setSaActBanner] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const { user, isAuthenticated, logout } = useAuth();
+  const { currentOrganization } = useApp();
+  const { selectedBranch, refreshBranches } = useBranch();
   const navigate = useNavigate();
   const { can } = usePermissions();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SA_ACT_KEY);
+      setSaActBanner(user?.is_super_admin === true && !!raw?.trim());
+    } catch {
+      setSaActBanner(false);
+    }
+  }, [user?.is_super_admin, currentOrganization?.id, selectedBranch?.id]);
 
   const { notifications, unreadCount, markOneRead, iconForNotification } = useNotifications();
   const recentNotifications = notifications.slice(0, 5);
@@ -67,8 +83,37 @@ export default function Header({ setActiveTab, onOpenMobileNav }: HeaderProps) {
     }
   };
 
+  const exitSuperadminContext = () => {
+    localStorage.removeItem(SA_ACT_KEY);
+    setSaActBanner(false);
+    void refreshBranches();
+    toast.info('Exited tenant view');
+    navigate('/superadmin');
+  };
+
   return (
-    <header className="flex min-h-14 items-center gap-2 border-b border-gray-200/70 bg-[#fbfcfb] px-3 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] sm:min-h-16 sm:gap-3 sm:px-4 sm:py-0">
+    <header className="flex min-h-14 flex-col gap-0 border-b border-gray-200/70 bg-[#fbfcfb] px-3 py-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] sm:min-h-16 sm:gap-3 sm:px-4 sm:py-0">
+      {saActBanner ? (
+        <div className="mb-1 flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950 sm:text-sm">
+          <span className="min-w-0 truncate">
+            SuperAdmin: viewing <strong>{currentOrganization?.name ?? 'organization'}</strong>
+            {selectedBranch?.name ? (
+              <>
+                {' '}
+                — <strong>{selectedBranch.name}</strong>
+              </>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            onClick={exitSuperadminContext}
+            className="shrink-0 rounded-md bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-800"
+          >
+            Exit
+          </button>
+        </div>
+      ) : null}
+      <div className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
       {onOpenMobileNav ? (
         <button
           type="button"
@@ -289,6 +334,7 @@ export default function Header({ setActiveTab, onOpenMobileNav }: HeaderProps) {
             Sign In
           </button>
         )}
+      </div>
       </div>
     </header>
   );

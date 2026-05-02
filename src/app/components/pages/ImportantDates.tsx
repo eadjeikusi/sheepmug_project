@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Search } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { Link } from 'react-router';
+import { useMemberProfileModal } from '@/contexts/MemberProfileModalContext';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { useAuth } from '@/contexts/AuthContext';
 import { useBranch } from '@/contexts/BranchContext';
@@ -15,7 +16,7 @@ const RANGE_OPTIONS: Array<{ id: number; label: string }> = [
 ];
 
 export default function ImportantDates() {
-  const navigate = useNavigate();
+  const memberProfile = useMemberProfileModal();
   const { token } = useAuth();
   const { selectedBranch } = useBranch();
   const [items, setItems] = useState<UpcomingImportantDateItem[]>([]);
@@ -57,12 +58,12 @@ export default function ImportantDates() {
           <h1 className="text-2xl font-semibold text-gray-900">All Important Dates</h1>
           <p className="text-sm text-gray-500 mt-1">{countLabel}</p>
         </div>
-        <button
-          onClick={() => navigate('/members')}
-          className="min-h-11 w-full shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 sm:w-auto"
+        <Link
+          to="/members"
+          className="inline-flex min-h-11 w-full shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 sm:w-auto"
         >
           Back to Members
-        </button>
+        </Link>
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
@@ -102,7 +103,8 @@ export default function ImportantDates() {
             {items.map((item) => (
               <button
                 key={item.id}
-                onClick={() => navigate('/members', { state: { openMemberId: item.member_id } })}
+                type="button"
+                onClick={() => void memberProfile.openMemberById(item.member_id)}
                 className="w-full text-left p-4 hover:bg-gray-50"
               >
                 <div className="flex items-center justify-between gap-3">

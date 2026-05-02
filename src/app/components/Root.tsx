@@ -4,6 +4,7 @@ import Sidebar from './layout/Sidebar';
 import Header from './layout/Header';
 import { CmsOnboardingModal } from './modals/CmsOnboardingModal';
 import { AppProvider } from '@/contexts/AppContext';
+import { MemberProfileModalProvider } from '@/contexts/MemberProfileModalContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -85,6 +86,7 @@ export default function Root() {
   const getActiveTab = () => {
     const path = location.pathname;
     if (path === '/') return 'dashboard';
+    if (path.startsWith('/leaders')) return 'leaders';
     if (path.startsWith('/groups')) return 'groups';
     if (path.startsWith('/tasks')) return 'tasks';
     if (path.startsWith('/messages')) return 'messages';
@@ -100,6 +102,7 @@ export default function Root() {
   return (
     <AppProvider>
       <NotificationProvider>
+        <MemberProfileModalProvider>
         <div className="flex h-dvh min-h-0 w-full max-w-full bg-gray-50">
           {mobileNavOpen ? (
             <button
@@ -123,6 +126,7 @@ export default function Root() {
           </div>
         </div>
         {user.cms_onboarding_completed !== true ? <CmsOnboardingModal /> : null}
+        </MemberProfileModalProvider>
       </NotificationProvider>
     </AppProvider>
   );

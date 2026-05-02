@@ -19,7 +19,13 @@ import {
   normalizePhoneToE164,
   sanitizeCountryIso,
 } from "./src/lib/phoneE164.js";
-import { assertOrgLimit, fetchOrgLimitRow, getOrgUsage } from "./src/server/orgLimits.ts";
+import {
+  assertOrgLimit,
+  fetchOrgLimitRow,
+  getOrgUsage,
+  getSuperadminBranchStats,
+  getSuperadminExtendedOrgMetrics,
+} from "./src/server/orgLimits.ts";
 import { buildReportExportCsv, buildReportExportPdfBase64 } from "./src/server/reportExportBuild.ts";
 import {
   ensureAllMembersGroupForBranch,
@@ -38,6 +44,133 @@ import {
   effectiveLimit,
   type OrgLimitRow,
 } from "./src/app/config/subscriptionPlans.ts";
+import {
+  PAID_PLANS,
+  DEFAULT_PAYSTACK_PLAN_CODES,
+  isBillingPlanId,
+  type BillingPlanId,
+} from "./src/app/config/paidPlans.ts";
+
+// --- Paystack billing helpers ---
+type PaystackConfig = {
+  secretKey: string;
+  publicKey: string;
+  /** Optional per-tier plan codes if you use Paystack subscriptions. */
+  planCodes?: Partial<Record<string, string>>;
+};
+
+const PAYSTACK_API_BASE = "https://api.paystack.co";
+
+function platformMasterKeyBytes(): Buffer | null {
+  const raw = String(process.env.PLATFORM_SECRET_KEY || "").trim();
+  if (!raw) return null;
+  try {
+    const b = Buffer.from(raw, "base64");
+    if (b.length === 32) return b;
+  } catch {
+    // ignore
+  }
+  try {
+    const b = Buffer.from(raw, "utf8");
+    if (b.length === 32) return b;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function encryptSecret(plaintext: string): string {
+  const key = platformMasterKeyBytes();
+  if (!key) return plaintext; // fallback (dev only)
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `v1:${iv.toString("base64")}:${tag.toString("base64")}:${enc.toString("base64")}`;
+}
+
+function decryptSecret(stored: string): string {
+  const key = platformMasterKeyBytes();
+  if (!key) return stored;
+  if (!stored.startsWith("v1:")) return stored;
+  const parts = stored.split(":");
+  if (parts.length !== 4) return stored;
+  const iv = Buffer.from(parts[1] || "", "base64");
+  const tag = Buffer.from(parts[2] || "", "base64");
+  const enc = Buffer.from(parts[3] || "", "base64");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+  return dec.toString("utf8");
+}
+
+async function getPlatformSecret(key: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from("platform_secrets").select("encrypted_value").eq("key", key).maybeSingle();
+  if (!data) return null;
+  const raw = (data as { encrypted_value?: string }).encrypted_value;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  return decryptSecret(raw.trim());
+}
+
+async function setPlatformSecret(key: string, plaintext: string): Promise<void> {
+  const enc = encryptSecret(plaintext);
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from("platform_secrets")
+    .upsert({ key, encrypted_value: enc, updated_at: now }, { onConflict: "key" });
+}
+
+async function getPaystackConfigOrNull(): Promise<PaystackConfig | null> {
+  const secretKey = await getPlatformSecret("paystack_secret_key");
+  const publicKey = await getPlatformSecret("paystack_public_key");
+  if (!secretKey || !publicKey) return null;
+  const planCodesRaw = await getPlatformSecret("paystack_plan_codes_json");
+  let planCodes: Record<string, string> | undefined = undefined;
+  if (planCodesRaw) {
+    try {
+      const parsed = JSON.parse(planCodesRaw);
+      if (parsed && typeof parsed === "object") planCodes = parsed as Record<string, string>;
+    } catch {
+      // ignore
+    }
+  }
+  return { secretKey, publicKey, planCodes };
+}
+
+function resolvePaystackPlanCode(cfg: PaystackConfig, billingPlanId: BillingPlanId): string | null {
+  const fromEnv = cfg.planCodes?.[billingPlanId];
+  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) return fromEnv.trim();
+  return DEFAULT_PAYSTACK_PLAN_CODES[billingPlanId] ?? null;
+}
+
+async function paystackFetch<T>(secretKey: string, path: string, init?: RequestInit): Promise<T> {
+  const url = `${PAYSTACK_API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+  const raw = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg =
+      typeof (raw as any)?.message === "string"
+        ? (raw as any).message
+        : typeof (raw as any)?.error === "string"
+          ? (raw as any).error
+          : `Paystack request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return raw as T;
+}
+
+function paystackSignatureValid(secretKey: string, body: string, signature: string | null): boolean {
+  if (!signature) return false;
+  const expected = crypto.createHmac("sha512", secretKey).update(body).digest("hex");
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
 import { formatLongWeekdayDateTime } from "./src/app/utils/dateDisplayFormat.ts";
 import type { Request, Response } from "express";
 import { Expo } from "expo-server-sdk";
@@ -195,6 +328,26 @@ function shouldAutoConfirmAuthEmail(): boolean {
   return process.env.AUTH_EMAIL_AUTO_CONFIRM !== "false";
 }
 
+/** Ask Supabase Auth to send the signup confirmation email (user must confirm before login when email_confirm is false). */
+async function resendAuthSignupEmail(email: string): Promise<boolean> {
+  const base = String(supabaseUrl || "").replace(/\/+$/, "");
+  if (!base || !supabaseServiceKey) return false;
+  try {
+    const res = await fetch(`${base}/auth/v1/resend`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: supabaseServiceKey,
+        Authorization: `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({ type: "signup", email: email.trim().toLowerCase() }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Temporary path while Hubtel billing approval is pending. Set false in production when payment is live. */
 function isDemoPaymentBypassEnabled(): boolean {
   return process.env.ENABLE_DEMO_PAYMENT_BYPASS !== "false";
@@ -218,6 +371,21 @@ function appBaseUrl(): string {
   const vercelUrl = String(process.env.VERCEL_URL || "").trim();
   if (vercelUrl) return `https://${vercelUrl.replace(/\/+$/, "")}`;
   return `http://localhost:${PORT}`;
+}
+
+/** Paystack redirect after payment — prefer browser Origin so dev (e.g. :5173) matches the SPA. */
+function signupCompleteCallbackUrl(req: Request): string {
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin.trim().replace(/\/+$/, "") : "";
+  if (origin) return `${origin}/signup/complete`;
+  const ref = typeof req.headers.referer === "string" ? req.headers.referer : "";
+  if (ref) {
+    try {
+      return `${new URL(ref).origin}/signup/complete`;
+    } catch {
+      /* use app base */
+    }
+  }
+  return `${appBaseUrl()}/signup/complete`;
 }
 
 async function sendBrevoEmail(params: {
@@ -256,6 +424,31 @@ async function sendBrevoEmail(params: {
 }
 
 type OrgProfile = { organization_id: string; branch_id?: string | null };
+
+/** Same rules as requireSuperAdmin but for a user id (branch scope bypass). */
+async function isProfileSuperAdminByUserId(userId: string): Promise<boolean> {
+  const { data: profRow, error: profErr } = await supabaseAdmin
+    .from("profiles")
+    .select("email, is_super_admin")
+    .eq("id", userId)
+    .maybeSingle();
+  const envEmails = (process.env.SUPERADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (profErr && String(profErr.message || "").toLowerCase().includes("is_super_admin")) {
+    const { data: p2 } = await supabaseAdmin.from("profiles").select("id, email").eq("id", userId).maybeSingle();
+    const em =
+      p2 && typeof (p2 as { email?: string }).email === "string" ? (p2 as { email: string }).email.toLowerCase() : "";
+    return !!(em && envEmails.includes(em));
+  }
+  if ((profRow as { is_super_admin?: boolean } | null)?.is_super_admin === true) return true;
+  const em =
+    profRow && typeof (profRow as { email?: string }).email === "string"
+      ? (profRow as { email: string }).email.toLowerCase()
+      : "";
+  return !!(em && envEmails.includes(em));
+}
 
 function httpError(statusCode: number, message: string): Error {
   const e = new Error(message);
@@ -311,6 +504,18 @@ async function assertViewerBranchScope(
       400,
       "Missing branch scope: set the X-Branch-Id header to the branch selected in the app header.",
     );
+  }
+  if (userId && (await isProfileSuperAdminByUserId(userId))) {
+    const { data: brSa, error: brSaErr } = await supabaseAdmin
+      .from("branches")
+      .select("id, organization_id")
+      .eq("id", branchId)
+      .maybeSingle();
+    if (brSaErr) throw brSaErr;
+    if (!brSa) throw httpError(403, "Invalid branch.");
+    userProfile.organization_id = (brSa as { organization_id: string }).organization_id;
+    userProfile.branch_id = branchId;
+    return branchId;
   }
   const { data: br, error: brErr } = await supabaseAdmin
     .from("branches")
@@ -737,6 +942,68 @@ async function permissionSetForProfileRow(profile: {
   return { permissionSet: expandStoredPermissionIds(permissionSet), isOrgOwner: false, orgId, branchId, roleId };
 }
 
+/** Super admins bypass; org owners bypass branch-only blocks. */
+async function tenantAccessBlocked(
+  profile: {
+    organization_id?: string | null;
+    branch_id?: string | null;
+    is_org_owner?: boolean | null;
+    is_super_admin?: boolean | null;
+    email?: string | null;
+  } | null,
+): Promise<{ code: string; message: string } | null> {
+  if (!profile) return null;
+  const email = String(profile.email || "").toLowerCase();
+  const superList = (process.env.SUPERADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (profile.is_super_admin === true || superList.includes(email)) return null;
+
+  const orgId = String(profile.organization_id || "");
+  if (!isUuidString(orgId)) return null;
+
+  const { data: org, error: orgErr } = await supabaseAdmin.from("organizations").select("is_enabled").eq("id", orgId).maybeSingle();
+  if (orgErr) {
+    const m = String(orgErr.message || "").toLowerCase();
+    if (m.includes("is_enabled") && (m.includes("column") || m.includes("does not exist"))) return null;
+    return null;
+  }
+  if (org && (org as { is_enabled?: boolean }).is_enabled === false) {
+    return {
+      code: "ORGANIZATION_DISABLED",
+      message: "This organization has been disabled. Contact your platform administrator.",
+    };
+  }
+
+  const branchRaw = profile.branch_id != null ? String(profile.branch_id).trim() : "";
+  const branchId = branchRaw && isUuidString(branchRaw) ? branchRaw : null;
+  if (!branchId) return null;
+  if (profile.is_org_owner === true) return null;
+
+  const { data: br, error: bErr } = await supabaseAdmin
+    .from("branches")
+    .select("is_enabled, organization_id")
+    .eq("id", branchId)
+    .maybeSingle();
+  if (bErr) {
+    const m = String(bErr.message || "").toLowerCase();
+    if (m.includes("is_enabled") && (m.includes("column") || m.includes("does not exist"))) return null;
+    return null;
+  }
+  if (
+    br &&
+    String((br as { organization_id?: string }).organization_id || "") === orgId &&
+    (br as { is_enabled?: boolean }).is_enabled === false
+  ) {
+    return {
+      code: "BRANCH_DISABLED",
+      message: "Your branch has been disabled. Contact an administrator.",
+    };
+  }
+  return null;
+}
+
 async function getActorAuthContextFromToken(token: string | undefined): Promise<ActorAuthContext | null> {
   if (!token) return null;
   const supabase = getSupabaseClient(token);
@@ -763,6 +1030,8 @@ async function getActorAuthContextFromToken(token: string | undefined): Promise<
   }
 
   if (pErr || !profile) return null;
+  const blocked = await tenantAccessBlocked(profile as typeof profile & { is_org_owner?: boolean | null });
+  if (blocked) return null;
   const r = await permissionSetForProfileRow(profile as typeof profile & { is_org_owner?: boolean | null });
   return {
     userId: user.id,
@@ -1042,6 +1311,51 @@ async function createNotification(input: NotificationInsert): Promise<boolean> {
     _memoryDedupeCleanup();
   }
   return true;
+}
+
+/** In-app + optional Brevo email to org owners for billing lifecycle events. */
+async function notifyOrgOwnersBilling(
+  organizationId: string,
+  title: string,
+  message: string,
+  type: string,
+  actionPath: string | null,
+): Promise<void> {
+  const { data: owners } = await supabaseAdmin
+    .from("profiles")
+    .select("id, branch_id, email, first_name")
+    .eq("organization_id", organizationId)
+    .eq("is_org_owner", true);
+  if (!owners?.length) return;
+  for (const o of owners as { id: string; branch_id?: string | null; email?: string; first_name?: string }[]) {
+    await createNotification({
+      organization_id: organizationId,
+      branch_id: o.branch_id ?? null,
+      recipient_profile_id: o.id,
+      type,
+      category: "permissions",
+      title,
+      message,
+      action_path: actionPath,
+      payload: { kind: "billing" },
+      dedupe_key: `${type}:${organizationId}:${title}`.slice(0, 180),
+      dedupe_window_minutes: 60,
+    });
+    const em = typeof o.email === "string" ? o.email.trim() : "";
+    if (em && String(process.env.BREVO_API_KEY || "").trim()) {
+      try {
+        await sendBrevoEmail({
+          toEmail: em,
+          toName: o.first_name || em,
+          subject: title,
+          htmlContent: `<p>${message}</p>${actionPath ? `<p><a href="${appBaseUrl()}${actionPath}">Billing settings</a></p>` : ""}`,
+          textContent: `${message}${actionPath ? `\n\n${appBaseUrl()}${actionPath}` : ""}`,
+        });
+      } catch (e) {
+        console.warn("[billing] owner email failed:", e);
+      }
+    }
+  }
 }
 
 async function createNotificationsForRecipients(
@@ -1826,8 +2140,735 @@ async function bootstrapAdministratorRoleIfEmpty(orgId: string): Promise<void> {
   }
 }
 
+function subscriptionFieldsFromPaystackChargeData(data: Record<string, unknown> | null | undefined): {
+  subCode: string | null;
+  emailToken: string | null;
+  nextPayment: string | null;
+  planCode: string | null;
+} {
+  if (!data || typeof data !== "object") {
+    return { subCode: null, emailToken: null, nextPayment: null, planCode: null };
+  }
+  const sub =
+    data.subscription && typeof data.subscription === "object"
+      ? (data.subscription as Record<string, unknown>)
+      : null;
+  const subCode = sub && typeof sub.subscription_code === "string" ? sub.subscription_code : null;
+  const emailToken = sub && typeof sub.email_token === "string" ? sub.email_token : null;
+  const nextPayment = sub && typeof sub.next_payment_date === "string" ? sub.next_payment_date : null;
+  const planObj = data.plan && typeof data.plan === "object" ? (data.plan as Record<string, unknown>) : null;
+  const planCode = planObj && typeof planObj.plan_code === "string" ? planObj.plan_code : null;
+  return { subCode, emailToken, nextPayment, planCode };
+}
+
+type FinalizePendingSignupResult =
+  | { ok: true; mode: "session"; token: string; refresh_token: string | null; user: unknown }
+  | { ok: true; mode: "login_required"; email: string }
+  | { ok: false; reason: string };
+
+async function finalizePendingSignupPaid(reference: string): Promise<FinalizePendingSignupResult> {
+  const ref = String(reference || "").trim();
+  if (!ref) return { ok: false, reason: "missing_reference" };
+
+  const cfg = await getPaystackConfigOrNull();
+  if (!cfg) return { ok: false, reason: "paystack_not_configured" };
+
+  let verified: Record<string, unknown>;
+  try {
+    const v = await paystackFetch<{ data?: Record<string, unknown> }>(
+      cfg.secretKey,
+      `/transaction/verify/${encodeURIComponent(ref)}`,
+      { method: "GET" },
+    );
+    verified = (v?.data && typeof v.data === "object" ? v.data : {}) as Record<string, unknown>;
+  } catch {
+    return { ok: false, reason: "verify_failed" };
+  }
+
+  if (String(verified.status || "") !== "success") {
+    return { ok: false, reason: "not_paid" };
+  }
+
+  const verifyRef = typeof verified.reference === "string" ? verified.reference : ref;
+  const metaRaw = verified.metadata;
+  const meta = metaRaw && typeof metaRaw === "object" ? (metaRaw as Record<string, unknown>) : {};
+  let pendingId = typeof meta.pending_signup_id === "string" ? meta.pending_signup_id.trim() : "";
+
+  const { data: pendingByRef } = await supabaseAdmin
+    .from("pending_signups")
+    .select("*")
+    .eq("paystack_reference", verifyRef)
+    .maybeSingle();
+
+  if (!pendingId && pendingByRef && typeof (pendingByRef as { id?: unknown }).id === "string") {
+    pendingId = String((pendingByRef as { id: string }).id);
+  }
+
+  if (!pendingId || !isUuidString(pendingId)) {
+    return { ok: false, reason: "not_pending_signup" };
+  }
+
+  const { data: pending } = await supabaseAdmin.from("pending_signups").select("*").eq("id", pendingId).maybeSingle();
+
+  if (!pending) return { ok: false, reason: "pending_not_found" };
+
+  const p = pending as {
+    email: string;
+    password_encrypted: string;
+    organization_name: string;
+    full_name: string;
+    billing_plan_id: string;
+    paystack_reference: string;
+    consumed_at: string | null;
+    created_user_id: string | null;
+    expires_at: string;
+  };
+
+  if (p.paystack_reference !== verifyRef) {
+    return { ok: false, reason: "reference_mismatch" };
+  }
+
+  const exp = Date.parse(p.expires_at);
+  if (!Number.isNaN(exp) && exp < Date.now()) {
+    return { ok: false, reason: "expired" };
+  }
+
+  if (p.consumed_at && p.created_user_id) {
+    const em = String(p.email || "").trim().toLowerCase();
+    return { ok: true, mode: "login_required", email: em };
+  }
+
+  const billingPlanId = isBillingPlanId(p.billing_plan_id) ? p.billing_plan_id : null;
+  if (!billingPlanId) return { ok: false, reason: "invalid_plan" };
+
+  let plainPassword: string;
+  try {
+    plainPassword = decryptSecret(p.password_encrypted);
+  } catch {
+    return { ok: false, reason: "decrypt_failed" };
+  }
+
+  const email = String(p.email || "").trim().toLowerCase();
+  const amountMinor = typeof verified.amount === "number" ? verified.amount : null;
+  const currency = typeof verified.currency === "string" ? verified.currency : "GHS";
+  const paidAt = typeof verified.paid_at === "string" ? verified.paid_at : null;
+  const trxId = verified.id != null ? String(verified.id) : null;
+  const channel = typeof verified.channel === "string" ? verified.channel : null;
+  const cust = verified.customer && typeof verified.customer === "object" ? (verified.customer as Record<string, unknown>) : null;
+  const customerCode = cust && typeof cust.customer_code === "string" ? cust.customer_code : null;
+  const auth =
+    verified.authorization && typeof verified.authorization === "object"
+      ? (verified.authorization as Record<string, unknown>)
+      : null;
+  const authCode = auth && typeof auth.authorization_code === "string" ? auth.authorization_code : null;
+
+  const subFields = subscriptionFieldsFromPaystackChargeData(verified);
+
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password: plainPassword,
+    email_confirm: shouldAutoConfirmAuthEmail(),
+    user_metadata: { full_name: p.full_name },
+  });
+
+  if (authError) {
+    if (/already|registered|exists/i.test(String(authError.message || ""))) {
+      return { ok: false, reason: "email_exists" };
+    }
+    return { ok: false, reason: `auth_${authError.message || "create_failed"}` };
+  }
+
+  const userId = authData.user!.id;
+
+  try {
+    const slugBase = (p.organization_name || "organization")
+      .toLowerCase()
+      .replace(/[^\w ]+/g, "")
+      .replace(/ +/g, "-");
+    const orgSlug = `${slugBase}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const { data: org, error: orgError } = await supabaseAdmin
+      .from("organizations")
+      .insert([
+        {
+          name: p.organization_name || "My Organization",
+          slug: orgSlug,
+          subscription_tier: "enterprise",
+          subscription_status: "active",
+          subscription_plan: billingPlanId,
+        },
+      ])
+      .select()
+      .single();
+
+    if (orgError || !org) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return { ok: false, reason: `org_${orgError?.message || "failed"}` };
+    }
+
+    const { data: branch, error: branchError } = await supabaseAdmin
+      .from("branches")
+      .insert([
+        {
+          organization_id: org.id,
+          name: "Main Branch",
+          is_main_branch: true,
+        },
+      ])
+      .select()
+      .single();
+
+    if (branchError || !branch) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return { ok: false, reason: `branch_${branchError?.message || "failed"}` };
+    }
+
+    const nameParts = (p.full_name || "User").split(/\s+/);
+    const firstName = nameParts[0] || "User";
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "User";
+
+    const { data: adminRoleIns, error: adminRoleErr } = await supabaseAdmin
+      .from("roles")
+      .insert({
+        organization_id: org.id,
+        name: "Administrator",
+        permissions: ALL_PERMISSION_IDS,
+      })
+      .select("id")
+      .single();
+
+    const adminRoleId = !adminRoleErr && adminRoleIns ? (adminRoleIns as { id: string }).id : null;
+
+    const profileInsert: Record<string, unknown> = {
+      id: userId,
+      email,
+      first_name: firstName,
+      last_name: lastName,
+      full_name: p.full_name,
+      organization_id: org.id,
+      branch_id: branch.id,
+      is_org_owner: true,
+    };
+    if (adminRoleId) profileInsert.role_id = adminRoleId;
+
+    const { data: userProfile, error: userError } = await supabaseAdmin
+      .from("profiles")
+      .insert([profileInsert])
+      .select()
+      .single();
+
+    if (userError || !userProfile) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return { ok: false, reason: `profile_${userError?.message || "failed"}` };
+    }
+
+    const tierLabel = billingPlanId;
+    const subUpsert: Record<string, unknown> = {
+      organization_id: org.id,
+      tier: tierLabel,
+      status: "active",
+      paystack_plan_code: subFields.planCode,
+      updated_at: new Date().toISOString(),
+    };
+    if (subFields.subCode) {
+      subUpsert.paystack_subscription_code = subFields.subCode;
+      subUpsert.paystack_email_token = subFields.emailToken;
+      subUpsert.current_period_end = subFields.nextPayment;
+    } else if (subFields.nextPayment) {
+      subUpsert.current_period_end = subFields.nextPayment;
+    }
+    await supabaseAdmin.from("billing_subscriptions").upsert(subUpsert, { onConflict: "organization_id" });
+
+    await supabaseAdmin.from("billing_payments").upsert(
+      {
+        organization_id: org.id,
+        status: "paid",
+        currency,
+        amount_minor: amountMinor ?? 0,
+        paid_at: paidAt,
+        channel,
+        paystack_reference: verifyRef,
+        paystack_transaction_id: trxId,
+        authorization_code: authCode,
+        customer_code: customerCode,
+        metadata: meta,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "paystack_reference" },
+    );
+
+    if (customerCode) {
+      await supabaseAdmin.from("billing_customers").upsert(
+        {
+          organization_id: org.id,
+          email,
+          paystack_customer_code: customerCode,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "organization_id" },
+      );
+    }
+
+    await supabaseAdmin.from("billing_invoices").insert({
+      organization_id: org.id,
+      status: "paid",
+      currency,
+      amount_minor: amountMinor ?? 0,
+      paid_at: paidAt,
+      paystack_reference: verifyRef,
+      paystack_transaction_id: trxId,
+      metadata: {
+        billing_plan_id: billingPlanId,
+        source: "signup_checkout",
+      },
+    });
+
+    await supabaseAdmin
+      .from("pending_signups")
+      .update({
+        consumed_at: new Date().toISOString(),
+        created_user_id: userId,
+        created_org_id: org.id,
+      })
+      .eq("id", pendingId)
+      .is("consumed_at", null);
+
+    try {
+      await notifyOrgOwnersBilling(
+        org.id,
+        "Payment received",
+        `Your SheepMug subscription is active (${PAID_PLANS[billingPlanId]?.title ?? billingPlanId}).`,
+        "billing_payment_success",
+        "/settings?tab=subscription",
+      );
+    } catch {
+      /* non-fatal */
+    }
+
+    const supabaseAnon = getSupabaseClient();
+    const { data: signInData, error: signInError } = await supabaseAnon.auth.signInWithPassword({
+      email,
+      password: plainPassword,
+    });
+
+    const permRow = await permissionSetForProfileRow(
+      userProfile as typeof userProfile & { is_org_owner?: boolean | null; role_id?: string | null },
+    );
+    const userPayload = await buildUserAuthPayloadWithMemberAvatar(userProfile as Record<string, unknown>, permRow);
+
+    if (signInError || !signInData?.session?.access_token) {
+      return {
+        ok: true,
+        mode: "login_required",
+        email,
+      };
+    }
+
+    return {
+      ok: true,
+      mode: "session",
+      token: signInData.session.access_token,
+      refresh_token: signInData.session.refresh_token ?? null,
+      user: userPayload,
+    };
+  } catch (e: unknown) {
+    try {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, reason: e instanceof Error ? e.message : "provision_failed" };
+  }
+}
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Paystack webhooks require raw body signature verification.
+app.post("/api/billing/paystack/webhook", express.raw({ type: "*/*" }), async (req, res) => {
+  try {
+    const cfg = await getPaystackConfigOrNull();
+    if (!cfg) return res.status(500).send("Paystack not configured");
+    const sig = typeof req.headers["x-paystack-signature"] === "string" ? req.headers["x-paystack-signature"] : null;
+    const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ""), "utf8");
+    const bodyStr = bodyBuf.toString("utf8");
+    if (!paystackSignatureValid(cfg.secretKey, bodyStr, sig)) return res.status(401).send("Invalid signature");
+
+    const evt = JSON.parse(bodyStr || "{}") as any;
+    const event = typeof evt?.event === "string" ? evt.event : "";
+    const data = evt?.data || {};
+    const reference = typeof data?.reference === "string" ? data.reference : null;
+    const status = typeof data?.status === "string" ? data.status : null;
+    const amount = typeof data?.amount === "number" ? data.amount : null;
+    const currency = typeof data?.currency === "string" ? data.currency : "GHS";
+    const paidAt = typeof data?.paid_at === "string" ? data.paid_at : null;
+    const trxId = data?.id != null ? String(data.id) : null;
+    const customerCode = typeof data?.customer?.customer_code === "string" ? data.customer.customer_code : null;
+    const authCode = typeof data?.authorization?.authorization_code === "string" ? data.authorization.authorization_code : null;
+    const channel = typeof data?.channel === "string" ? data.channel : null;
+    const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : null;
+    const orgId = metadata?.organization_id && typeof metadata.organization_id === "string" ? metadata.organization_id : null;
+    const tierMeta = metadata?.subscription_tier && typeof metadata.subscription_tier === "string" ? metadata.subscription_tier : null;
+    const billingPlanMetaRaw = metadata?.billing_plan_id;
+    const billingPlanMeta =
+      typeof billingPlanMetaRaw === "string" && isBillingPlanId(billingPlanMetaRaw) ? billingPlanMetaRaw : null;
+    const pendingSignupRaw = metadata?.pending_signup_id;
+    const pendingSignupId =
+      typeof pendingSignupRaw === "string" && pendingSignupRaw.trim() && isUuidString(pendingSignupRaw.trim())
+        ? pendingSignupRaw.trim()
+        : null;
+
+    if (event === "subscription.not_renew") {
+      const subCode = typeof data?.subscription_code === "string" ? data.subscription_code : null;
+      if (subCode) {
+        const { data: subRow } = await supabaseAdmin
+          .from("billing_subscriptions")
+          .select("organization_id")
+          .eq("paystack_subscription_code", subCode)
+          .maybeSingle();
+        const oid = (subRow as { organization_id?: string } | null)?.organization_id;
+        if (oid) {
+          await supabaseAdmin
+            .from("billing_subscriptions")
+            .update({ status: "non_renewing", updated_at: new Date().toISOString() })
+            .eq("paystack_subscription_code", subCode);
+          await notifyOrgOwnersBilling(
+            oid,
+            "Subscription will not renew",
+            "Your SheepMug subscription is set to end after the current period. No refunds are issued for the current period.",
+            "subscription_not_renew",
+            "/settings?tab=subscription",
+          );
+        }
+      }
+    }
+
+    if (event === "subscription.disable") {
+      const subCode = typeof data?.subscription_code === "string" ? data.subscription_code : null;
+      if (subCode) {
+        const { data: subRow } = await supabaseAdmin
+          .from("billing_subscriptions")
+          .select("organization_id")
+          .eq("paystack_subscription_code", subCode)
+          .maybeSingle();
+        const oid = (subRow as { organization_id?: string } | null)?.organization_id;
+        if (oid) {
+          await supabaseAdmin
+            .from("billing_subscriptions")
+            .update({ status: "inactive", updated_at: new Date().toISOString() })
+            .eq("paystack_subscription_code", subCode);
+          await supabaseAdmin.from("organizations").update({ subscription_tier: "basic", subscription_status: "expired" }).eq("id", oid);
+          await notifyOrgOwnersBilling(
+            oid,
+            "Subscription ended",
+            "Your SheepMug subscription has ended. Renew from Settings → Subscription to restore full access.",
+            "subscription_ended",
+            "/settings?tab=subscription",
+          );
+        }
+      }
+    }
+
+    // charge.success — new org signup paid before account exists
+    if (event === "charge.success" && reference && status === "success" && pendingSignupId && !orgId) {
+      const fr = await finalizePendingSignupPaid(reference);
+      if (!fr.ok && fr.reason !== "not_pending_signup" && fr.reason !== "not_paid") {
+        console.warn("[paystack webhook] finalize pending signup:", fr.reason, reference);
+      }
+      res.send("ok");
+      return;
+    }
+
+    // charge.success — one-off and first subscription charge
+    if (event === "charge.success" && reference && orgId && status === "success") {
+      await supabaseAdmin.from("billing_payments").upsert(
+        {
+          organization_id: orgId,
+          status: "paid",
+          currency,
+          amount_minor: amount ?? 0,
+          paid_at: paidAt,
+          channel,
+          paystack_reference: reference,
+          paystack_transaction_id: trxId,
+          authorization_code: authCode,
+          customer_code: customerCode,
+          metadata,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "paystack_reference" },
+      );
+
+      await supabaseAdmin
+        .from("billing_invoices")
+        .update({
+          status: "paid",
+          paid_at: paidAt,
+          paystack_transaction_id: trxId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("paystack_reference", reference);
+
+      const sub = data?.subscription && typeof data.subscription === "object" ? data.subscription : null;
+      const subCode =
+        sub && typeof (sub as { subscription_code?: string }).subscription_code === "string"
+          ? (sub as { subscription_code: string }).subscription_code
+          : null;
+      const emailToken =
+        sub && typeof (sub as { email_token?: string }).email_token === "string"
+          ? (sub as { email_token: string }).email_token
+          : null;
+      const nextPayment =
+        sub && typeof (sub as { next_payment_date?: string }).next_payment_date === "string"
+          ? (sub as { next_payment_date: string }).next_payment_date
+          : null;
+      const planCode =
+        data?.plan && typeof (data.plan as { plan_code?: string }).plan_code === "string"
+          ? (data.plan as { plan_code: string }).plan_code
+          : null;
+
+      const tierToApply = billingPlanMeta
+        ? "enterprise"
+        : tierMeta
+          ? normalizeSubscriptionTier(tierMeta)
+          : null;
+      if (tierToApply) {
+        await supabaseAdmin
+          .from("organizations")
+          .update({
+            subscription_tier: tierToApply,
+            subscription_status: "active",
+            subscription_plan: billingPlanMeta || tierMeta || null,
+          })
+          .eq("id", orgId);
+      }
+
+      if (subCode) {
+        const tierLabel = billingPlanMeta ? billingPlanMeta : (tierMeta || "paid");
+        await supabaseAdmin.from("billing_subscriptions").upsert(
+          {
+            organization_id: orgId,
+            tier: typeof tierLabel === "string" && tierLabel.length > 0 ? tierLabel : "enterprise",
+            status: "active",
+            paystack_plan_code: planCode,
+            paystack_subscription_code: subCode,
+            paystack_email_token: emailToken,
+            current_period_end: nextPayment,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "organization_id" },
+        );
+      }
+
+      if (tierToApply) {
+        await notifyOrgOwnersBilling(
+          orgId,
+          "Payment received",
+          `Your SheepMug subscription is active${billingPlanMeta ? ` (${PAID_PLANS[billingPlanMeta]?.title ?? billingPlanMeta})` : ""}.`,
+          "billing_payment_success",
+          "/settings?tab=subscription",
+        );
+      }
+    }
+
+    res.send("ok");
+  } catch {
+    res.status(200).send("ok"); // avoid retries storm for transient parsing errors
+  }
+});
+
+// --- Billing (org-scoped) ---
+app.post("/api/billing/paystack/initialize", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const cfg = await getPaystackConfigOrNull();
+    if (!cfg) return res.status(500).json({ error: "Paystack not configured" });
+
+    const billingPlanRaw = typeof req.body?.billing_plan_id === "string" ? req.body.billing_plan_id.trim() : "";
+    const billingPlanId = isBillingPlanId(billingPlanRaw) ? billingPlanRaw : null;
+
+    if (!billingPlanId) {
+      return res.status(400).json({
+        error: "billing_plan_id is required (core_monthly, core_6months, or core_annual).",
+      });
+    }
+
+    const { data: prof } = await supabaseAdmin.from("profiles").select("email").eq("id", ctx.userId).maybeSingle();
+    const email = typeof (prof as any)?.email === "string" ? (prof as any).email : null;
+    if (!email) return res.status(400).json({ error: "Profile email required for billing" });
+
+    const reference = crypto.randomUUID().replace(/-/g, "");
+    const callback_url =
+      typeof req.body?.callback_url === "string" && req.body.callback_url.trim() ? req.body.callback_url.trim() : undefined;
+
+    const paystackPlan = resolvePaystackPlanCode(cfg, billingPlanId);
+    if (!paystackPlan) {
+      return res.status(400).json({ error: "Paystack plan code missing for this plan. Set paystack_plan_codes_json in Super Admin." });
+    }
+    const paid = PAID_PLANS[billingPlanId];
+    const amountMinor = Math.max(0, Math.round(paid.priceGhs * 100));
+    await supabaseAdmin.from("billing_invoices").insert({
+      organization_id: ctx.orgId,
+      status: "pending",
+      currency: "GHS",
+      amount_minor: amountMinor,
+      paystack_reference: reference,
+      metadata: {
+        subscription_tier: "enterprise",
+        billing_plan_id: billingPlanId,
+        organization_id: ctx.orgId,
+      },
+    });
+    const initPayload: Record<string, unknown> = {
+      email,
+      plan: paystackPlan,
+      reference,
+      callback_url,
+      metadata: {
+        organization_id: ctx.orgId,
+        subscription_tier: "enterprise",
+        billing_plan_id: billingPlanId,
+      },
+    };
+
+    const initRes = await paystackFetch<any>(cfg.secretKey, "/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify(initPayload),
+    });
+
+    const authUrl = initRes?.data?.authorization_url;
+    const accessCode = initRes?.data?.access_code;
+    if (typeof accessCode === "string") {
+      await supabaseAdmin
+        .from("billing_invoices")
+        .update({ paystack_access_code: accessCode, updated_at: new Date().toISOString() })
+        .eq("paystack_reference", reference);
+    }
+
+    res.json({
+      reference,
+      authorization_url: typeof authUrl === "string" ? authUrl : null,
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to initialize payment" });
+  }
+});
+
+app.get("/api/billing/paystack/manage-link", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const cfg = await getPaystackConfigOrNull();
+    if (!cfg) return res.status(500).json({ error: "Paystack not configured" });
+    const { data: row } = await supabaseAdmin
+      .from("billing_subscriptions")
+      .select("paystack_subscription_code, status")
+      .eq("organization_id", ctx.orgId)
+      .maybeSingle();
+    const code = typeof (row as { paystack_subscription_code?: string } | null)?.paystack_subscription_code === "string"
+      ? (row as { paystack_subscription_code: string }).paystack_subscription_code
+      : "";
+    if (!code) {
+      return res.json({ link: null, message: "No Paystack subscription found for this organization yet." });
+    }
+    const r = await paystackFetch<any>(cfg.secretKey, `/subscription/${encodeURIComponent(code)}/manage/link`, {
+      method: "GET",
+    });
+    const link = r?.data?.link;
+    res.json({
+      link: typeof link === "string" ? link : null,
+      status: (row as { status?: string }).status ?? null,
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to load manage link" });
+  }
+});
+
+app.get("/api/billing/subscription", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const { data: row } = await supabaseAdmin
+      .from("billing_subscriptions")
+      .select("tier, status, paystack_plan_code, paystack_subscription_code, current_period_end, updated_at")
+      .eq("organization_id", ctx.orgId)
+      .maybeSingle();
+    const { data: org } = await supabaseAdmin
+      .from("organizations")
+      .select("subscription_tier, subscription_status, subscription_plan")
+      .eq("id", ctx.orgId)
+      .maybeSingle();
+    res.json({
+      subscription: row || null,
+      organization: org || null,
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to read subscription" });
+  }
+});
+
+app.get("/api/billing/paystack/verify", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const cfg = await getPaystackConfigOrNull();
+    if (!cfg) return res.status(500).json({ error: "Paystack not configured" });
+    const reference = typeof req.query.reference === "string" ? req.query.reference.trim() : "";
+    if (!reference) return res.status(400).json({ error: "Missing reference" });
+    const v = await paystackFetch<any>(cfg.secretKey, `/transaction/verify/${encodeURIComponent(reference)}`, { method: "GET" });
+    res.json(v);
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Verify failed" });
+  }
+});
+
+app.get("/api/billing/invoices", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("billing_invoices")
+      .select("id, status, currency, amount_minor, due_at, paid_at, paystack_reference, created_at, pdf_url")
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ invoices: data || [] });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to list invoices" });
+  }
+});
+
+app.get("/api/billing/payments", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = typeof authHeader === "string" && authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+  const ctx = await getActorAuthContextFromToken(token);
+  if (!ctx) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("billing_payments")
+      .select("id, status, currency, amount_minor, paid_at, channel, paystack_reference, created_at")
+      .eq("organization_id", ctx.orgId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    res.json({ payments: data || [] });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to list payments" });
+  }
+});
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Temporary test route to check server routing
@@ -2703,20 +3744,178 @@ app.get("/api/debug/storage", async (req, res) => {
 });
 
 // Auth Routes
+app.post("/api/auth/signup-checkout", async (req, res) => {
+  if (req.body?.demoBypass === true) {
+    return res.status(400).json({ error: "Use /api/auth/signup with demoBypass for demo accounts." });
+  }
+  const emailRaw = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+  const email = emailRaw.toLowerCase();
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  const organizationName =
+    typeof req.body?.organizationName === "string" && req.body.organizationName.trim()
+      ? String(req.body.organizationName).trim()
+      : "My Organization";
+  const fullName =
+    typeof req.body?.fullName === "string" && req.body.fullName.trim() ? String(req.body.fullName).trim() : "User";
+
+  const billingPlanIdRaw = typeof req.body?.billingPlanId === "string" ? req.body.billingPlanId.trim() : "";
+  const billingPlanFromBody = isBillingPlanId(billingPlanIdRaw) ? billingPlanIdRaw : null;
+  const billingCycle = typeof req.body?.billingCycle === "string" ? req.body.billingCycle.trim().toLowerCase() : "";
+
+  let effectiveBillingPlan: BillingPlanId | null = billingPlanFromBody;
+  if (!effectiveBillingPlan) {
+    effectiveBillingPlan = billingCycle === "yearly" ? "core_annual" : "core_monthly";
+  }
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Valid email is required." });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  }
+
+  const cfg = await getPaystackConfigOrNull();
+  if (!cfg) {
+    return res.status(402).json({
+      error: "Paid signup requires Paystack. Configure Paystack keys in Super Admin (Payments).",
+    });
+  }
+
+  const paystackPlan = resolvePaystackPlanCode(cfg, effectiveBillingPlan);
+  if (!paystackPlan) {
+    return res
+      .status(400)
+      .json({ error: "Paystack plan code missing for this plan. Set paystack_plan_codes_json in Super Admin." });
+  }
+
+  const reference = crypto.randomUUID().replace(/-/g, "");
+  const passwordEncrypted = encryptSecret(password);
+  const rawCb = typeof req.body?.callback_url === "string" ? req.body.callback_url.trim() : "";
+  let callback_url = signupCompleteCallbackUrl(req);
+  if (/^https?:\/\//i.test(rawCb)) {
+    try {
+      callback_url = new URL(rawCb).toString();
+    } catch {
+      /* keep derived default */
+    }
+  }
+
+  try {
+    await supabaseAdmin.from("pending_signups").delete().eq("email", email).is("consumed_at", null);
+
+    const { data: ins, error: insErr } = await supabaseAdmin
+      .from("pending_signups")
+      .insert({
+        email,
+        password_encrypted: passwordEncrypted,
+        organization_name: organizationName,
+        full_name: fullName,
+        billing_plan_id: effectiveBillingPlan,
+        paystack_reference: reference,
+      })
+      .select("id")
+      .single();
+
+    if (insErr || !ins) {
+      return res.status(500).json({ error: insErr?.message || "Could not start signup." });
+    }
+
+    const pendingId = (ins as { id: string }).id;
+    const initPayload: Record<string, unknown> = {
+      email,
+      plan: paystackPlan,
+      reference,
+      callback_url,
+      metadata: {
+        pending_signup_id: pendingId,
+        billing_plan_id: effectiveBillingPlan,
+      },
+    };
+
+    const initRes = await paystackFetch<{ data?: { authorization_url?: string } }>(cfg.secretKey, "/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify(initPayload),
+    });
+
+    const authUrl = initRes?.data?.authorization_url;
+    if (typeof authUrl !== "string" || !authUrl) {
+      await supabaseAdmin.from("pending_signups").delete().eq("id", pendingId);
+      return res.status(502).json({ error: "Paystack did not return a checkout URL." });
+    }
+
+    res.json({
+      reference,
+      authorization_url: authUrl,
+      billing_plan_id: effectiveBillingPlan,
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Checkout failed" });
+  }
+});
+
+app.post("/api/auth/complete-signup-payment", async (req, res) => {
+  const reference = typeof req.body?.reference === "string" ? req.body.reference.trim() : "";
+  if (!reference) {
+    return res.status(400).json({ error: "Missing reference" });
+  }
+
+  const fr = await finalizePendingSignupPaid(reference);
+
+  if (!fr.ok) {
+    if (fr.reason === "not_paid") {
+      return res.status(402).json({ error: "Payment not completed yet. Wait a moment and try again.", pending: true });
+    }
+    if (fr.reason === "not_pending_signup") {
+      return res.status(400).json({ error: "This payment is not linked to a new signup." });
+    }
+    if (fr.reason === "email_exists") {
+      return res.status(409).json({ error: "An account with this email already exists. Sign in instead." });
+    }
+    if (fr.reason === "expired") {
+      return res.status(410).json({ error: "This signup session expired. Start again from signup." });
+    }
+    return res.status(400).json({ error: fr.reason });
+  }
+
+  if (fr.mode === "login_required") {
+    return res.json({
+      needs_login: true,
+      email: fr.email,
+      message: "Subscription is active. Sign in with the password you chose during signup.",
+    });
+  }
+
+  return res.json({
+    token: fr.token,
+    refresh_token: fr.refresh_token,
+    user: fr.user,
+  });
+});
+
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password, organizationName, fullName } = req.body;
-  const tierRaw = typeof req.body?.subscriptionTier === "string" ? req.body.subscriptionTier : "free";
-  const subscriptionTier = normalizeSubscriptionTier(tierRaw);
+  const tierRaw = typeof req.body?.subscriptionTier === "string" ? req.body.subscriptionTier : "enterprise";
+  let subscriptionTier = normalizeSubscriptionTier(tierRaw);
   const demoBypass = req.body?.demoBypass === true;
-  const isPaidTier = subscriptionTier !== "free";
+  const isPaidTier = true;
+  const paystackCfg = await getPaystackConfigOrNull();
 
   if (demoBypass && !isDemoPaymentBypassEnabled()) {
     return res.status(403).json({ error: "Demo payment bypass is disabled." });
   }
-  if (isPaidTier && !demoBypass) {
+  if (isPaidTier && !demoBypass && !paystackCfg) {
     return res.status(402).json({
       error:
-        "Paid plan setup requires Hubtel payment. Hubtel integration is pending approval, so use demo bypass for now.",
+        "Paid signup requires Paystack. Configure Paystack keys in Super Admin (Payments), or use the demo bypass when enabled for testing.",
+    });
+  }
+
+  const pendingPaystackCheckout = isPaidTier && !demoBypass && !!paystackCfg;
+  if (pendingPaystackCheckout) {
+    return res.status(422).json({
+      error:
+        "Paid signup must start with checkout. Use POST /api/auth/signup-checkout, then pay on Paystack before your account is created.",
+      code: "PAYMENT_FIRST_SIGNUP",
     });
   }
 
@@ -3092,6 +4291,10 @@ app.get("/api/auth/me", async (req, res) => {
     if (!access.ok) {
       return res.status(403).json({ error: access.message, code: access.code });
     }
+    const tenantBlock = await tenantAccessBlocked(prof as Record<string, unknown>);
+    if (tenantBlock) {
+      return res.status(403).json({ error: tenantBlock.message, code: tenantBlock.code });
+    }
     const permRow = await permissionSetForProfileRow(prof);
     res.json({ user: await buildUserAuthPayloadWithMemberAvatar(prof as Record<string, unknown>, permRow) });
   } catch (error: any) {
@@ -3146,6 +4349,10 @@ app.post("/api/auth/complete-cms-onboarding", async (req, res) => {
     const access = await assertStaffPlatformAccess(prof);
     if (!access.ok) {
       return res.status(403).json({ error: access.message, code: access.code });
+    }
+    const tenantBlock = await tenantAccessBlocked(prof);
+    if (tenantBlock) {
+      return res.status(403).json({ error: tenantBlock.message, code: tenantBlock.code });
     }
     const permRow = await permissionSetForProfileRow(prof);
     res.json({ user: await buildUserAuthPayloadWithMemberAvatar(prof, permRow) });
@@ -5050,8 +6257,8 @@ app.get("/api/org/staff", async (req, res) => {
       return res.status(404).json({ error: "User profile not found" });
     }
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     let { data: rows, error } = await supabaseAdmin
@@ -5206,8 +6413,8 @@ app.get("/api/org/staff/:profileId/ministry-scope", async (req, res) => {
       .single();
     if (!actorProfile) return res.status(404).json({ error: "Profile not found" });
 
-    const orgId = actorProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, actorProfile as OrgProfile, user.id);
+    const orgId = actorProfile.organization_id as string;
 
     const { data: target } = await supabaseAdmin
       .from("profiles")
@@ -5258,8 +6465,8 @@ app.put("/api/org/staff/:profileId/ministry-scope", async (req, res) => {
       .single();
     if (!actorProfile) return res.status(404).json({ error: "Profile not found" });
 
-    const orgId = actorProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, actorProfile as OrgProfile, user.id);
+    const orgId = actorProfile.organization_id as string;
 
     const { data: target } = await supabaseAdmin
       .from("profiles")
@@ -5740,8 +6947,8 @@ app.get("/api/members", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const notInGidRaw =
       typeof not_in_group_id === "string" && not_in_group_id.trim().length > 0
@@ -5895,8 +7102,8 @@ app.get("/api/dashboard/recent-members", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const limit = Math.max(3, Math.min(16, parseInt(String(req.query.limit ?? "8"), 10) || 8));
 
@@ -6086,8 +7293,8 @@ app.get("/api/search", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const pat = searchQueryToIlikePattern(req.query.q);
     if (!pat) {
@@ -6305,8 +7512,8 @@ app.get("/api/members/:memberId", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const { data: m, error } = await supabaseAdmin
       .from("members")
@@ -6401,8 +7608,8 @@ app.get("/api/members/:memberId/groups", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const mScope = await ministryScopeForActor(user.id, orgId, viewerBranch, permCtx.isOrgOwner);
     const allowedIds = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, mScope);
@@ -6562,8 +7769,8 @@ app.get("/api/members/:memberId/events", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const { data: mem, error: memErr } = await supabaseAdmin
       .from("members")
@@ -7159,7 +8366,7 @@ function taskAssigneeFilterColumnMissing(err: unknown): boolean {
 }
 
 const MEMBER_TASK_DB_FIELDS =
-  "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, checklist, related_member_ids, branch_id, organization_id";
+  "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, checklist, related_member_ids, branch_id, organization_id";
 /** When `assignee_profile_ids` column is not migrated yet. */
 const MEMBER_TASK_DB_FIELDS_LEGACY =
   "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, created_by_profile_id, checklist, related_member_ids, branch_id, organization_id";
@@ -7190,6 +8397,7 @@ function mapMemberTaskRowToJson(t: MemberTaskRow) {
     title: t.title,
     description: t.description ?? null,
     status: t.status,
+    urgency: normalizeTaskUrgency((t as MemberTaskRow & { urgency?: unknown }).urgency),
     due_at: t.due_at ?? null,
     completed_at: t.completed_at ?? null,
     created_at: t.created_at,
@@ -7204,7 +8412,7 @@ function mapMemberTaskRowToJson(t: MemberTaskRow) {
 }
 
 const GROUP_TASK_DB_FIELDS =
-  "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, checklist, related_group_ids, branch_id, organization_id";
+  "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, checklist, related_group_ids, branch_id, organization_id";
 const GROUP_TASK_DB_FIELDS_LEGACY =
   "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, created_by_profile_id, checklist, related_group_ids, branch_id, organization_id";
 
@@ -7234,6 +8442,7 @@ function mapGroupTaskRowToJson(t: GroupTaskRow) {
     title: t.title,
     description: t.description ?? null,
     status: t.status,
+    urgency: normalizeTaskUrgency((t as GroupTaskRow & { urgency?: unknown }).urgency),
     due_at: t.due_at ?? null,
     completed_at: t.completed_at ?? null,
     created_at: t.created_at,
@@ -7245,6 +8454,126 @@ function mapGroupTaskRowToJson(t: GroupTaskRow) {
     checklist: parseChecklistFromRow(t.checklist ?? [], t.id),
     related_group_ids: relatedIdsFromRow(t.related_group_ids ?? []),
   };
+}
+
+function normalizeTaskUrgency(raw: unknown): "low" | "urgent" | "high" {
+  if (typeof raw !== "string") return "low";
+  const t = raw.trim().toLowerCase();
+  if (t === "urgent" || t === "high") return t;
+  return "low";
+}
+
+/** Query param `urgency=low` or `urgency=low,high` or omit / `all` for no filter. */
+function parseUrgencyFilterFromQuery(raw: unknown): string[] | undefined {
+  if (raw == null) return undefined;
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === "all") return undefined;
+  const allowed = new Set(["low", "urgent", "high"]);
+  const parts = s
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+  const v = [...new Set(parts.filter((p) => allowed.has(p)))];
+  return v.length > 0 ? v : undefined;
+}
+
+async function collectHighUrgencyStakeholderProfileIds(
+  orgId: string,
+  kind: "member_task" | "group_task",
+  memberId: string | null,
+  groupIdsForLeaders: string[],
+): Promise<string[]> {
+  const recipients = new Set<string>();
+  const { data: owners } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("is_org_owner", true);
+  for (const o of owners || []) {
+    const id = (o as { id: string }).id;
+    if (isUuidString(id)) recipients.add(id);
+  }
+  const gids = [...new Set(groupIdsForLeaders.filter((x) => isUuidString(x)))];
+  if (gids.length > 0) {
+    const { data: grps } = await supabaseAdmin
+      .from("groups")
+      .select("leader_id")
+      .eq("organization_id", orgId)
+      .in("id", gids);
+    for (const g of grps || []) {
+      const lid = (g as { leader_id?: string | null }).leader_id;
+      if (typeof lid === "string" && isUuidString(lid)) recipients.add(lid);
+    }
+  }
+  if (kind === "member_task" && memberId && isUuidString(memberId)) {
+    const { data: gms } = await supabaseAdmin
+      .from("group_members")
+      .select("group_id")
+      .eq("organization_id", orgId)
+      .eq("member_id", memberId);
+    const gmGids = [
+      ...new Set(
+        (gms || [])
+          .map((r) => (r as { group_id?: string }).group_id)
+          .filter((x): x is string => typeof x === "string" && isUuidString(x)),
+      ),
+    ];
+    if (gmGids.length > 0) {
+      const { data: grps2 } = await supabaseAdmin
+        .from("groups")
+        .select("leader_id")
+        .eq("organization_id", orgId)
+        .in("id", gmGids);
+      for (const g of grps2 || []) {
+        const lid = (g as { leader_id?: string | null }).leader_id;
+        if (typeof lid === "string" && isUuidString(lid)) recipients.add(lid);
+      }
+    }
+  }
+  return [...recipients];
+}
+
+async function notifyHighUrgencyTaskStakeholders(input: {
+  organizationId: string;
+  branchId: string | null;
+  actorProfileId: string;
+  kind: "member_task" | "group_task";
+  taskId: string;
+  title: string;
+  memberId: string | null;
+  groupIdsForLeaders: string[];
+  actionPath: string;
+  payloadExtra?: Record<string, unknown>;
+}): Promise<void> {
+  const ids = await collectHighUrgencyStakeholderProfileIds(
+    input.organizationId,
+    input.kind,
+    input.memberId,
+    input.groupIdsForLeaders,
+  );
+  const recipients = recipientIdsExcludingActor(ids, input.actorProfileId);
+  if (recipients.length === 0) return;
+  const basePayload: Record<string, unknown> = {
+    task_id: input.taskId,
+    task_title: String(input.title || "Task").trim() || "Task",
+    urgency: "high",
+    ...(input.payloadExtra || {}),
+  };
+  await createNotificationsForRecipients(recipients, {
+    organization_id: input.organizationId,
+    branch_id: input.branchId,
+    type: "task_high_urgency",
+    category: "tasks",
+    title: "High-urgency task",
+    message: `A task was marked high urgency: ${String(input.title || "Task").trim() || "Task"}`,
+    severity: "high",
+    entity_type: input.kind,
+    entity_id: input.taskId,
+    action_path: input.actionPath,
+    payload: basePayload,
+    dedupe_key: `high_urgency:${input.taskId}`,
+    dedupe_window_minutes: 120,
+  });
 }
 
 /**
@@ -7399,7 +8728,7 @@ async function listMemberTasksForAssigneeInBranch(
   openOnly: boolean,
 ): Promise<Awaited<ReturnType<typeof attachMemberNamesToTasks>>> {
   const selFull =
-    "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
+    "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
   const selFb =
     "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, created_by_profile_id, branch_id";
 
@@ -7431,7 +8760,10 @@ async function listMemberTasksForAssigneeInBranch(
   let usedFallbackSelect = false;
   let [rPrimary, rCo] = await fetchPair(selFull);
   const errMsg = String(rPrimary.error?.message || "").toLowerCase();
-  if (rPrimary.error && (errMsg.includes("checklist") || errMsg.includes("assignee_profile_ids"))) {
+  if (
+    rPrimary.error &&
+    (errMsg.includes("checklist") || errMsg.includes("assignee_profile_ids") || errMsg.includes("urgency"))
+  ) {
     usedFallbackSelect = true;
     [rPrimary, rCo] = await fetchPair(selFb);
   }
@@ -7442,7 +8774,7 @@ async function listMemberTasksForAssigneeInBranch(
   let coRows: MemberTaskRow[] = [];
   if (rCo.error) {
     if (taskAssigneeFilterColumnMissing(rCo.error)) coRows = [];
-    else if (String(rCo.error.message || "").toLowerCase().includes("checklist")) {
+    else if (String(rCo.error.message || "").toLowerCase().match(/checklist|urgency/)) {
       usedFallbackSelect = true;
       const [rPb, rCb] = await fetchPair(selFb);
       if (rPb.error) {
@@ -7509,7 +8841,7 @@ async function listGroupTasksForAssigneeInBranch(
   openOnly: boolean,
 ): Promise<Awaited<ReturnType<typeof attachGroupNamesToTasks>>> {
   const selFull =
-    "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
+    "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
   const selFb =
     "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, created_by_profile_id, branch_id, related_group_ids";
 
@@ -7613,7 +8945,7 @@ async function listGroupTasksForAssigneeInBranch(
 }
 
 const BRANCH_TASKS_SELECT_FULL =
-  "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
+  "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
 const BRANCH_TASKS_SELECT_FALLBACK =
   "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, created_by_profile_id, branch_id";
 
@@ -7624,6 +8956,7 @@ function applyBranchTaskFiltersWithoutAssignee(q: any, filters: {
   dueToIso?: string;
   createdFromIso?: string;
   createdToIso?: string;
+  urgencyLevels?: string[];
 }): any {
   let x = q;
   if (filters.createdByProfileId && isUuidString(filters.createdByProfileId)) {
@@ -7645,6 +8978,9 @@ function applyBranchTaskFiltersWithoutAssignee(q: any, filters: {
   if (filters.dueToIso) x = x.lte("due_at", filters.dueToIso);
   if (filters.createdFromIso) x = x.gte("created_at", filters.createdFromIso);
   if (filters.createdToIso) x = x.lte("created_at", filters.createdToIso);
+  if (filters.urgencyLevels && filters.urgencyLevels.length > 0) {
+    x = x.in("urgency", filters.urgencyLevels);
+  }
   return x;
 }
 
@@ -7656,6 +8992,7 @@ function applyBranchTaskFilters(q: any, filters: {
   dueToIso?: string;
   createdFromIso?: string;
   createdToIso?: string;
+  urgencyLevels?: string[];
 }): any {
   let x = applyBranchTaskFiltersWithoutAssignee(q, filters);
   if (filters.assigneeProfileId && isUuidString(filters.assigneeProfileId)) {
@@ -7676,6 +9013,7 @@ async function fetchMemberTasksChunk(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
   useFullSelect: boolean,
 ): Promise<{ rows: MemberTaskRow[]; fullSelectOk: boolean }> {
@@ -7710,7 +9048,7 @@ async function fetchMemberTasksChunk(
         useFullSelect &&
         String(r1.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_member|assignee_profile_ids/)
+          .match(/checklist|related_member|assignee_profile_ids|urgency/)
       ) {
         return fetchMemberTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
       }
@@ -7725,7 +9063,7 @@ async function fetchMemberTasksChunk(
         useFullSelect &&
         String(r2.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_member|assignee_profile_ids/)
+          .match(/checklist|related_member|assignee_profile_ids|urgency/)
       ) {
         return fetchMemberTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
       } else {
@@ -7750,7 +9088,7 @@ async function fetchMemberTasksChunk(
       useFullSelect &&
       String(error.message || "")
         .toLowerCase()
-        .match(/checklist|related_member|assignee_profile_ids/)
+        .match(/checklist|related_member|assignee_profile_ids|urgency/)
     ) {
       return fetchMemberTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
     }
@@ -7770,6 +9108,7 @@ async function listMemberTasksForBranchMonitoring(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
 ): Promise<Awaited<ReturnType<typeof attachMemberNamesToTasks>>> {
   const [{ rows: withBranch }, { rows: nullBranchRaw }] = await Promise.all([
@@ -7804,7 +9143,7 @@ async function listMemberTasksForBranchMonitoring(
 }
 
 const BRANCH_GROUP_TASKS_SELECT_FULL =
-  "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
+  "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
 const BRANCH_GROUP_TASKS_SELECT_FALLBACK =
   "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, created_by_profile_id, branch_id, related_group_ids";
 
@@ -7820,6 +9159,7 @@ async function fetchGroupTasksChunk(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
   useFullSelect: boolean,
 ): Promise<{ rows: GroupTaskRow[]; fullSelectOk: boolean }> {
@@ -7854,7 +9194,7 @@ async function fetchGroupTasksChunk(
         useFullSelect &&
         String(r1.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_group|assignee_profile_ids/)
+          .match(/checklist|related_group|assignee_profile_ids|urgency/)
       ) {
         return fetchGroupTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
       }
@@ -7869,7 +9209,7 @@ async function fetchGroupTasksChunk(
         useFullSelect &&
         String(r2.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_group|assignee_profile_ids/)
+          .match(/checklist|related_group|assignee_profile_ids|urgency/)
       ) {
         return fetchGroupTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
       } else {
@@ -7894,7 +9234,7 @@ async function fetchGroupTasksChunk(
       useFullSelect &&
       String(error.message || "")
         .toLowerCase()
-        .match(/checklist|related_group|assignee_profile_ids/)
+        .match(/checklist|related_group|assignee_profile_ids|urgency/)
     ) {
       return fetchGroupTasksChunk(orgId, viewerBranch, branchColumn, filters, false);
     }
@@ -7914,6 +9254,7 @@ async function listGroupTasksForBranchMonitoring(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
 ): Promise<Awaited<ReturnType<typeof attachGroupNamesToTasks>>> {
   const [{ rows: withBranch }, { rows: nullBranchRaw }] = await Promise.all([
@@ -7958,6 +9299,7 @@ async function fetchMemberTasksOrgWideChunk(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
   useFullSelect: boolean,
 ): Promise<{ rows: MemberTaskRow[]; fullSelectOk: boolean }> {
@@ -7983,7 +9325,7 @@ async function fetchMemberTasksOrgWideChunk(
         useFullSelect &&
         String(r1.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_member|assignee_profile_ids/)
+          .match(/checklist|related_member|assignee_profile_ids|urgency/)
       ) {
         return fetchMemberTasksOrgWideChunk(orgId, filters, false);
       }
@@ -8005,7 +9347,7 @@ async function fetchMemberTasksOrgWideChunk(
         useFullSelect &&
         String(r2.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_member|assignee_profile_ids/)
+          .match(/checklist|related_member|assignee_profile_ids|urgency/)
       ) {
         return fetchMemberTasksOrgWideChunk(orgId, filters, false);
       } else {
@@ -8029,7 +9371,7 @@ async function fetchMemberTasksOrgWideChunk(
       useFullSelect &&
       String(error.message || "")
         .toLowerCase()
-        .match(/checklist|related_member|assignee_profile_ids/)
+        .match(/checklist|related_member|assignee_profile_ids|urgency/)
     ) {
       return fetchMemberTasksOrgWideChunk(orgId, filters, false);
     }
@@ -8048,6 +9390,7 @@ async function listMemberTasksForOrgWideMonitoring(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
 ): Promise<Awaited<ReturnType<typeof attachMemberNamesToTasks>>> {
   const { rows } = await fetchMemberTasksOrgWideChunk(orgId, filters, true);
@@ -8066,6 +9409,7 @@ async function fetchGroupTasksOrgWideChunk(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
   useFullSelect: boolean,
 ): Promise<{ rows: GroupTaskRow[]; fullSelectOk: boolean }> {
@@ -8091,7 +9435,7 @@ async function fetchGroupTasksOrgWideChunk(
         useFullSelect &&
         String(r1.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_group|assignee_profile_ids/)
+          .match(/checklist|related_group|assignee_profile_ids|urgency/)
       ) {
         return fetchGroupTasksOrgWideChunk(orgId, filters, false);
       }
@@ -8113,7 +9457,7 @@ async function fetchGroupTasksOrgWideChunk(
         useFullSelect &&
         String(r2.error.message || "")
           .toLowerCase()
-          .match(/checklist|related_group|assignee_profile_ids/)
+          .match(/checklist|related_group|assignee_profile_ids|urgency/)
       ) {
         return fetchGroupTasksOrgWideChunk(orgId, filters, false);
       } else {
@@ -8137,7 +9481,7 @@ async function fetchGroupTasksOrgWideChunk(
       useFullSelect &&
       String(error.message || "")
         .toLowerCase()
-        .match(/checklist|related_group|assignee_profile_ids/)
+        .match(/checklist|related_group|assignee_profile_ids|urgency/)
     ) {
       return fetchGroupTasksOrgWideChunk(orgId, filters, false);
     }
@@ -8156,6 +9500,7 @@ async function listGroupTasksForOrgWideMonitoring(
     dueToIso?: string;
     createdFromIso?: string;
     createdToIso?: string;
+    urgencyLevels?: string[];
   },
 ): Promise<Awaited<ReturnType<typeof attachGroupNamesToTasks>>> {
   const { rows } = await fetchGroupTasksOrgWideChunk(orgId, filters, true);
@@ -8662,8 +10007,8 @@ app.get("/api/members/:memberId/notes", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -8769,8 +10114,8 @@ app.post("/api/members/:memberId/notes", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -8876,8 +10221,8 @@ app.put("/api/members/:memberId/notes/:noteId", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -8973,8 +10318,8 @@ app.delete("/api/members/:memberId/notes/:noteId", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -9040,8 +10385,8 @@ app.get("/api/members/:memberId/important-dates", async (req, res) => {
       .single();
 
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -9100,8 +10445,8 @@ app.post("/api/members/:memberId/important-dates", async (req, res) => {
       .single();
 
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -9201,8 +10546,8 @@ app.patch("/api/members/:memberId/important-dates/:dateId", async (req, res) => 
       .single();
 
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -9306,8 +10651,8 @@ app.delete("/api/members/:memberId/important-dates/:dateId", async (req, res) =>
       .single();
 
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -9533,8 +10878,8 @@ app.post("/api/members/import/precheck", async (req, res) => {
       .single();
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const body = req.body || {};
     const rows = Array.isArray(body.rows) ? body.rows : [];
@@ -9652,8 +10997,8 @@ app.post("/api/members/import/commit", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const previewToken = typeof req.body?.preview_token === "string" ? req.body.preview_token.trim() : "";
     if (!previewToken) return res.status(400).json({ error: "preview_token is required" });
@@ -9827,8 +11172,8 @@ app.get("/api/members/import/status/:jobId", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const jobId = String(req.params.jobId || "").trim();
     const job = MEMBER_IMPORT_JOBS.get(jobId);
@@ -9892,8 +11237,8 @@ app.get("/api/tasks/my-open-count", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const countMemberTasks = async (): Promise<number> => {
       if (!actorCanViewMemberTasksMine(permCtx)) return 0;
@@ -9975,17 +11320,18 @@ app.get("/api/tasks/mine", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const qStatus = typeof req.query.status === "string" ? req.query.status : "open";
     const openOnly = qStatus !== "all";
+    const urgencyFilter = parseUrgencyFilterFromQuery(req.query.urgency);
     const memberTaskSel =
-      "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
+      "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_member_ids";
     const memberTaskSelFb =
       "id, title, description, status, due_at, completed_at, created_at, updated_at, member_id, assignee_profile_id, created_by_profile_id, branch_id";
     const groupTaskSel =
-      "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
+      "id, title, description, status, urgency, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, assignee_profile_ids, created_by_profile_id, branch_id, checklist, related_group_ids";
     const groupTaskSelFb =
       "id, title, description, status, due_at, completed_at, created_at, updated_at, group_id, assignee_profile_id, created_by_profile_id, branch_id";
 
@@ -9999,7 +11345,7 @@ app.get("/api/tasks/mine", async (req, res) => {
         .order("created_at", { ascending: false });
       if (openOnly) q = q.in("status", ["pending", "in_progress"]);
       let { data, error } = await q;
-      if (error && /checklist|assignee_profile_ids/.test(String(error.message || "").toLowerCase())) {
+      if (error && /checklist|assignee_profile_ids|urgency/.test(String(error.message || "").toLowerCase())) {
         let q2 = supabaseAdmin.from("member_tasks").select(memberTaskSelFb)
           .eq("organization_id", orgId).eq("created_by_profile_id", user.id)
           .order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
@@ -10021,7 +11367,7 @@ app.get("/api/tasks/mine", async (req, res) => {
         .order("created_at", { ascending: false });
       if (openOnly) q = q.in("status", ["pending", "in_progress"]);
       let { data, error } = await q;
-      if (error && /checklist|assignee_profile_ids/.test(String(error.message || "").toLowerCase())) {
+      if (error && /checklist|assignee_profile_ids|urgency/.test(String(error.message || "").toLowerCase())) {
         let q2 = supabaseAdmin.from("group_tasks").select(groupTaskSelFb)
           .eq("organization_id", orgId).eq("created_by_profile_id", user.id)
           .order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
@@ -10092,6 +11438,12 @@ app.get("/api/tasks/mine", async (req, res) => {
         created_by_name: nameById.get(tt.created_by_profile_id) || "Staff",
       };
     });
+    if (urgencyFilter && urgencyFilter.length > 0) {
+      tasks = tasks.filter((t) => {
+        const u = normalizeTaskUrgency((t as { urgency?: unknown }).urgency);
+        return urgencyFilter.includes(u);
+      });
+    }
     const mScopeMine = await ministryScopeForActor(user.id, orgId, viewerBranch, permCtx.isOrgOwner);
     const allowedMemberIdsMine = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, mScopeMine);
     if (allowedMemberIdsMine !== null) {
@@ -10210,8 +11562,8 @@ app.get("/api/tasks/branch", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const orgWideRaw =
       typeof req.query.org_wide === "string" ? req.query.org_wide.trim().toLowerCase() : "";
@@ -10233,6 +11585,7 @@ app.get("/api/tasks/branch", async (req, res) => {
       typeof req.query.created_by_profile_id === "string" ? req.query.created_by_profile_id.trim() : "";
     const createdByProfileId = isUuidString(createdByRaw) ? createdByRaw : undefined;
     const range = parseBranchTasksRangeFromQuery(req.query as Record<string, unknown | undefined>);
+    const urgencyLevels = parseUrgencyFilterFromQuery(req.query.urgency);
 
     const branchFilters = {
       statusParam,
@@ -10242,6 +11595,7 @@ app.get("/api/tasks/branch", async (req, res) => {
       dueToIso: range.dueToIso,
       createdFromIso: range.createdFromIso,
       createdToIso: range.createdToIso,
+      urgencyLevels,
     };
 
     const [memberList, groupList] = await Promise.all([
@@ -10373,8 +11727,8 @@ app.get("/api/members/:memberId/tasks", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -10582,11 +11936,26 @@ app.get("/api/reports/summary", async (req, res) => {
 
     let eventsInRange = 0;
     try {
-      const { data: eventRows } = await supabaseAdmin
+      let eventRows: unknown[] | null = null;
+      const q1 = await supabaseAdmin
         .from("events")
         .select("id, start_time, start_date, linked_group_ids, group_ids")
         .eq("organization_id", orgId)
         .eq("branch_id", viewerBranch);
+      if (q1.error) {
+        const msg = String(q1.error.message || "").toLowerCase();
+        const code = (q1.error as { code?: string }).code;
+        if (code === "42703" || msg.includes("start_date")) {
+          const q2 = await supabaseAdmin
+            .from("events")
+            .select("id, start_time, linked_group_ids, group_ids")
+            .eq("organization_id", orgId)
+            .eq("branch_id", viewerBranch);
+          eventRows = (q2.data || []) as unknown[];
+        }
+      } else {
+        eventRows = (q1.data || []) as unknown[];
+      }
       const rows = (eventRows || []) as Array<{
         id: string;
         start_time?: string | null;
@@ -10641,7 +12010,6 @@ app.get("/api/reports/summary", async (req, res) => {
       .sort((a, b) => Number(b.member_count || 0) - Number(a.member_count || 0))
       .slice(0, 8)
       .map((g) => ({
-        group_id: g.id,
         group_name: String(g.name || "Group"),
         member_count: Number(g.member_count || 0),
       }));
@@ -10662,7 +12030,6 @@ app.get("/api/reports/summary", async (req, res) => {
       })
       .slice(0, 40)
       .map((m) => ({
-        member_id: m.id,
         member_name:
           `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Unnamed member",
         status: String(m.status || "unknown")
@@ -10983,6 +12350,7 @@ async function buildReportPayload(
   const requestedMemberId = typeof filters.member_id === "string" && isUuidString(filters.member_id) ? filters.member_id : null;
   const requestedLeaderId = typeof filters.leader_id === "string" && isUuidString(filters.leader_id) ? filters.leader_id : null;
   const requestedGroupIds = normalizeUniqueUuidArray(filters.group_ids);
+  const selectAllGroupsFlag = Boolean((filters as { select_all_groups?: unknown }).select_all_groups);
   const requestedEventIds = normalizeUniqueUuidArray(filters.event_ids);
   const eventSearchInput = typeof filters.event_search === "string" ? String(filters.event_search) : "";
   const eventSearchDisplay = eventSearchInput.trim();
@@ -10997,6 +12365,33 @@ async function buildReportPayload(
       .map((x) => String(x || "").trim().toLowerCase())
       .filter((s) => s.length > 0);
   })();
+
+  if (reportType === "group") {
+    if (!selectAllGroupsFlag && requestedGroupIds.length === 0) {
+      const err: any = new Error("Select at least one group, or choose all groups in scope.");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (reportType === "membership") {
+    const hasGroups = selectAllGroupsFlag || requestedGroupIds.length > 0;
+    const hasStatuses = memberStatusesIn.length > 0;
+    const hasMembers = memberSelectAll || requestedMemberIds.length > 0;
+    if (!hasGroups && !hasStatuses && !hasMembers) {
+      const err: any = new Error(
+        "Choose at least one filter: groups (or all groups), member status, or specific members / all members.",
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (reportType === "leader") {
+    if (!requestedLeaderId) {
+      const err: any = new Error("Select a leader.");
+      err.statusCode = 400;
+      throw err;
+    }
+  }
 
   const { data: viewerProfile } = await supabaseAdmin
     .from("profiles")
@@ -11027,7 +12422,7 @@ async function buildReportPayload(
   if (scope.kind === "groups") groups = groups.filter((g) => scope.allowedGroupIds.has(g.id));
 
   if (reportType === "leader") {
-    const leaderId = requestedLeaderId || permCtx.userId;
+    const leaderId = requestedLeaderId as string;
     let leaderIsOrgOwner = false;
     try {
       const { data: leaderProfile } = await supabaseAdmin
@@ -11081,6 +12476,7 @@ async function buildReportPayload(
     }
   }
   const selectedGroupSet = new Set(groups.map((g) => g.id));
+  const membersByGroupId = new Map<string, Set<string>>();
   if (groups.length > 0) {
     const { data: gmCountRows } = await supabaseAdmin
       .from("group_members")
@@ -11088,10 +12484,15 @@ async function buildReportPayload(
       .eq("organization_id", orgId)
       .in("group_id", groups.map((g) => g.id));
     const memberCountMap = new Map<string, number>();
-    for (const row of (gmCountRows || []) as Array<{ group_id?: string | null }>) {
+    for (const row of (gmCountRows || []) as Array<{ group_id?: string | null; member_id?: string | null }>) {
       const gid = String(row.group_id || "");
+      const mid = String(row.member_id || "");
       if (!gid) continue;
       memberCountMap.set(gid, (memberCountMap.get(gid) || 0) + 1);
+      if (mid) {
+        if (!membersByGroupId.has(gid)) membersByGroupId.set(gid, new Set());
+        membersByGroupId.get(gid)!.add(mid);
+      }
     }
     groups = groups.map((g) => ({ ...g, member_count: memberCountMap.get(g.id) || 0 }));
   }
@@ -11141,9 +12542,10 @@ async function buildReportPayload(
     }
   }
   if (reportType === "membership") {
+    const membershipGroupIds = selectAllGroupsFlag ? groups.map((g) => g.id) : requestedGroupIds;
     const expandedForMembership =
-      requestedGroupIds.length > 0
-        ? new Set(expandGroupIdsWithDescendants(groups, requestedGroupIds))
+      membershipGroupIds.length > 0
+        ? new Set(expandGroupIdsWithDescendants(groups, membershipGroupIds))
         : new Set<string>();
     let groupMemberIdSet = new Set<string>();
     if (expandedForMembership.size > 0) {
@@ -11162,18 +12564,20 @@ async function buildReportPayload(
     if (requestedMemberId) explicitSet.add(requestedMemberId);
     let candidateIds: Set<string>;
     if (memberSelectAll) {
-      if (requestedGroupIds.length > 0) {
+      if (membershipGroupIds.length > 0) {
         candidateIds = new Set(groupMemberIdSet);
       } else {
         candidateIds = new Set(members.map((m) => m.id));
       }
     } else {
-      if (requestedGroupIds.length > 0 && explicitSet.size > 0) {
+      if (membershipGroupIds.length > 0 && explicitSet.size > 0) {
         candidateIds = new Set([...groupMemberIdSet, ...explicitSet]);
-      } else if (requestedGroupIds.length > 0) {
+      } else if (membershipGroupIds.length > 0) {
         candidateIds = new Set(groupMemberIdSet);
       } else if (explicitSet.size > 0) {
         candidateIds = explicitSet;
+      } else if (memberStatusesIn.length > 0) {
+        candidateIds = new Set(members.map((m) => m.id));
       } else {
         candidateIds = new Set();
       }
@@ -11222,6 +12626,8 @@ async function buildReportPayload(
 
   let eventsInRange = 0;
   const eventIdsInRange = new Set<string>();
+  /** For leader/group reports: events in range linked to each group (event may count toward multiple groups). */
+  const eventCountByGroupId = new Map<string, number>();
   const eventMetaById = new Map<string, { title: string; event_type: string }>();
   const memberTaskStats = new Map<string, { pending: number; completed: number; all: number }>();
   const attendanceByMember = new Map<string, { present: number; absent: number; unsure: number; not_marked: number; total: number }>();
@@ -11274,13 +12680,22 @@ async function buildReportPayload(
       if (eventTypeFilter.length > 0 && !eventTypeFilter.includes(String(e.event_type || "").trim())) continue;
       if (!isMembership && requestedEventIds.length > 0 && !requestedEventIds.includes(e.id)) continue;
       if (!isMembership && eventSearch && !String(e.title || "").toLowerCase().includes(eventSearch)) continue;
+      let linkedForGroupCount: string[] = [];
       if (!isMembership && selectedGroupSet.size > 0) {
-        const linked = Array.isArray(e.linked_group_ids)
-          ? e.linked_group_ids
+        linkedForGroupCount = Array.isArray(e.linked_group_ids)
+          ? (e.linked_group_ids as string[])
           : Array.isArray(e.group_ids)
-            ? e.group_ids
+            ? (e.group_ids as string[])
             : [];
-        if (linked.length > 0 && !linked.some((id) => selectedGroupSet.has(id))) continue;
+        if (linkedForGroupCount.length > 0 && !linkedForGroupCount.some((id) => selectedGroupSet.has(id))) continue;
+      }
+      if (!isMembership && selectedGroupSet.size > 0) {
+        for (const lg of linkedForGroupCount) {
+          const gid = String(lg || "");
+          if (gid && selectedGroupSet.has(gid)) {
+            eventCountByGroupId.set(gid, (eventCountByGroupId.get(gid) || 0) + 1);
+          }
+        }
       }
       eventsInRange += 1;
       eventIdsInRange.add(e.id);
@@ -11646,7 +13061,6 @@ async function buildReportPayload(
     .sort((a, b) => Number(b.member_count || 0) - Number(a.member_count || 0))
     .slice(0, 8)
     .map((g) => ({
-      group_id: g.id,
       group_name: String(g.name || "Group"),
       member_count: Number(g.member_count || 0),
     }));
@@ -11667,7 +13081,6 @@ async function buildReportPayload(
     })
     .slice(0, 60)
     .map((m) => ({
-      member_id: m.id,
       member_name: `${String(m.first_name || "").trim()} ${String(m.last_name || "").trim()}`.trim() || "Unnamed member",
       status: String(m.status || "unknown")
         .replace(/_/g, " ")
@@ -11727,7 +13140,6 @@ async function buildReportPayload(
         const stats = attendanceByEvent.get(event_id) || zeroStats;
         const pct = (n: number) => (stats.total > 0 ? Math.round((n / stats.total) * 1000) / 10 : 0);
         return {
-          event_id,
           event_name: meta.title,
           event_type: meta.event_type,
           total_attendance: stats.total,
@@ -11743,7 +13155,6 @@ async function buildReportPayload(
       });
     } else {
       rawPreviewRows = groups.map((g) => ({
-        group_id: g.id,
         group_name: String(g.name || "Group"),
         member_count: Number((g as { member_count?: number }).member_count || 0),
         events_in_range: 0,
@@ -11775,7 +13186,6 @@ async function buildReportPayload(
       const t = att.total;
       const p12 = profilePast12mByMember.get(m.id) ?? { present: 0, total: 0, ratePct: null };
       return {
-        member_id: m.id,
         member_name: memberNameById.get(m.id) || "Member",
         status: String(m.status || "unknown"),
         tasks_pending: task.pending,
@@ -11798,16 +13208,42 @@ async function buildReportPayload(
       };
     });
   } else if (reportType === "leader") {
+    const pctOfTotal = (n: number, total: number) =>
+      total > 0 ? Math.round((n / total) * 1000) / 10 : 0;
     rawPreviewRows = groups.map((g) => {
       const gStats = groupTaskStats.get(g.id) || { pending: 0, completed: 0, all: 0 };
+      const agg = { present: 0, absent: 0, unsure: 0, not_marked: 0, total: 0 };
+      const roster = membersByGroupId.get(g.id);
+      if (roster) {
+        for (const mid of roster) {
+          const a = attendanceByMember.get(mid);
+          if (!a) continue;
+          agg.present += a.present;
+          agg.absent += a.absent;
+          agg.unsure += a.unsure;
+          agg.not_marked += a.not_marked;
+          agg.total += a.total;
+        }
+      }
+      const t = agg.total;
+      const eventsInRangeForGroup = eventCountByGroupId.get(g.id) ?? 0;
       return {
-        leader_id: requestedLeaderId || permCtx.userId,
-        group_id: g.id,
         group_name: String(g.name || "Group"),
         member_count: Number(g.member_count || 0),
+        events_in_range: eventsInRangeForGroup,
         group_tasks_pending: gStats.pending,
         group_tasks_completed: gStats.completed,
         group_tasks_all: gStats.all,
+        attendance_present: agg.present,
+        attendance_absent: agg.absent,
+        attendance_unsure: agg.unsure,
+        attendance_not_marked: agg.not_marked,
+        attendance_total: t,
+        attendance_present_pct: pctOfTotal(agg.present, t),
+        attendance_absent_pct: pctOfTotal(agg.absent, t),
+        attendance_unsure_pct: pctOfTotal(agg.unsure, t),
+        attendance_not_marked_pct: pctOfTotal(agg.not_marked, t),
+        attendance_rate_pct: pctOfTotal(agg.present, t),
       };
     });
   }
@@ -11982,7 +13418,13 @@ app.post("/api/reports/preview", async (req, res) => {
 });
 
 app.get("/api/reports/leaders", async (req, res) => {
-  const permCtx = await requireAnyPermission(req, res, ["report_view", "report_leaders", "view_analytics"]);
+  const permCtx = await requireAnyPermission(req, res, [
+    "leaders_profile_page",
+    "report_view",
+    "report_leaders",
+    "view_analytics",
+    "view_groups",
+  ]);
   if (!permCtx) return;
   try {
     const { data: viewerProfile } = await supabaseAdmin
@@ -12043,12 +13485,54 @@ app.get("/api/reports/leaders", async (req, res) => {
       return filterRowsByBranchScope([{ branch_id: p.branch_id }], viewerBranch, mainBranchId).length > 0;
     });
 
+    const scope = await resolveMinistryScope(supabaseAdmin, permCtx.userId, orgId, viewerBranch, permCtx.isOrgOwner);
+    let { data: groupRowsForCount, error: gCountErr } = await supabaseAdmin
+      .from("groups")
+      .select("id, leader_id")
+      .eq("organization_id", orgId)
+      .eq("branch_id", viewerBranch)
+      .or("is_deleted.eq.false,is_deleted.is.null");
+    if (gCountErr) throw gCountErr;
+    let groupsForCount = (groupRowsForCount || []) as Array<{ id: string; leader_id?: string | null }>;
+    if (scope.kind === "groups") groupsForCount = groupsForCount.filter((g) => scope.allowedGroupIds.has(g.id));
+
+    const scopeProfileIds = scoped.map((p) => p.id);
+    const ministryByProfile = new Map<string, Set<string>>();
+    if (scopeProfileIds.length > 0) {
+      const { data: pmsRows } = await supabaseAdmin
+        .from("profile_ministry_scope")
+        .select("profile_id, group_id")
+        .in("profile_id", scopeProfileIds);
+      for (const row of (pmsRows || []) as Array<{ profile_id?: string; group_id?: string | null }>) {
+        const pid = String(row.profile_id || "");
+        const gid = String(row.group_id || "");
+        if (!pid || !gid) continue;
+        if (!ministryByProfile.has(pid)) ministryByProfile.set(pid, new Set());
+        ministryByProfile.get(pid)!.add(gid);
+      }
+    }
+
+    const groupCountByLeaderId = new Map<string, number>();
+    for (const p of scoped) {
+      if (p.is_org_owner === true) {
+        groupCountByLeaderId.set(p.id, groupsForCount.length);
+        continue;
+      }
+      const mini = ministryByProfile.get(p.id) || new Set<string>();
+      let n = 0;
+      for (const g of groupsForCount) {
+        if (String(g.leader_id || "") === p.id || mini.has(g.id)) n++;
+      }
+      groupCountByLeaderId.set(p.id, n);
+    }
+
     const leaders = scoped.map((p) => ({
       id: p.id,
       first_name: p.first_name ?? null,
       last_name: p.last_name ?? null,
       email: p.email ?? null,
       avatar_url: p.avatar_url ?? null,
+      group_count: groupCountByLeaderId.get(p.id) ?? 0,
     }));
 
     res.json({ leaders });
@@ -12056,6 +13540,388 @@ app.get("/api/reports/leaders", async (req, res) => {
     const code = Number((error as { statusCode?: number }).statusCode || 0);
     if (code >= 400 && code < 500) return res.status(code).json({ error: error?.message || "Request failed" });
     res.status(500).json({ error: error?.message || "Failed to load leaders." });
+  }
+});
+
+/** Groups + members tied to a leader profile (same scope rules as leader-focused reports). */
+app.get("/api/reports/leaders/:profileId", async (req, res) => {
+  const permCtx = await requireAnyPermission(req, res, [
+    "leaders_profile_page",
+    "report_view",
+    "report_leaders",
+    "view_analytics",
+    "view_groups",
+  ]);
+  if (!permCtx) return;
+  try {
+    const profileId = String(req.params.profileId || "").trim();
+    if (!isUuidString(profileId)) return res.status(400).json({ error: "Invalid profile id" });
+
+    const { data: viewerProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", permCtx.userId)
+      .single();
+    if (!viewerProfile) return res.status(404).json({ error: "User profile not found" });
+    const orgId = String(viewerProfile.organization_id || "");
+    const viewerBranch = await assertViewerBranchScope(req, viewerProfile as OrgProfile, permCtx.userId);
+    const mainBranchId = await getMainBranchIdForOrg(orgId);
+
+    let { data: leaderRow, error: leaderErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, first_name, last_name, email, avatar_url, branch_id, is_org_owner, is_active")
+      .eq("organization_id", orgId)
+      .eq("id", profileId)
+      .maybeSingle();
+
+    if (leaderErr && String(leaderErr.message || "").toLowerCase().includes("avatar_url")) {
+      const r = await supabaseAdmin
+        .from("profiles")
+        .select("id, first_name, last_name, email, branch_id, is_org_owner, is_active")
+        .eq("organization_id", orgId)
+        .eq("id", profileId)
+        .maybeSingle();
+      leaderRow = r.data ? ({ ...r.data, avatar_url: null as string | null } as typeof leaderRow) : null;
+      leaderErr = r.error;
+    }
+    if (leaderErr) throw leaderErr;
+    const lr = leaderRow as {
+      id: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      email?: string | null;
+      avatar_url?: string | null;
+      branch_id?: string | null;
+      is_org_owner?: boolean | null;
+      is_active?: boolean | null;
+    } | null;
+    if (!lr) return res.status(404).json({ error: "Leader not found" });
+    if (lr.is_active === false) return res.status(404).json({ error: "Leader not found" });
+
+    const inBranchScope =
+      lr.is_org_owner === true ||
+      filterRowsByBranchScope([{ branch_id: lr.branch_id }], viewerBranch, mainBranchId).length > 0;
+    if (!inBranchScope) return res.status(404).json({ error: "Leader not found" });
+
+    const scope = await resolveMinistryScope(supabaseAdmin, permCtx.userId, orgId, viewerBranch, permCtx.isOrgOwner);
+    let { data: groupRows, error: groupErr } = await supabaseAdmin
+      .from("groups")
+      .select("id, name, leader_id, parent_group_id")
+      .eq("organization_id", orgId)
+      .eq("branch_id", viewerBranch)
+      .or("is_deleted.eq.false,is_deleted.is.null");
+    if (groupErr) throw groupErr;
+    let groups = (groupRows || []) as Array<{
+      id: string;
+      name?: string | null;
+      leader_id?: string | null;
+      parent_group_id?: string | null;
+    }>;
+    if (scope.kind === "groups") groups = groups.filter((g) => scope.allowedGroupIds.has(g.id));
+
+    const leaderIsOrgOwner = lr.is_org_owner === true;
+    const scopeGroupIds = new Set<string>();
+    if (!leaderIsOrgOwner) {
+      const { data: scRows } = await supabaseAdmin
+        .from("profile_ministry_scope")
+        .select("group_id")
+        .eq("profile_id", profileId);
+      for (const row of (scRows || []) as Array<{ group_id?: string | null }>) {
+        const gid = String(row.group_id || "");
+        if (gid) scopeGroupIds.add(gid);
+      }
+      groups = groups.filter(
+        (g) => String(g.leader_id || "") === profileId || scopeGroupIds.has(g.id),
+      );
+    }
+
+    const visibleMemberIds = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, scope);
+    const groupIds = groups.map((g) => g.id);
+    const memberCountMap = new Map<string, number>();
+    if (groupIds.length > 0) {
+      const { data: gmCountRows } = await supabaseAdmin
+        .from("group_members")
+        .select("group_id, member_id")
+        .eq("organization_id", orgId)
+        .in("group_id", groupIds);
+      for (const row of (gmCountRows || []) as Array<{ group_id?: string | null }>) {
+        const gid = String(row.group_id || "");
+        if (!gid) continue;
+        memberCountMap.set(gid, (memberCountMap.get(gid) || 0) + 1);
+      }
+    }
+
+    const memberIdSet = new Set<string>();
+    if (groupIds.length > 0) {
+      const { data: gmRows } = await supabaseAdmin
+        .from("group_members")
+        .select("member_id")
+        .eq("organization_id", orgId)
+        .in("group_id", groupIds);
+      for (const row of (gmRows || []) as Array<{ member_id?: string | null }>) {
+        const mid = String(row.member_id || "");
+        if (!mid) continue;
+        if (visibleMemberIds && !visibleMemberIds.has(mid)) continue;
+        memberIdSet.add(mid);
+      }
+    }
+
+    type MemberPreviewFace = { member_id: string; image_url: string | null; initials: string };
+    const memberPreviewByGroupId = new Map<string, MemberPreviewFace[]>();
+    if (groupIds.length > 0) {
+      let prevRows: Array<{
+        group_id?: string | null;
+        member_id?: string | null;
+        members?: Record<string, unknown> | Record<string, unknown>[] | null;
+      }> = [];
+      let rPrev = await supabaseAdmin
+        .from("group_members")
+        .select("group_id, member_id, members(id, first_name, last_name, memberimage_url, avatar_url, member_url)")
+        .eq("organization_id", orgId)
+        .in("group_id", groupIds);
+      if (rPrev.error && String(rPrev.error.message || "").toLowerCase().includes("avatar_url")) {
+        rPrev = await supabaseAdmin
+          .from("group_members")
+          .select("group_id, member_id, members(id, first_name, last_name, memberimage_url, member_url)")
+          .eq("organization_id", orgId)
+          .in("group_id", groupIds);
+      }
+      if (rPrev.error && String(rPrev.error.message || "").toLowerCase().includes("member_url")) {
+        rPrev = await supabaseAdmin
+          .from("group_members")
+          .select("group_id, member_id, members(id, first_name, last_name, memberimage_url)")
+          .eq("organization_id", orgId)
+          .in("group_id", groupIds);
+      }
+      if (!rPrev.error) prevRows = (rPrev.data || []) as typeof prevRows;
+
+      const byGroup = new Map<string, typeof prevRows>();
+      for (const row of prevRows) {
+        const gid = String(row.group_id || "");
+        if (!gid) continue;
+        if (!byGroup.has(gid)) byGroup.set(gid, []);
+        byGroup.get(gid)!.push(row);
+      }
+
+      for (const gid of groupIds) {
+        const rows = byGroup.get(gid) || [];
+        const seen = new Set<string>();
+        const items: { memberId: string; image: string; initials: string; hasImg: boolean }[] = [];
+        for (const row of rows) {
+          const mid = String(row.member_id || "");
+          if (!mid || seen.has(mid)) continue;
+          if (visibleMemberIds && !visibleMemberIds.has(mid)) continue;
+          seen.add(mid);
+          const mraw = row.members;
+          const m = (Array.isArray(mraw) ? mraw[0] : mraw) as Record<string, unknown> | null | undefined;
+          const img = memberImageFromMemberRecord(m || null);
+          const first = String(m?.first_name || "").trim();
+          const last = String(m?.last_name || "").trim();
+          const initials =
+            `${first[0] || ""}${last[0] || ""}`.toUpperCase() || (mid.length >= 2 ? mid.slice(0, 2).toUpperCase() : "?");
+          items.push({ memberId: mid, image: img, initials, hasImg: Boolean(img) });
+        }
+        items.sort((a, b) => Number(b.hasImg) - Number(a.hasImg));
+        memberPreviewByGroupId.set(
+          gid,
+          items.slice(0, 5).map((x) => ({
+            member_id: x.memberId,
+            image_url: x.image || null,
+            initials: x.initials,
+          })),
+        );
+      }
+    }
+
+    const groupsOut = groups.map((g) => ({
+      id: g.id,
+      name: String(g.name || "Group"),
+      member_count: memberCountMap.get(g.id) || 0,
+      leader_id: g.leader_id ?? null,
+      member_preview: memberPreviewByGroupId.get(g.id) || [],
+    }));
+
+    let membersOut: Array<{
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      image_url: string | null;
+    }> = [];
+    if (memberIdSet.size > 0) {
+      let memRows: Array<Record<string, unknown>> = [];
+      let rMem = await supabaseAdmin
+        .from("members")
+        .select("id, first_name, last_name, memberimage_url, avatar_url, member_url")
+        .eq("organization_id", orgId)
+        .eq("branch_id", viewerBranch)
+        .in("id", [...memberIdSet])
+        .or("is_deleted.eq.false,is_deleted.is.null");
+      if (rMem.error && String(rMem.error.message || "").toLowerCase().includes("avatar_url")) {
+        rMem = await supabaseAdmin
+          .from("members")
+          .select("id, first_name, last_name, memberimage_url, member_url")
+          .eq("organization_id", orgId)
+          .eq("branch_id", viewerBranch)
+          .in("id", [...memberIdSet])
+          .or("is_deleted.eq.false,is_deleted.is.null");
+      }
+      if (rMem.error && String(rMem.error.message || "").toLowerCase().includes("member_url")) {
+        rMem = await supabaseAdmin
+          .from("members")
+          .select("id, first_name, last_name, memberimage_url")
+          .eq("organization_id", orgId)
+          .eq("branch_id", viewerBranch)
+          .in("id", [...memberIdSet])
+          .or("is_deleted.eq.false,is_deleted.is.null");
+      }
+      if (rMem.error) throw rMem.error;
+      memRows = (rMem.data || []) as Array<Record<string, unknown>>;
+      membersOut = memRows.map((m) => ({
+        id: String(m.id),
+        first_name: (m.first_name as string | null | undefined) ?? null,
+        last_name: (m.last_name as string | null | undefined) ?? null,
+        image_url: memberImageFromMemberRecord(m) || null,
+      }));
+      membersOut.sort((a, b) => {
+        const na = `${a.first_name || ""} ${a.last_name || ""}`.trim().toLowerCase();
+        const nb = `${b.first_name || ""} ${b.last_name || ""}`.trim().toLowerCase();
+        return na.localeCompare(nb);
+      });
+    }
+
+    let tasksOut: Array<{
+      id: string;
+      task_type: "member" | "group";
+      title: string;
+      status: string;
+      due_at: string | null;
+      member_id?: string;
+      group_id?: string;
+      members?: Array<{ id: string; first_name: string | null; last_name: string | null }>;
+      groups?: Array<{ id: string; name: string | null }>;
+    }> = [];
+
+    const canSeeLeaderAssignedTasks =
+      permCtx.isOrgOwner ||
+      permCtx.permissionSet.has("monitor_member_tasks") ||
+      permCtx.permissionSet.has("monitor_group_tasks") ||
+      permCtx.permissionSet.has("report_leaders");
+
+    if (canSeeLeaderAssignedTasks) {
+      const branchTaskFilters = {
+        statusParam: "all",
+        assigneeProfileId: profileId,
+        createdByProfileId: undefined as string | undefined,
+        dueFromIso: undefined as string | undefined,
+        dueToIso: undefined as string | undefined,
+        createdFromIso: undefined as string | undefined,
+        createdToIso: undefined as string | undefined,
+      };
+
+      const canLoadMemberTasksForLeader =
+        permCtx.isOrgOwner ||
+        permCtx.permissionSet.has("monitor_member_tasks") ||
+        permCtx.permissionSet.has("report_leaders");
+      const canLoadGroupTasksForLeader =
+        permCtx.isOrgOwner ||
+        permCtx.permissionSet.has("monitor_group_tasks") ||
+        permCtx.permissionSet.has("report_leaders");
+
+      const [memberList, groupList] = await Promise.all([
+        canLoadMemberTasksForLeader
+          ? listMemberTasksForBranchMonitoring(orgId, viewerBranch, branchTaskFilters).catch((e: unknown) => {
+              if (memberTasksTableMissing(e)) return [];
+              throw e;
+            })
+          : Promise.resolve([]),
+        canLoadGroupTasksForLeader
+          ? listGroupTasksForBranchMonitoring(orgId, viewerBranch, branchTaskFilters).catch((e: unknown) => {
+              if (groupTasksTableMissing(e)) return [];
+              throw e;
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const mergedTasks = [
+        ...memberList.map((t) => ({ ...t, task_type: "member" as const })),
+        ...groupList.map((t) => ({ ...t, task_type: "group" as const })),
+      ].sort(
+        (a, b) =>
+          new Date(String(a.due_at || a.created_at || "")).getTime() -
+          new Date(String(b.due_at || b.created_at || "")).getTime(),
+      );
+
+      const mScopeTasks = await ministryScopeForActor(permCtx.userId, orgId, viewerBranch, permCtx.isOrgOwner);
+      const allowedMemberIdsTasks = await memberIdsVisibleUnderScope(supabaseAdmin, orgId, viewerBranch, mScopeTasks);
+      let scopedTasks = mergedTasks;
+      if (allowedMemberIdsTasks !== null) {
+        scopedTasks = mergedTasks.filter((t) => {
+          if (t.task_type === "member") {
+            const mid = String((t as { member_id?: string }).member_id || "");
+            if (mid && allowedMemberIdsTasks.has(mid)) return true;
+            for (const rid of relatedIdsFromRow((t as { related_member_ids?: unknown }).related_member_ids)) {
+              if (allowedMemberIdsTasks.has(rid)) return true;
+            }
+            return false;
+          }
+          if (t.task_type === "group") {
+            const gid = String((t as { group_id?: string }).group_id || "");
+            if (gid && groupIdVisibleUnderScope(gid, mScopeTasks)) return true;
+            for (const rid of relatedIdsFromRow((t as { related_group_ids?: unknown }).related_group_ids)) {
+              if (groupIdVisibleUnderScope(rid, mScopeTasks)) return true;
+            }
+            return false;
+          }
+          return true;
+        });
+      }
+
+      const cap = 100;
+      tasksOut = scopedTasks.slice(0, cap).map((t) => {
+        const titleStr = String((t as { title?: string }).title || "").trim() || "Task";
+        const statusStr = String((t as { status?: string }).status || "pending");
+        const due = (t as { due_at?: string | null }).due_at ?? null;
+        if (t.task_type === "member") {
+          return {
+            id: (t as { id: string }).id,
+            task_type: "member" as const,
+            title: titleStr,
+            status: statusStr,
+            due_at: due,
+            member_id: (t as { member_id?: string }).member_id,
+            members: (t as { members?: Array<{ id: string; first_name: string | null; last_name: string | null }> })
+              .members,
+          };
+        }
+        return {
+          id: (t as { id: string }).id,
+          task_type: "group" as const,
+          title: titleStr,
+          status: statusStr,
+          due_at: due,
+          group_id: (t as { group_id?: string }).group_id,
+          groups: (t as { groups?: Array<{ id: string; name: string | null }> }).groups,
+        };
+      });
+    }
+
+    res.json({
+      leader: {
+        id: lr.id,
+        first_name: lr.first_name ?? null,
+        last_name: lr.last_name ?? null,
+        email: lr.email ?? null,
+        avatar_url: lr.avatar_url ?? null,
+        group_count: groupsOut.length,
+      },
+      groups: groupsOut,
+      members: membersOut,
+      tasks: tasksOut,
+    });
+  } catch (error: any) {
+    const code = Number((error as { statusCode?: number }).statusCode || 0);
+    if (code >= 400 && code < 500) return res.status(code).json({ error: error?.message || "Request failed" });
+    res.status(500).json({ error: error?.message || "Failed to load leader detail." });
   }
 });
 
@@ -12437,8 +14303,8 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertMemberForOrgBranch(memberId, orgId, viewerBranch);
     await assertMemberVisibleUnderMinistryScope(memberId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -12491,6 +14357,8 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
       permCtx.isOrgOwner,
     );
 
+    const urgency = normalizeTaskUrgency(req.body?.urgency);
+
     const insertPayload: Record<string, unknown> = {
       organization_id: orgId,
       branch_id: memBranch != null && String(memBranch).length > 0 ? String(memBranch) : null,
@@ -12498,6 +14366,7 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
       title,
       description,
       status: "pending" as const,
+      urgency,
       assignee_profile_id: primaryAssigneeId,
       assignee_profile_ids: assigneeIds,
       created_by_profile_id: user.id,
@@ -12522,10 +14391,12 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
         delete fallback.checklist;
         delete fallback.related_member_ids;
       }
+      if (String(insErr.message || "").toLowerCase().includes("urgency")) delete fallback.urgency;
       if (taskAssigneeFilterColumnMissing(insErr)) delete fallback.assignee_profile_ids;
       if (
         String(insErr.message || "").toLowerCase().includes("checklist") ||
         String(insErr.message || "").toLowerCase().includes("related_member") ||
+        String(insErr.message || "").toLowerCase().includes("urgency") ||
         taskAssigneeFilterColumnMissing(insErr)
       ) {
         const selFields = taskAssigneeFilterColumnMissing(insErr) ? MEMBER_TASK_DB_FIELDS_LEGACY : MEMBER_TASK_DB_FIELDS;
@@ -12587,6 +14458,19 @@ app.post("/api/members/:memberId/tasks", async (req, res) => {
         payload: taskAssignedPayload,
       },
     );
+    if (urgency === "high") {
+      void notifyHighUrgencyTaskStakeholders({
+        organizationId: orgId,
+        branchId: viewerBranch,
+        actorProfileId: user.id,
+        kind: "member_task",
+        taskId: taskJson.id,
+        title,
+        memberId,
+        groupIdsForLeaders: [],
+        actionPath: `/members/${memberId}`,
+      });
+    }
     res.status(201).json({ task: taskJson });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
@@ -12621,8 +14505,8 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     let { data: existing, error: exErr } = await supabaseAdmin
       .from("member_tasks")
@@ -12713,6 +14597,9 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
           permCtx.isOrgOwner,
         );
       }
+      if (body.urgency !== undefined) {
+        update.urgency = normalizeTaskUrgency(body.urgency);
+      }
     } else if (isCreator) {
       const assigneeKeys = keys.filter((k) => k === "assignee_profile_id" || k === "assignee_profile_ids");
       if (assigneeKeys.length > 0) {
@@ -12725,6 +14612,7 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
         "due_at",
         "checklist",
         "related_member_ids",
+        "urgency",
       ]);
       const extra = keys.filter((k) => !creatorAllowed.has(k));
       if (extra.length > 0) {
@@ -12767,6 +14655,9 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
           user.id,
           permCtx.isOrgOwner,
         );
+      }
+      if (body.urgency !== undefined) {
+        update.urgency = normalizeTaskUrgency(body.urgency);
       }
     } else if (isAssignee) {
       const allowedAssigneeKeys = new Set(["status", "checklist"]);
@@ -12871,6 +14762,20 @@ app.patch("/api/member-tasks/:taskId", async (req, res) => {
         },
       );
     }
+    const prevUrg = normalizeTaskUrgency((row as MemberTaskRow & { urgency?: unknown }).urgency);
+    if (taskJson.urgency === "high" && prevUrg !== "high") {
+      void notifyHighUrgencyTaskStakeholders({
+        organizationId: orgId,
+        branchId: viewerBranch,
+        actorProfileId: user.id,
+        kind: "member_task",
+        taskId: taskJson.id,
+        title: taskJson.title,
+        memberId: row.member_id,
+        groupIdsForLeaders: [],
+        actionPath: `/members/${row.member_id}`,
+      });
+    }
     res.json({ task: taskJson });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
@@ -12913,8 +14818,8 @@ app.delete("/api/member-tasks/:taskId", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("member_tasks")
@@ -12982,8 +14887,8 @@ app.get("/api/groups/:groupId/task-target-options", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     await assertGroupForOrgBranch(groupId, orgId, viewerBranch);
 
@@ -13089,8 +14994,8 @@ app.get("/api/groups/:groupId/tasks", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertGroupForOrgBranch(groupId, orgId, viewerBranch);
     await assertGroupVisibleUnderMinistryScope(groupId, orgId, viewerBranch, user.id, permCtx.isOrgOwner);
 
@@ -13220,8 +15125,8 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     await assertGroupForOrgBranch(groupId, orgId, viewerBranch);
 
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
@@ -13265,6 +15170,8 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
       relatedRaw.filter((x: unknown): x is string => typeof x === "string" && isUuidString(x)),
     );
 
+    const urgency = normalizeTaskUrgency(req.body?.urgency);
+
     const insertPayload: Record<string, unknown> = {
       organization_id: orgId,
       branch_id: gBranch != null && String(gBranch).length > 0 ? String(gBranch) : null,
@@ -13272,6 +15179,7 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
       title,
       description,
       status: "pending" as const,
+      urgency,
       assignee_profile_id: primaryGroupAssigneeId,
       assignee_profile_ids: groupAssigneeIds,
       created_by_profile_id: user.id,
@@ -13296,10 +15204,12 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
         delete fallback.checklist;
         delete fallback.related_group_ids;
       }
+      if (String(insErr.message || "").toLowerCase().includes("urgency")) delete fallback.urgency;
       if (taskAssigneeFilterColumnMissing(insErr)) delete fallback.assignee_profile_ids;
       if (
         String(insErr.message || "").toLowerCase().includes("checklist") ||
         String(insErr.message || "").toLowerCase().includes("related_group") ||
+        String(insErr.message || "").toLowerCase().includes("urgency") ||
         taskAssigneeFilterColumnMissing(insErr)
       ) {
         const selFields = taskAssigneeFilterColumnMissing(insErr) ? GROUP_TASK_DB_FIELDS_LEGACY : GROUP_TASK_DB_FIELDS;
@@ -13316,7 +15226,23 @@ app.post("/api/groups/:groupId/tasks", async (req, res) => {
       throw insErr;
     }
 
-    res.status(201).json({ task: mapGroupTaskRowToJson(inserted as GroupTaskRow) });
+    const createdJson = mapGroupTaskRowToJson(inserted as GroupTaskRow);
+    if (urgency === "high") {
+      const gids = [groupId, ...relatedIds];
+      void notifyHighUrgencyTaskStakeholders({
+        organizationId: orgId,
+        branchId: viewerBranch,
+        actorProfileId: user.id,
+        kind: "group_task",
+        taskId: createdJson.id,
+        title,
+        memberId: null,
+        groupIdsForLeaders: gids,
+        actionPath: `/groups/${groupId}`,
+      });
+    }
+
+    res.status(201).json({ task: createdJson });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
     if (typeof code === "number" && code >= 400 && code < 500) {
@@ -13350,8 +15276,8 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     let { data: existing, error: exErr } = await supabaseAdmin
       .from("group_tasks")
@@ -13437,6 +15363,9 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
           raw.filter((x: unknown): x is string => typeof x === "string" && isUuidString(x)),
         );
       }
+      if (body.urgency !== undefined) {
+        update.urgency = normalizeTaskUrgency(body.urgency);
+      }
     } else if (isCreator) {
       const assigneeKeys = keys.filter((k) => k === "assignee_profile_id" || k === "assignee_profile_ids");
       if (assigneeKeys.length > 0) {
@@ -13449,6 +15378,7 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
         "due_at",
         "checklist",
         "related_group_ids",
+        "urgency",
       ]);
       const extra = keys.filter((k) => !creatorAllowed.has(k));
       if (extra.length > 0) {
@@ -13489,6 +15419,9 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
           row.group_id,
           raw.filter((x: unknown): x is string => typeof x === "string" && isUuidString(x)),
         );
+      }
+      if (body.urgency !== undefined) {
+        update.urgency = normalizeTaskUrgency(body.urgency);
       }
     } else if (isAssignee) {
       const allowedAssigneeKeys = new Set(["status", "checklist"]);
@@ -13560,7 +15493,23 @@ app.patch("/api/group-tasks/:taskId", async (req, res) => {
       .single();
     if (upErr) throw upErr;
 
-    res.json({ task: mapGroupTaskRowToJson(updated as GroupTaskRow) });
+    const taskJson = mapGroupTaskRowToJson(updated as GroupTaskRow);
+    const prevGrpUrg = normalizeTaskUrgency((row as GroupTaskRow & { urgency?: unknown }).urgency);
+    if (taskJson.urgency === "high" && prevGrpUrg !== "high") {
+      const rids = relatedIdsFromRow((updated as GroupTaskRow).related_group_ids ?? []);
+      void notifyHighUrgencyTaskStakeholders({
+        organizationId: orgId,
+        branchId: viewerBranch,
+        actorProfileId: user.id,
+        kind: "group_task",
+        taskId: taskJson.id,
+        title: taskJson.title,
+        memberId: null,
+        groupIdsForLeaders: [row.group_id, ...rids],
+        actionPath: `/groups/${row.group_id}`,
+      });
+    }
+    res.json({ task: taskJson });
   } catch (error: any) {
     const code = (error as { statusCode?: number }).statusCode;
     if (typeof code === "number" && code >= 400 && code < 500) {
@@ -13603,8 +15552,8 @@ app.delete("/api/group-tasks/:taskId", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const { data: existing, error: exErr } = await supabaseAdmin
       .from("group_tasks")
@@ -14978,8 +16927,8 @@ app.get("/api/member-families/family/:familyId", async (req, res) => {
       .single();
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const { familyId } = req.params;
     if (!isUuidString(familyId)) return res.status(400).json({ error: "Invalid family id" });
@@ -15099,7 +17048,7 @@ app.get("/api/groups", async (req, res) => {
       ]);
       if (!permGrpTrash) return;
     } else {
-      const permGrpList = await requirePermission(req, res, "view_groups");
+      const permGrpList = await requireAnyPermission(req, res, ["view_groups", "assign_ministry_leaders"]);
       if (!permGrpList) return;
     }
 
@@ -15444,11 +17393,21 @@ app.put("/api/groups/:id", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
-    const permGrpPut = await requirePermission(req, res, "edit_groups");
-    if (!permGrpPut) return;
-
     const { id } = req.params;
     const groupData = req.body;
+
+    const leaderIdOnlyPatch = (() => {
+      if (!groupData || typeof groupData !== "object" || Array.isArray(groupData)) return false;
+      const keys = Object.keys(groupData as Record<string, unknown>).filter(
+        (k) => (groupData as Record<string, unknown>)[k] !== undefined,
+      );
+      return keys.length > 0 && keys.every((k) => k === "leader_id");
+    })();
+
+    const permGrpPut = leaderIdOnlyPatch
+      ? await requireAnyPermission(req, res, ["assign_ministry_leaders", "edit_groups"])
+      : await requirePermission(req, res, "edit_groups");
+    if (!permGrpPut) return;
 
     let { data: exRow, error: exScopeErr } = await supabaseAdmin
       .from("groups")
@@ -16131,8 +18090,8 @@ app.get("/api/groups/:groupId/events", async (req, res) => {
 
     if (!userProfile) throw new Error("User profile not found");
 
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
 
     const permGrpEv = await requirePermission(req, res, "view_events");
     if (!permGrpEv) return;
@@ -18358,8 +20317,8 @@ app.get("/api/event-types", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const permEtGet = await requireAnyPermission(req, res, [
@@ -18496,8 +20455,8 @@ app.patch("/api/event-types/:id", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const permEtPatch = await requirePermission(req, res, "edit_event_types");
@@ -18580,8 +20539,8 @@ app.delete("/api/event-types/:id", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const permEtDel = await requirePermission(req, res, "delete_event_types");
@@ -18721,8 +20680,8 @@ app.get("/api/member-status-options", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: rows, error } = await supabaseAdmin
@@ -18755,8 +20714,8 @@ app.post("/api/member-status-options/seed-defaults", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: allRows, error: listErr } = await supabaseAdmin
@@ -18863,8 +20822,8 @@ app.patch("/api/member-status-options/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: existing } = await supabaseAdmin
@@ -18924,8 +20883,8 @@ app.delete("/api/member-status-options/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: existing } = await supabaseAdmin
@@ -18971,8 +20930,8 @@ app.get("/api/group-type-options", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: rows, error } = await supabaseAdmin
@@ -19011,8 +20970,8 @@ app.post("/api/group-type-options/seed-defaults", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: allRows, error: listErr } = await supabaseAdmin
@@ -19116,8 +21075,8 @@ app.patch("/api/group-type-options/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: existing } = await supabaseAdmin
@@ -19176,8 +21135,8 @@ app.delete("/api/group-type-options/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
 
     const { data: existing } = await supabaseAdmin
@@ -19476,8 +21435,8 @@ app.get("/api/custom-field-definitions", async (req, res) => {
       .eq("id", user.id)
       .single();
     if (!userProfile) throw new Error("User profile not found");
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
     const appliesRaw = typeof req.query.applies_to === "string" ? req.query.applies_to.trim() : "";
     let q = supabaseAdmin
@@ -19519,8 +21478,8 @@ app.post("/api/custom-field-definitions", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const body = req.body || {};
     const label = typeof body.label === "string" ? body.label.trim() : "";
     if (!label) return res.status(400).json({ error: "label is required" });
@@ -19618,8 +21577,8 @@ app.patch("/api/custom-field-definitions/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
     const { data: existing } = await supabaseAdmin
       .from("custom_field_definitions")
@@ -19705,8 +21664,8 @@ app.delete("/api/custom-field-definitions/:id", async (req, res) => {
       .eq("id", permCtx.userId)
       .single();
     if (!userProfile) return res.status(401).json({ error: "User profile not found" });
-    const orgId = userProfile.organization_id as string;
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, permCtx.userId);
+    const orgId = userProfile.organization_id as string;
     const mainBranchId = await getMainBranchIdForOrg(orgId);
     const { data: existing } = await supabaseAdmin
       .from("custom_field_definitions")
@@ -20827,6 +22786,34 @@ async function saveEventAttendanceRows(rows: Record<string, unknown>[]): Promise
   }
 }
 
+/** Load event for attendance APIs; retry without legacy `start_date` when the column is absent (Postgres 42703). */
+async function fetchEventRowForAttendanceEndpoints(
+  eventId: string,
+  organizationId: string,
+): Promise<{ data: Record<string, unknown> | null; error: { message?: string; code?: string } | null }> {
+  let { data, error } = await supabaseAdmin
+    .from("events")
+    .select("id, organization_id, branch_id, group_id, start_time, start_date")
+    .eq("id", eventId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    const msg = String(error.message || "").toLowerCase();
+    const code = (error as { code?: string }).code;
+    if (code === "42703" || msg.includes("start_date")) {
+      const retry = await supabaseAdmin
+        .from("events")
+        .select("id, organization_id, branch_id, group_id, start_time")
+        .eq("id", eventId)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      return { data: retry.data as Record<string, unknown> | null, error: retry.error };
+    }
+  }
+  return { data: data as Record<string, unknown> | null, error };
+}
+
 function eventAttendanceScheduleFields(event: {
   start_time?: string | null;
   start_date?: string | null;
@@ -20871,12 +22858,7 @@ app.get("/api/events/:id/attendance", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
-    const { data: event, error: evErr } = await supabaseAdmin
-      .from("events")
-      .select("id, organization_id, branch_id, group_id, start_time, start_date")
-      .eq("id", id)
-      .eq("organization_id", userProfile.organization_id)
-      .maybeSingle();
+    const { data: event, error: evErr } = await fetchEventRowForAttendanceEndpoints(id, userProfile.organization_id as string);
 
     if (evErr) throw evErr;
     if (!event) return res.status(404).json({ error: "Event not found" });
@@ -21081,12 +23063,7 @@ app.put("/api/events/:id/attendance", async (req, res) => {
 
     const viewerBranch = await assertViewerBranchScope(req, userProfile as OrgProfile, user.id);
 
-    const { data: event, error: evErr } = await supabaseAdmin
-      .from("events")
-      .select("id, organization_id, branch_id, group_id, start_time, start_date")
-      .eq("id", id)
-      .eq("organization_id", userProfile.organization_id)
-      .maybeSingle();
+    const { data: event, error: evErr } = await fetchEventRowForAttendanceEndpoints(id, userProfile.organization_id as string);
 
     if (evErr) throw evErr;
     if (!event) return res.status(404).json({ error: "Event not found" });
@@ -21599,7 +23576,7 @@ app.get("/api/superadmin/stats", async (req, res) => {
     const { data: orgTierRows } = await supabaseAdmin.from("organizations").select("subscription_tier");
     const orgs_by_tier: Record<string, number> = {};
     for (const r of orgTierRows || []) {
-      const t = normalizeSubscriptionTier(String((r as { subscription_tier?: string | null }).subscription_tier ?? "free"));
+      const t = normalizeSubscriptionTier(String((r as { subscription_tier?: string | null }).subscription_tier ?? "basic"));
       orgs_by_tier[t] = (orgs_by_tier[t] || 0) + 1;
     }
 
@@ -21633,7 +23610,7 @@ app.get("/api/superadmin/orgs", async (req, res) => {
     const tierFilter = typeof req.query.tier === "string" ? req.query.tier.trim().toLowerCase() : "";
 
     const fullOrgSelect =
-      "id, name, slug, logo_url, subscription_tier, created_at, hubtel_subscription_id, max_members, max_groups, max_branches, max_events_per_month, max_staff";
+      "id, name, slug, logo_url, subscription_tier, created_at, hubtel_subscription_id, max_members, max_groups, max_branches, max_events_per_month, max_staff, is_enabled";
     const minimalOrgSelect = "id, name, slug, logo_url, subscription_tier, created_at";
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
@@ -21660,7 +23637,10 @@ app.get("/api/superadmin/orgs", async (req, res) => {
     const enriched = await Promise.all(
       list.map(async (o) => {
         const id = (o as { id: string }).id;
-        const usage = await getOrgUsage(supabaseAdmin, id);
+        const [usage, extended] = await Promise.all([
+          getOrgUsage(supabaseAdmin, id),
+          getSuperadminExtendedOrgMetrics(supabaseAdmin, id),
+        ]);
         const row = await fetchOrgLimitRow(supabaseAdmin, id);
         const ol = row || ({} as OrgLimitRow);
         return {
@@ -21668,10 +23648,11 @@ app.get("/api/superadmin/orgs", async (req, res) => {
           name: (o as { name: string }).name,
           slug: (o as { slug: string }).slug,
           logo_url: (o as { logo_url?: string | null }).logo_url ?? null,
-          subscription_tier: (o as { subscription_tier?: string | null }).subscription_tier ?? "free",
+          subscription_tier: (o as { subscription_tier?: string | null }).subscription_tier ?? "basic",
           created_at: (o as { created_at?: string }).created_at,
+          is_enabled: (o as { is_enabled?: boolean | null }).is_enabled !== false,
           hubtel_subscription_id: (o as { hubtel_subscription_id?: string | null }).hubtel_subscription_id ?? null,
-          usage,
+          usage: { ...usage, ...extended },
           limits: {
             max_members: effectiveLimit(ol, "max_members"),
             max_groups: effectiveLimit(ol, "max_groups"),
@@ -21712,6 +23693,19 @@ app.get("/api/superadmin/orgs/:id", async (req, res) => {
     const row = await fetchOrgLimitRow(supabaseAdmin, id);
     const ol = row || ({} as OrgLimitRow);
     const { data: branchRows } = await supabaseAdmin.from("branches").select("*").eq("organization_id", id);
+    const branchStatsList: Array<{ branch_id: string; name: string; stats: Awaited<ReturnType<typeof getSuperadminBranchStats>> }> = [];
+    for (const b of branchRows || []) {
+      const bid = String((b as { id: string }).id);
+      if (!isUuidString(bid)) continue;
+      const nm = String((b as { name?: string }).name ?? "Branch");
+      const st = await getSuperadminBranchStats(supabaseAdmin, id, bid);
+      branchStatsList.push({
+        branch_id: bid,
+        name: nm,
+        is_enabled: (b as { is_enabled?: boolean | null }).is_enabled !== false,
+        stats: st,
+      });
+    }
     const profFull = await supabaseAdmin
       .from("profiles")
       .select("id, email, first_name, last_name, branch_id, role_id, is_org_owner, is_active")
@@ -21729,9 +23723,10 @@ app.get("/api/superadmin/orgs/:id", async (req, res) => {
     } else {
       profRows = (profFull.data || []) as Record<string, unknown>[];
     }
+    const extended = await getSuperadminExtendedOrgMetrics(supabaseAdmin, id);
     res.json({
       organization: org,
-      usage,
+      usage: { ...usage, ...extended },
       limits: {
         max_members: effectiveLimit(ol, "max_members"),
         max_groups: effectiveLimit(ol, "max_groups"),
@@ -21740,6 +23735,7 @@ app.get("/api/superadmin/orgs/:id", async (req, res) => {
         max_staff: effectiveLimit(ol, "max_staff"),
       },
       branches: branchRows || [],
+      branch_stats: branchStatsList,
       staff: profRows || [],
     });
   } catch (e: unknown) {
@@ -21770,6 +23766,7 @@ app.patch("/api/superadmin/orgs/:id", async (req, res) => {
     if (body.max_events_per_month !== undefined) patch.max_events_per_month = numOrNull(body.max_events_per_month);
     if (body.max_staff !== undefined) patch.max_staff = numOrNull(body.max_staff);
     if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
+    if (typeof body.is_enabled === "boolean") patch.is_enabled = body.is_enabled;
     if (Object.keys(patch).length === 0) return res.status(400).json({ error: "No valid fields to update" });
     const { data: updated, error } = await supabaseAdmin
       .from("organizations")
@@ -21813,16 +23810,41 @@ app.get("/api/superadmin/branches", async (req, res) => {
   }
 });
 
+app.patch("/api/superadmin/branches/:id", async (req, res) => {
+  const sa = await requireSuperAdmin(req, res);
+  if (!sa) return;
+  const { id } = req.params;
+  if (!isUuidString(id)) return res.status(400).json({ error: "Invalid id" });
+  const body = req.body || {};
+  try {
+    const patch: Record<string, unknown> = {};
+    if (typeof body.is_enabled === "boolean") patch.is_enabled = body.is_enabled;
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: "No valid fields to update" });
+    const { data: updated, error } = await supabaseAdmin
+      .from("branches")
+      .update(patch)
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    res.json({ branch: updated });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to update branch" });
+  }
+});
+
 app.get("/api/superadmin/users", async (req, res) => {
   const sa = await requireSuperAdmin(req, res);
   if (!sa) return;
   const orgId = typeof req.query.org_id === "string" ? req.query.org_id.trim() : "";
   const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
+  const superadminOnly = String(req.query.superadmin_only || "").toLowerCase() === "true";
   try {
     let q = supabaseAdmin
       .from("profiles")
       .select("id, email, first_name, last_name, organization_id, branch_id, role_id, is_org_owner, is_active, is_super_admin");
     if (orgId && isUuidString(orgId)) q = q.eq("organization_id", orgId);
+    if (superadminOnly) q = q.eq("is_super_admin", true);
     if (search) {
       q = q.or(`email.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`);
     }
@@ -21869,6 +23891,113 @@ app.patch("/api/superadmin/users/:profileId", async (req, res) => {
   }
 });
 
+app.post("/api/superadmin/admins", async (req, res) => {
+  const sa = await requireSuperAdmin(req, res);
+  if (!sa) return;
+  const body = (req.body || {}) as Record<string, unknown>;
+  const emailRaw = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  const firstName = typeof body.first_name === "string" ? body.first_name.trim() : "";
+  const lastName = typeof body.last_name === "string" ? body.last_name.trim() : "";
+  if (!emailRaw || !emailRaw.includes("@")) {
+    return res.status(400).json({ error: "Valid email is required" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters" });
+  }
+  if (!firstName || !lastName) {
+    return res.status(400).json({ error: "First and last name are required" });
+  }
+  try {
+    const { data: inviter } = await supabaseAdmin
+      .from("profiles")
+      .select("organization_id, branch_id")
+      .eq("id", sa.userId)
+      .maybeSingle();
+    const orgId = inviter && typeof (inviter as { organization_id?: string }).organization_id === "string" ? (inviter as { organization_id: string }).organization_id : "";
+    const branchId =
+      inviter && (inviter as { branch_id?: string | null }).branch_id != null && String((inviter as { branch_id?: string | null }).branch_id).length > 0
+        ? String((inviter as { branch_id: string }).branch_id)
+        : null;
+    if (!orgId || !isUuidString(orgId)) {
+      return res.status(400).json({ error: "Your profile must belong to an organization to provision admins." });
+    }
+    let attachBranchId = branchId && isUuidString(branchId) ? branchId : null;
+    if (!attachBranchId) {
+      const { data: ob } = await supabaseAdmin.from("branches").select("id").eq("organization_id", orgId).limit(1);
+      const first = ob && ob[0] ? String((ob[0] as { id: string }).id) : "";
+      if (isUuidString(first)) attachBranchId = first;
+    }
+    if (!attachBranchId) {
+      return res.status(400).json({ error: "No branch found to attach the new admin profile." });
+    }
+
+    const wantVerify = shouldAutoConfirmAuthEmail() === false;
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: emailRaw,
+      password,
+      email_confirm: !wantVerify,
+      user_metadata: { full_name: `${firstName} ${lastName}`.trim() },
+    });
+    if (authError) {
+      return res.status(400).json({ error: authError.message || "Failed to create user" });
+    }
+    const newUserId = authData.user.id;
+    const profilePayload: Record<string, unknown> = {
+      id: newUserId,
+      email: emailRaw,
+      first_name: firstName,
+      last_name: lastName,
+      full_name: `${firstName} ${lastName}`.trim(),
+      organization_id: orgId,
+      branch_id: attachBranchId,
+      is_active: true,
+      is_super_admin: true,
+    };
+    const { data: createdProfile, error: profileInsertError } = await supabaseAdmin
+      .from("profiles")
+      .insert([profilePayload])
+      .select("id, email, first_name, last_name, is_super_admin")
+      .single();
+
+    if (profileInsertError) {
+      const msg = String(profileInsertError.message || "").toLowerCase();
+      if (msg.includes("is_super_admin")) {
+        delete profilePayload.is_super_admin;
+        const retry = await supabaseAdmin.from("profiles").insert([profilePayload]).select("id, email, first_name, last_name").single();
+        if (retry.error) {
+          await supabaseAdmin.auth.admin.deleteUser(newUserId);
+          return res.status(500).json({ error: retry.error.message || "Failed to create profile" });
+        }
+        await supabaseAdmin.from("profiles").delete().eq("id", newUserId);
+        await supabaseAdmin.auth.admin.deleteUser(newUserId);
+        return res.status(503).json({
+          error: "Add column is_super_admin to profiles (see migrations/profiles_is_super_admin.sql), then try again.",
+        });
+      }
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      return res.status(500).json({ error: profileInsertError.message || "Failed to create profile" });
+    }
+
+    let emailed = false;
+    if (wantVerify) {
+      emailed = await resendAuthSignupEmail(emailRaw);
+    }
+
+    res.status(201).json({
+      user: createdProfile,
+      verification_email_sent: wantVerify ? emailed : false,
+      note: wantVerify
+        ? emailed
+          ? "Confirmation email sent via Supabase Auth (configure SMTP in Supabase if needed)."
+          : "Could not trigger confirmation email automatically; user may still need to confirm via Supabase dashboard or resend."
+        : "Email auto-confirmed (AUTH_EMAIL_AUTO_CONFIRM is not false).",
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create admin" });
+  }
+});
+
 app.get("/api/superadmin/growth", async (req, res) => {
   const sa = await requireSuperAdmin(req, res);
   if (!sa) return;
@@ -21885,6 +24014,53 @@ app.get("/api/superadmin/growth", async (req, res) => {
     res.json({ new_orgs_by_month: months });
   } catch (e: unknown) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Failed" });
+  }
+});
+
+app.get("/api/superadmin/payments/config", async (req, res) => {
+  const sa = await requireSuperAdmin(req, res);
+  if (!sa) return;
+  try {
+    const cfg = await getPaystackConfigOrNull();
+    res.json({
+      paystack: {
+        configured: !!cfg,
+        has_secret_key: !!(cfg?.secretKey && cfg.secretKey.trim()),
+        has_public_key: !!(cfg?.publicKey && cfg.publicKey.trim()),
+        plan_codes: cfg?.planCodes || {},
+      },
+      crypto: {
+        encrypted_storage: platformMasterKeyBytes() !== null,
+      },
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to load payment config" });
+  }
+});
+
+app.patch("/api/superadmin/payments/config", async (req, res) => {
+  const sa = await requireSuperAdmin(req, res);
+  if (!sa) return;
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const secretKey = typeof body.paystack_secret_key === "string" ? body.paystack_secret_key.trim() : "";
+    const publicKey = typeof body.paystack_public_key === "string" ? body.paystack_public_key.trim() : "";
+    const planCodes = body.paystack_plan_codes && typeof body.paystack_plan_codes === "object" && !Array.isArray(body.paystack_plan_codes)
+      ? (body.paystack_plan_codes as Record<string, unknown>)
+      : null;
+
+    if (secretKey) await setPlatformSecret("paystack_secret_key", secretKey);
+    if (publicKey) await setPlatformSecret("paystack_public_key", publicKey);
+    if (planCodes) {
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of Object.entries(planCodes)) {
+        if (typeof v === "string" && v.trim()) cleaned[String(k).trim().toLowerCase()] = v.trim();
+      }
+      await setPlatformSecret("paystack_plan_codes_json", JSON.stringify(cleaned));
+    }
+    res.json({ ok: true });
+  } catch (e: unknown) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to save payment config" });
   }
 });
 

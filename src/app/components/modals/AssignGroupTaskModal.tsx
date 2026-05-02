@@ -127,6 +127,7 @@ export default function AssignGroupTaskModal({
   const [submitting, setSubmitting] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(true);
   const [checklistLines, setChecklistLines] = useState<{ key: string; label: string }[]>([]);
+  const [urgency, setUrgency] = useState<'low' | 'urgent' | 'high'>('low');
 
   const [groupsFlat, setGroupsFlat] = useState<Group[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -175,6 +176,7 @@ export default function AssignGroupTaskModal({
       setDescription('');
       setDue('');
       setChecklistLines([]);
+      setUrgency('low');
       setChecklistOpen(true);
       setGroupsFlat([]);
       setSelectedGroupIds(new Set());
@@ -343,6 +345,7 @@ export default function AssignGroupTaskModal({
         title: t,
         assignee_profile_ids: autoAssigneeIds,
         related_group_ids: related,
+        urgency,
       };
       if (description.trim()) body.description = description.trim();
       if (due.trim()) body.due_at = new Date(due).toISOString();
@@ -354,6 +357,7 @@ export default function AssignGroupTaskModal({
         description?: string;
         due_at?: string;
         checklist?: { label: string; done: boolean }[];
+        urgency?: 'low' | 'urgent' | 'high';
       });
       notifyMemberTasksChanged();
       onSuccess?.();
@@ -373,6 +377,7 @@ export default function AssignGroupTaskModal({
     autoAssigneeIds,
     due,
     checklistLines,
+    urgency,
     onClose,
     onSuccess,
   ]);
@@ -528,6 +533,16 @@ export default function AssignGroupTaskModal({
               splitClassName="rounded-lg border-gray-200 bg-slate-50"
               triggerClassName="text-sm text-gray-900"
             />
+            <label className="text-xs text-gray-500 block mt-3 mb-1">Urgency</label>
+            <select
+              value={urgency}
+              onChange={(e) => setUrgency(e.target.value as 'low' | 'urgent' | 'high')}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-slate-50"
+            >
+              <option value="low">Low</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+            </select>
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-slate-50/80 p-3 space-y-3">

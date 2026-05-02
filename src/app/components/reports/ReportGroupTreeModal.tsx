@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import { displayMemberWords } from "@sheepmug/shared-api";
 
 export type GroupRow = { id: string; name: string; parent_group_id: string | null };
@@ -110,6 +110,7 @@ function RowNode({
  * Hierarchical group picker. Selecting a row selects that group and all nested child groups.
  */
 export function ReportGroupTreeModal({ open, onClose, groups, selectedIds, onChangeSelectedIds }: Props) {
+  const titleId = useId();
   const groupsById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
   const childrenByParent = useMemo(() => buildChildrenByParent(groups), [groups]);
   const roots = useMemo(() => rootGroupsInScope(groups), [groups]);
@@ -128,11 +129,28 @@ export function ReportGroupTreeModal({ open, onClose, groups, selectedIds, onCha
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal>
-      <div className="max-h-[min(80vh,560px)] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="max-h-[min(80vh,560px)] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-          <h4 className="text-sm font-semibold text-gray-900">Select groups</h4>
-          <button type="button" className="text-xs text-gray-600 hover:text-gray-900" onClick={onClose}>
+          <h4 id={titleId} className="text-sm font-semibold text-gray-900">
+            Select groups
+          </h4>
+          <button
+            type="button"
+            className="rounded-lg px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+            onClick={() => onClose()}
+          >
             Done
           </button>
         </div>

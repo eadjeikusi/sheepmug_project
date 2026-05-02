@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { Loader2, Search, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranch } from '../../contexts/BranchContext';
+import { useMemberProfileModal } from '@/contexts/MemberProfileModalContext';
 import { withBranchScope } from '@/utils/branchScopeHeaders';
 import { usePermissions } from '@/hooks/usePermissions';
 import { pushSearchHistory, readSearchHistory } from '@/utils/globalSearchHistory';
@@ -55,6 +56,7 @@ export default function GlobalSearchBar() {
   const { selectedBranch } = useBranch();
   const { can } = usePermissions();
   const navigate = useNavigate();
+  const memberProfile = useMemberProfileModal();
 
   /** Any of these allows using global search (API enforces per-type results). */
   const canSearch =
@@ -136,7 +138,7 @@ export default function GlobalSearchBar() {
       setQuery('');
       setData(null);
       if (h.kind === 'member') {
-        navigate('/members', { state: { openMemberId: h.id } });
+        void memberProfile.openMemberById(h.id);
       } else if (h.kind === 'event') {
         navigate(`/events/${encodeURIComponent(h.id)}`);
       } else if (h.kind === 'group') {
@@ -145,7 +147,7 @@ export default function GlobalSearchBar() {
         navigate('/members', { state: { openFamilyId: h.id } });
       }
     },
-    [navigate, query],
+    [navigate, query, memberProfile],
   );
 
   const onPickHistory = (h: string) => {

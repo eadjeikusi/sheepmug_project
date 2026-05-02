@@ -15,6 +15,8 @@ import {
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useNavigation } from "@react-navigation/native";
+import type { Href } from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,6 +54,14 @@ import { colors, radius, sizes, type } from "../../theme";
 type MinistryTab = "subgroups" | "members" | "events" | "tasks" | "requests";
 
 const TAB_ORDER: MinistryTab[] = ["members", "events", "tasks", "requests", "subgroups"];
+
+function normalizeReturnToParam(v: unknown): string | null {
+  const raw = Array.isArray(v) ? v[0] : v;
+  const s = typeof raw === "string" ? decodeURIComponent(raw.trim()) : "";
+  if (!s.startsWith("/") || s.startsWith("//")) return null;
+  if (s.length > 512) return null;
+  return s;
+}
 
 function tabLabel(t: MinistryTab): string {
   if (t === "requests") return "Requests";
@@ -150,7 +160,7 @@ function staffRowFromScopeProfile(m: {
   last_name?: unknown;
   avatar_url?: unknown;
   email?: unknown;
-}): MinistryLeaderListItem | null {
+}): Extract<MinistryLeaderListItem, { kind: "staff" }> | null {
   const fn = typeof m.first_name === "string" ? m.first_name : "";
   const ln = typeof m.last_name === "string" ? m.last_name : "";
   const name = `${fn} ${ln}`.trim();
@@ -335,14 +345,29 @@ const HEADER_LINK_MENU_W = 232;
 
 export default function MinistryDetailScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const { id, highlight: highlightParam, tab: tabParam, openRequestId: openRequestIdParam } = useLocalSearchParams<{
-    id: string;
-    highlight?: string;
-    tab?: string;
-    openRequestId?: string;
-  }>();
+  const { id, highlight: highlightParam, tab: tabParam, openRequestId: openRequestIdParam, returnTo: returnToParam } =
+    useLocalSearchParams<{
+      id: string;
+      highlight?: string;
+      tab?: string;
+      openRequestId?: string;
+      returnTo?: string | string[];
+    }>();
+  const returnToHref = normalizeReturnToParam(returnToParam);
+  const handleScreenBack = useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    if (returnToHref) {
+      router.replace(returnToHref as Href);
+      return;
+    }
+    router.back();
+  }, [navigation, returnToHref, router]);
   const { user } = useAuth();
   const { can } = usePermissions();
   const canApproveGroupRequests = can("approve_group_requests");
@@ -794,7 +819,7 @@ export default function MinistryDetailScreen() {
             </View>
           )}
           <View style={[styles.coverOverlayRow, { paddingTop: insets.top + 6 }]}>
-            <HeaderIconCircleButton onPress={() => router.back()} hitSlop={12} accessibilityLabel="Go back">
+            <HeaderIconCircleButton onPress={handleScreenBack} hitSlop={12} accessibilityLabel="Go back">
               <Ionicons name="chevron-back" size={sizes.headerIcon} color={colors.textPrimary} />
             </HeaderIconCircleButton>
             <View style={{ flex: 1 }} />

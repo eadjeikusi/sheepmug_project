@@ -12,13 +12,9 @@ import {
   LayoutGrid,
   Users,
   Building2,
-  Calendar,
-  CalendarClock,
   User,
-  PenLine,
   RefreshCw,
   SlidersHorizontal,
-  X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
@@ -40,6 +36,7 @@ import {
 } from '@/components/datetime';
 import { FilterResultChips, type FilterChipItem } from '../FilterResultChips';
 import { TaskListSkeleton } from '@/components/skeletons/data-skeletons';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { capitalizeSentencesForUi } from '@/utils/sentenceCaseDisplay';
 import { displayTitleWords } from '@/utils/displayText';
 
@@ -53,11 +50,33 @@ type TaskGroupRef = { id: string; name: string | null };
 type ChecklistItem = { id: string; label: string; done: boolean };
 type ChecklistLineEdit = { key: string; id?: string; label: string; done: boolean };
 
+type TaskUrgency = 'low' | 'urgent' | 'high';
+
+function urgencyFromRow(t: { urgency?: string | null } | undefined): TaskUrgency {
+  const u = String(t?.urgency || '').trim().toLowerCase();
+  if (u === 'urgent' || u === 'high') return u;
+  return 'low';
+}
+
+function urgencyLabel(u: TaskUrgency): string {
+  if (u === 'high') return 'High';
+  if (u === 'urgent') return 'Urgent';
+  return 'Low';
+}
+
+function urgencyBadgeClass(u: TaskUrgency): string {
+  if (u === 'high') return 'bg-red-100 text-red-800';
+  if (u === 'urgent') return 'bg-orange-100 text-orange-900';
+  return 'bg-emerald-50 text-emerald-900';
+}
+
 type TaskRow = {
   id: string;
   title: string;
   description: string | null;
   status: string;
+  /** low | urgent | high */
+  urgency?: TaskUrgency;
   due_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -170,6 +189,32 @@ function taskMatchesQuery(
   return false;
 }
 
+/** Matches branch list search box + task-type chip (same rules as `branchFiltered`). */
+function branchTaskMatchesUiFilters(
+  t: BranchTaskRow,
+  search: string,
+  taskType: 'all' | 'member' | 'group',
+): boolean {
+  if (!taskMatchesQuery(t, search)) return false;
+  if (taskType === 'member' && isGroupTask(t)) return false;
+  if (taskType === 'group' && !isGroupTask(t)) return false;
+  return true;
+}
+
+/** Matches mine list search + type chip (same rules as `mineFiltered`). */
+function mineTaskMatchesUiFilters(
+  t: MineTaskRow,
+  search: string,
+  taskType: 'all' | 'member' | 'group',
+): boolean {
+  if (!taskMatchesQuery(t, search)) return false;
+  if (taskType === 'member' && isGroupTask(t)) return false;
+  if (taskType === 'group' && !isGroupTask(t)) return false;
+  return true;
+}
+
+const BRANCH_SEARCH_PREFETCH_MAX_TASKS = 5000;
+
 export default function Tasks() {
   const { token, user, loading: authLoading } = useAuth();
   const { selectedBranch } = useBranch();
@@ -214,6 +259,7 @@ export default function Tasks() {
   const [branchDueTo, setBranchDueTo] = useState('');
   const [branchAssigneeId, setBranchAssigneeId] = useState('');
   const [branchCreatedById, setBranchCreatedById] = useState('');
+  const [branchUrgencyFilter, setBranchUrgencyFilter] = useState<'all' | TaskUrgency>('all');
   const [branchTasks, setBranchTasks] = useState<BranchTaskRow[]>([]);
   const [branchLoading, setBranchLoading] = useState(false);
   const [branchServerHasMore, setBranchServerHasMore] = useState(true);
@@ -234,6 +280,7 @@ export default function Tasks() {
   const [editDue, setEditDue] = useState('');
   const [editAssigneeIds, setEditAssigneeIds] = useState<Set<string>>(() => new Set());
   const [editChecklistLines, setEditChecklistLines] = useState<ChecklistLineEdit[]>([]);
+  const [editUrgency, setEditUrgency] = useState<TaskUrgency>('low');
   const [editSaving, setEditSaving] = useState(false);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
@@ -243,8 +290,8 @@ export default function Tasks() {
   const [branchFiltersOpen, setBranchFiltersOpen] = useState(false);
 
   const [mineSearch, setMineSearch] = useState('');
-  const [mineSearchFocus, setMineSearchFocus] = useState(false);
   const [mineTaskTypeFilter, setMineTaskTypeFilter] = useState<'all' | 'member' | 'group'>('all');
+  const [mineUrgencyFilter, setMineUrgencyFilter] = useState<'all' | TaskUrgency>('all');
   const [mineFiltersOpen, setMineFiltersOpen] = useState(false);
   const [branchLoadError, setBranchLoadError] = useState<string | null>(null);
   const [mineLoadError, setMineLoadError] = useState<string | null>(null);
@@ -289,6 +336,55 @@ export default function Tasks() {
   const branchHasMore = branchVisibleCount < branchFiltered.length;
   const mineHasMore = mineVisibleCount < mineFiltered.length;
 
+  const branchHeaderSubtitle = useMemo((): { tone: 'error' | 'muted'; text: string } | null => {
+    if (!canBranch) return null;
+    if (branchLoadError) return { tone: 'error', text: branchLoadError };
+    if (branchLoading && branchTasks.length === 0) return { tone: 'muted', text: 'Loading…' };
+    const f = branchFiltered.length;
+    const L = branchTasks.length;
+    const T = branchTotalCount;
+    let text: string;
+    if (f < L) {
+      text = `${f} of ${L} ${L === 1 ? 'task' : 'tasks'}`;
+    } else {
+      text = `${f} ${f === 1 ? 'task' : 'tasks'}`;
+    }
+    if (T != null && T > L) text += ` · ${T} total`;
+    return { tone: 'muted', text };
+  }, [
+    canBranch,
+    branchLoadError,
+    branchLoading,
+    branchTasks.length,
+    branchFiltered.length,
+    branchTotalCount,
+  ]);
+
+  const mineHeaderSubtitle = useMemo((): { tone: 'error' | 'muted'; text: string } | null => {
+    if (!canViewMine || isElevatedTaskViewer) return null;
+    if (mineLoadError) return { tone: 'error', text: mineLoadError };
+    if (mineLoading && mineTasks.length === 0) return { tone: 'muted', text: 'Loading…' };
+    const f = mineFiltered.length;
+    const L = mineTasks.length;
+    const T = mineTotalCount;
+    let text: string;
+    if (f < L) {
+      text = `${f} of ${L} ${L === 1 ? 'task' : 'tasks'}`;
+    } else {
+      text = `${f} ${f === 1 ? 'task' : 'tasks'}`;
+    }
+    if (T != null && T > L) text += ` · ${T} total`;
+    return { tone: 'muted', text };
+  }, [
+    canViewMine,
+    isElevatedTaskViewer,
+    mineLoadError,
+    mineLoading,
+    mineTasks.length,
+    mineFiltered.length,
+    mineTotalCount,
+  ]);
+
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -299,10 +395,14 @@ export default function Tasks() {
   };
 
   const fetchMinePage = useCallback(async (offset: number, reset: boolean) => {
-    const res = await fetch(
-      `/api/tasks/mine?status=open&offset=${offset}&limit=${TASK_SERVER_PAGE_SIZE}`,
-      { headers: withBranchScope(selectedBranch?.id ?? null, { Authorization: `Bearer ${token}` }) },
-    );
+    const qs = new URLSearchParams();
+    qs.set('status', 'open');
+    qs.set('offset', String(offset));
+    qs.set('limit', String(TASK_SERVER_PAGE_SIZE));
+    if (mineUrgencyFilter !== 'all') qs.set('urgency', mineUrgencyFilter);
+    const res = await fetch(`/api/tasks/mine?${qs.toString()}`, {
+      headers: withBranchScope(selectedBranch?.id ?? null, { Authorization: `Bearer ${token}` }),
+    });
     const raw = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(typeof raw?.error === 'string' ? raw.error : 'Could not load your tasks');
@@ -315,7 +415,7 @@ export default function Tasks() {
     setMineServerHasMore(rows.length >= TASK_SERVER_PAGE_SIZE);
     setMineTotalCount(total);
     setMineLoadError(null);
-  }, [token, selectedBranch?.id]);
+  }, [token, selectedBranch?.id, mineUrgencyFilter]);
 
   const loadMine = useCallback(async () => {
     if (!token || !canViewMine || isElevatedTaskViewer) {
@@ -354,8 +454,18 @@ export default function Tasks() {
     if (branchAssigneeId.trim() && isMemberDbId(branchAssigneeId)) p.set('assignee_profile_id', branchAssigneeId.trim());
     if (branchCreatedById.trim() && isMemberDbId(branchCreatedById))
       p.set('created_by_profile_id', branchCreatedById.trim());
+    if (branchUrgencyFilter !== 'all') p.set('urgency', branchUrgencyFilter);
     return p.toString();
-  }, [branchStatus, branchMonth, branchDueFrom, branchDueTo, branchAssigneeId, branchCreatedById, isElevatedTaskViewer]);
+  }, [
+    branchStatus,
+    branchMonth,
+    branchDueFrom,
+    branchDueTo,
+    branchAssigneeId,
+    branchCreatedById,
+    branchUrgencyFilter,
+    isElevatedTaskViewer,
+  ]);
 
   const fetchBranchPage = useCallback(async (offset: number, reset: boolean) => {
     const qp = branchQueryString ? `${branchQueryString}&` : '';
@@ -402,6 +512,55 @@ export default function Tasks() {
     } catch { /* keep existing data */ }
     finally { setBranchLoadingMore(false); }
   }, [token, branchLoading, branchLoadingMore, branchServerHasMore, fetchBranchPage]);
+
+  /** Search only scans loaded pages; fetch more until we find a match or exhaust the server list. */
+  useEffect(() => {
+    if (!canBranch || !token) return;
+    if (!branchSearch.trim()) return;
+    if (branchLoading || branchLoadingMore) return;
+    const hit = branchTasks.some((t) => branchTaskMatchesUiFilters(t, branchSearch, branchTaskTypeFilter));
+    if (hit) return;
+    if (!branchServerHasMore) return;
+    if (branchTotalCount != null && branchTasks.length >= branchTotalCount) return;
+    if (branchTasks.length >= BRANCH_SEARCH_PREFETCH_MAX_TASKS) return;
+    void loadMoreBranch();
+  }, [
+    canBranch,
+    token,
+    branchSearch,
+    branchTaskTypeFilter,
+    branchTasks,
+    branchLoading,
+    branchLoadingMore,
+    branchServerHasMore,
+    branchTotalCount,
+    loadMoreBranch,
+  ]);
+
+  /** Same for “Your open tasks” when the search box is non-empty. */
+  useEffect(() => {
+    if (!token || !canViewMine || isElevatedTaskViewer) return;
+    if (!mineSearch.trim()) return;
+    if (mineLoading || mineLoadingMore) return;
+    const hit = mineTasks.some((t) => mineTaskMatchesUiFilters(t, mineSearch, mineTaskTypeFilter));
+    if (hit) return;
+    if (!mineServerHasMore) return;
+    if (mineTotalCount != null && mineTasks.length >= mineTotalCount) return;
+    if (mineTasks.length >= BRANCH_SEARCH_PREFETCH_MAX_TASKS) return;
+    void loadMoreMine();
+  }, [
+    token,
+    canViewMine,
+    isElevatedTaskViewer,
+    mineSearch,
+    mineTaskTypeFilter,
+    mineTasks,
+    mineLoading,
+    mineLoadingMore,
+    mineServerHasMore,
+    mineTotalCount,
+    loadMoreMine,
+  ]);
 
   useEffect(() => {
     const el = branchSentinelRef.current;
@@ -516,24 +675,6 @@ export default function Tasks() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [createMenuOpen]);
 
-  useEffect(() => {
-    if (!branchFiltersOpen) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setBranchFiltersOpen(false);
-    };
-    document.addEventListener('keydown', onEsc);
-    return () => document.removeEventListener('keydown', onEsc);
-  }, [branchFiltersOpen]);
-
-  useEffect(() => {
-    if (!mineFiltersOpen) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMineFiltersOpen(false);
-    };
-    document.addEventListener('keydown', onEsc);
-    return () => document.removeEventListener('keydown', onEsc);
-  }, [mineFiltersOpen]);
-
   const clearAllBranchFilters = useCallback(() => {
     setBranchTaskTypeFilter('all');
     setBranchSearch('');
@@ -543,6 +684,7 @@ export default function Tasks() {
     setBranchDueTo('');
     setBranchAssigneeId('');
     setBranchCreatedById('');
+    setBranchUrgencyFilter('all');
   }, []);
 
   const branchFilterChips = useMemo((): FilterChipItem[] => {
@@ -612,6 +754,13 @@ export default function Tasks() {
         onRemove: () => setBranchCreatedById(''),
       });
     }
+    if (branchUrgencyFilter !== 'all') {
+      chips.push({
+        id: 'urgency',
+        label: `Urgency: ${urgencyLabel(branchUrgencyFilter)}`,
+        onRemove: () => setBranchUrgencyFilter('all'),
+      });
+    }
     return chips;
   }, [
     branchTaskTypeFilter,
@@ -622,12 +771,14 @@ export default function Tasks() {
     branchDueTo,
     branchAssigneeId,
     branchCreatedById,
+    branchUrgencyFilter,
     staffOptions,
   ]);
 
   const clearAllMineFilters = useCallback(() => {
     setMineTaskTypeFilter('all');
     setMineSearch('');
+    setMineUrgencyFilter('all');
   }, []);
 
   const mineFilterChips = useMemo((): FilterChipItem[] => {
@@ -647,8 +798,15 @@ export default function Tasks() {
         onRemove: () => setMineSearch(''),
       });
     }
+    if (mineUrgencyFilter !== 'all') {
+      chips.push({
+        id: 'urgency',
+        label: `Urgency: ${urgencyLabel(mineUrgencyFilter)}`,
+        onRemove: () => setMineUrgencyFilter('all'),
+      });
+    }
     return chips;
-  }, [mineTaskTypeFilter, mineSearch]);
+  }, [mineTaskTypeFilter, mineSearch, mineUrgencyFilter]);
 
   const mergeTaskUpdate = <T extends MineTaskRow | BranchTaskRow>(x: T, updated: TaskRow): T =>
     ({
@@ -657,6 +815,7 @@ export default function Tasks() {
       task_type: x.task_type ?? updated.task_type ?? (updated.group_id ? 'group' : 'member'),
       member_id: updated.member_id ?? x.member_id,
       group_id: updated.group_id ?? x.group_id,
+      urgency: updated.urgency !== undefined ? updated.urgency : x.urgency,
       checklist: updated.checklist !== undefined ? updated.checklist : x.checklist,
       related_member_ids:
         updated.related_member_ids !== undefined ? updated.related_member_ids : x.related_member_ids,
@@ -730,6 +889,7 @@ export default function Tasks() {
     setEditTitle(t.title);
     setEditDescription(t.description ?? '');
     setEditDue(toDatetimeLocalValue(t.due_at));
+    setEditUrgency(urgencyFromRow(t));
     setEditAssigneeIds(new Set(leaderIdsFromTaskRow(t)));
     setEditChecklistLines((t.checklist ?? []).map((c) => ({ key: c.id, id: c.id, label: c.label, done: c.done })));
   };
@@ -746,6 +906,7 @@ export default function Tasks() {
     setEditingId(null);
     setEditSaving(false);
     setEditChecklistLines([]);
+    setEditUrgency('low');
   };
 
   const saveEdit = async () => {
@@ -767,6 +928,7 @@ export default function Tasks() {
       const body: Record<string, unknown> = {
         title,
         description: editDescription.trim() || null,
+        urgency: editUrgency,
       };
       if (!groupTaskRow) {
         body.assignee_profile_ids = [...editAssigneeIds];
@@ -864,6 +1026,7 @@ export default function Tasks() {
     const assigneeIdList = leaderIdsFromTaskRow(t);
     const expanded = expandedIds.has(t.id);
     const dueCountdown = t.due_at ? formatCalendarCountdown(t.due_at) : '';
+    const urgencyVal = urgencyFromRow(t);
     const canEditStructForTask = groupTask ? canEditChecklistGroup : canEditChecklistMember;
     const canToggleCheck =
       t.status !== 'cancelled' &&
@@ -899,6 +1062,11 @@ export default function Tasks() {
                       }`}
                     >
                       {groupTask ? 'Group' : 'Member'}
+                    </span>
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${urgencyBadgeClass(urgencyVal)}`}
+                    >
+                      {urgencyLabel(urgencyVal)}
                     </span>
                   </div>
                   {!expanded && (
@@ -1040,10 +1208,21 @@ export default function Tasks() {
   return (
     <div className="w-full min-w-0 max-w-4xl space-y-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-          <ListTodo className="w-7 h-7 text-blue-600" />
-          Tasks
-        </h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+            <ListTodo className="w-7 h-7 text-blue-600" />
+            Tasks
+          </h1>
+          {permissionsResolved && branchHeaderSubtitle ? (
+            <p
+              className={`mt-1 text-sm tabular-nums ${
+                branchHeaderSubtitle.tone === 'error' ? 'text-red-600' : 'text-gray-500'
+              }`}
+            >
+              {branchHeaderSubtitle.text}
+            </p>
+          ) : null}
+        </div>
 
         {permissionsResolved && canBranch ? (
           <div
@@ -1071,9 +1250,9 @@ export default function Tasks() {
             </div>
             <button
               type="button"
-              onClick={() => setBranchFiltersOpen((v) => !v)}
+              onClick={() => setBranchFiltersOpen(true)}
               className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
-                branchFiltersOpen
+                branchFiltersOpen || branchFilterChips.length > 0
                   ? 'bg-blue-50 border-blue-200 text-blue-700'
                   : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
               }`}
@@ -1143,174 +1322,166 @@ export default function Tasks() {
 
       {permissionsResolved && canBranch && (
         <section className="space-y-4">
-          {branchFiltersOpen && (
-            <div className="relative z-10 rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <SlidersHorizontal className="w-4 h-4 text-blue-600" />
-                  Filters
-                </p>
+          <Dialog open={branchFiltersOpen} onOpenChange={setBranchFiltersOpen}>
+            <DialogContent className="flex max-h-[min(90vh,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+              <DialogHeader className="space-y-1 border-b border-dashed border-gray-200 px-6 py-5 text-left">
+                <DialogTitle className="flex items-center gap-2 pr-8 text-lg font-semibold">
+                  <SlidersHorizontal className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+                  Task filters
+                </DialogTitle>
+                <DialogDescription className="text-sm text-gray-500">
+                  Narrow branch follow-ups by type, due dates, and people. Use Clear to reset every filter.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                <div className="space-y-5">
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Task type</p>
+                    <div
+                      className="grid grid-cols-3 gap-2 rounded-xl border border-gray-200 bg-white p-1 shadow-sm"
+                      role="group"
+                      aria-label="Task type"
+                    >
+                      {(
+                        [
+                          { id: 'all' as const, label: 'All', Icon: LayoutGrid },
+                          { id: 'member' as const, label: 'Member', Icon: Users },
+                          { id: 'group' as const, label: 'Group', Icon: Building2 },
+                        ] as const
+                      ).map(({ id, label, Icon }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setBranchTaskTypeFilter(id)}
+                          className={`inline-flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:flex-row sm:text-sm ${
+                            branchTaskTypeFilter === id
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                          aria-pressed={branchTaskTypeFilter === id}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Status</p>
+                    <select
+                      value={branchStatus}
+                      onChange={(e) => setBranchStatus(e.target.value as 'open' | 'all')}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm"
+                    >
+                      <option value="open">Open only</option>
+                      <option value="all">All statuses</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Urgency</p>
+                    <select
+                      value={branchUrgencyFilter}
+                      onChange={(e) => setBranchUrgencyFilter(e.target.value as 'all' | TaskUrgency)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm"
+                    >
+                      <option value="all">Any urgency</option>
+                      <option value="low">Low</option>
+                      <option value="urgent">Urgent</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Due month</p>
+                    <MonthPickerField
+                      value={branchMonth}
+                      onChange={setBranchMonth}
+                      placeholder="Any month"
+                      triggerClassName="h-auto min-h-11 w-full rounded-xl border-gray-200 bg-white px-3 py-3 text-sm font-medium text-gray-900 shadow-none"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Due from</p>
+                    <DateTimePickerField
+                      value={branchDueFrom}
+                      onChange={setBranchDueFrom}
+                      datePlaceholder="Start date"
+                      timePlaceholder="Start time"
+                      splitClassName="rounded-xl border border-gray-200 bg-white shadow-sm"
+                      triggerClassName="min-h-11 px-3 py-3 text-sm font-medium text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Due through</p>
+                    <DateTimePickerField
+                      value={branchDueTo}
+                      onChange={setBranchDueTo}
+                      datePlaceholder="End date"
+                      timePlaceholder="End time"
+                      splitClassName="rounded-xl border border-gray-200 bg-white shadow-sm"
+                      triggerClassName="min-h-11 px-3 py-3 text-sm font-medium text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Assignee</p>
+                    <select
+                      value={branchAssigneeId}
+                      onChange={(e) => setBranchAssigneeId(e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm"
+                    >
+                      <option value="">Anyone</option>
+                      {staffOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Assigned by</p>
+                    <select
+                      value={branchCreatedById}
+                      onChange={(e) => setBranchCreatedById(e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm"
+                    >
+                      <option value="">Anyone</option>
+                      {staffOptions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Due month and the date range work together. Clear the month if you only want the start/end range.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void loadBranch()}
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-800 shadow-sm hover:bg-gray-50"
+                  >
+                    <RefreshCw className="h-4 w-4 shrink-0" aria-hidden />
+                    Reload tasks from server
+                  </button>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3 border-t border-dashed border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => clearAllBranchFilters()}
+                  className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 hover:bg-gray-50"
+                >
+                  Clear
+                </button>
                 <button
                   type="button"
                   onClick={() => setBranchFiltersOpen(false)}
-                  className="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-50"
-                  aria-label="Close filters"
+                  className="flex-1 rounded-xl bg-gray-900 px-4 py-3 text-white hover:bg-black"
                 >
-                  <X className="w-4 h-4" />
+                  Apply
                 </button>
               </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <div
-                  className="inline-flex rounded-xl border border-gray-200 bg-white p-0.5 shadow-sm"
-                  role="group"
-                  aria-label="Task type"
-                >
-                  {(
-                    [
-                      { id: 'all' as const, label: 'All', Icon: LayoutGrid },
-                      { id: 'member' as const, label: 'Member', Icon: Users },
-                      { id: 'group' as const, label: 'Group', Icon: Building2 },
-                    ] as const
-                  ).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setBranchTaskTypeFilter(id)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                        branchTaskTypeFilter === id
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-600 hover:bg-gray-50'
-                      }`}
-                      aria-pressed={branchTaskTypeFilter === id}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-3 items-end">
-              <div>
-                <span className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <ListTodo className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Status
-                </span>
-                <div className="flex rounded-xl border border-gray-200 p-0.5 bg-white shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => setBranchStatus('open')}
-                    className={
-                      branchStatus === 'open'
-                        ? 'px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-900'
-                        : 'px-3 py-1.5 text-xs font-medium rounded-lg text-gray-600 hover:bg-gray-50'
-                    }
-                  >
-                    Open
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBranchStatus('all')}
-                    className={
-                      branchStatus === 'all'
-                        ? 'px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-900'
-                        : 'px-3 py-1.5 text-xs font-medium rounded-lg text-gray-600 hover:bg-gray-50'
-                    }
-                  >
-                    All
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Due month
-                </label>
-                <MonthPickerField
-                  value={branchMonth}
-                  onChange={setBranchMonth}
-                  placeholder="Due month"
-                  triggerClassName="h-auto min-h-0 rounded-xl border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-900 shadow-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <CalendarClock className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Due from
-                </label>
-                <DateTimePickerField
-                  value={branchDueFrom}
-                  onChange={setBranchDueFrom}
-                  datePlaceholder="From date"
-                  timePlaceholder="From time"
-                  splitClassName="rounded-xl border-gray-200 bg-white shadow-sm"
-                  triggerClassName="min-h-0 px-2.5 py-2 text-sm text-gray-900"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <CalendarClock className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Due to
-                </label>
-                <DateTimePickerField
-                  value={branchDueTo}
-                  onChange={setBranchDueTo}
-                  datePlaceholder="To date"
-                  timePlaceholder="To time"
-                  splitClassName="rounded-xl border-gray-200 bg-white shadow-sm"
-                  triggerClassName="min-h-0 px-2.5 py-2 text-sm text-gray-900"
-                />
-              </div>
-              <div className="min-w-[11rem] flex-1 sm:flex-initial">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <User className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Assignee
-                </label>
-                <select
-                  value={branchAssigneeId}
-                  onChange={(e) => setBranchAssigneeId(e.target.value)}
-                  className="w-full px-2.5 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm"
-                >
-                  <option value="">Anyone</option>
-                  {staffOptions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-[11rem] flex-1 sm:flex-initial">
-                <label className="text-xs font-medium text-gray-500 flex items-center gap-1.5 mb-1.5">
-                  <PenLine className="w-3.5 h-3.5 text-gray-400" aria-hidden />
-                  Assigned by
-                </label>
-                <select
-                  value={branchCreatedById}
-                  onChange={(e) => setBranchCreatedById(e.target.value)}
-                  className="w-full px-2.5 py-2 text-sm border border-gray-200 rounded-xl bg-white shadow-sm"
-                >
-                  <option value="">Anyone</option>
-                  {staffOptions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={() => void loadBranch()}
-                title="Reload list"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-gray-200 bg-white shadow-sm hover:bg-gray-50 text-gray-700"
-              >
-                <RefreshCw className="w-3.5 h-3.5" aria-hidden />
-                Refresh
-              </button>
-              </div>
-              <p className="text-[11px] text-gray-400">
-                Month and due range narrow results together. Clear month to use only the date range.
-              </p>
-            </div>
-          )}
+            </DialogContent>
+          </Dialog>
 
           {branchFilterChips.length > 0 ? (
             <FilterResultChips chips={branchFilterChips} onClearAll={clearAllBranchFilters} />
@@ -1351,6 +1522,16 @@ export default function Tasks() {
                           placeholder="Task description"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none"
                         />
+                        <label className="text-xs text-gray-500 block -mb-2">Urgency</label>
+                        <select
+                          value={editUrgency}
+                          onChange={(e) => setEditUrgency(e.target.value as TaskUrgency)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                        >
+                          <option value="low">Low</option>
+                          <option value="urgent">Urgent</option>
+                          <option value="high">High</option>
+                        </select>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {!isGroupTask(t) ? (
                             <div className="sm:col-span-2">
@@ -1495,10 +1676,21 @@ export default function Tasks() {
       {permissionsResolved && canViewMine && !isElevatedTaskViewer && (
         <section className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <User className="w-5 h-5 text-blue-500" />
-              Your open tasks
-            </h2>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5 text-blue-500" />
+                Your open tasks
+              </h2>
+              {mineHeaderSubtitle ? (
+                <p
+                  className={`mt-1 text-sm tabular-nums ${
+                    mineHeaderSubtitle.tone === 'error' ? 'text-red-600' : 'text-gray-500'
+                  }`}
+                >
+                  {mineHeaderSubtitle.text}
+                </p>
+              ) : null}
+            </div>
             <div className="relative shrink-0 flex items-center gap-2 flex-wrap justify-end" ref={createMenuRef}>
               {(canManageMember || canManageGroup) && (
                 <>
@@ -1554,9 +1746,9 @@ export default function Tasks() {
               )}
               <button
                 type="button"
-                onClick={() => setMineFiltersOpen((v) => !v)}
+                onClick={() => setMineFiltersOpen(true)}
                 className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-xl border transition-colors ${
-                  mineFiltersOpen
+                  mineFiltersOpen || mineFilterChips.length > 0
                     ? 'bg-blue-50 border-blue-200 text-blue-700'
                     : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                 }`}
@@ -1566,59 +1758,97 @@ export default function Tasks() {
               </button>
             </div>
           </div>
-          {mineFiltersOpen && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <div
-                  className="inline-flex rounded-xl border border-gray-200 bg-white p-0.5 shadow-sm"
-                  role="group"
-                  aria-label="Your task type"
-                >
-                  {(
-                    [
-                      { id: 'all' as const, label: 'All', Icon: LayoutGrid },
-                      { id: 'member' as const, label: 'Member', Icon: Users },
-                      { id: 'group' as const, label: 'Group', Icon: Building2 },
-                    ] as const
-                  ).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setMineTaskTypeFilter(id)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                        mineTaskTypeFilter === id
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-600 hover:bg-gray-50'
-                      }`}
-                      aria-pressed={mineTaskTypeFilter === id}
+          <Dialog open={mineFiltersOpen} onOpenChange={setMineFiltersOpen}>
+            <DialogContent className="flex max-h-[min(90vh,640px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+              <DialogHeader className="space-y-1 border-b border-dashed border-gray-200 px-6 py-5 text-left">
+                <DialogTitle className="flex items-center gap-2 pr-8 text-lg font-semibold">
+                  <SlidersHorizontal className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+                  Your task filters
+                </DialogTitle>
+                <DialogDescription className="text-sm text-gray-500">
+                  Filter tasks assigned to you or created by you. Search matches titles and details.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                <div className="space-y-5">
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Task type</p>
+                    <div
+                      className="grid grid-cols-3 gap-2 rounded-xl border border-gray-200 bg-white p-1 shadow-sm"
+                      role="group"
+                      aria-label="Your task type"
                     >
-                      <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="relative flex min-h-11 w-full min-w-0 max-w-md flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-                  <motion.span
-                    animate={mineSearchFocus ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.45, repeat: mineSearchFocus ? Infinity : 0, repeatDelay: 1.2 }}
-                    className="text-gray-400 shrink-0 mr-2"
-                  >
-                    <Search className="w-4 h-4" aria-hidden />
-                  </motion.span>
-                  <input
-                    type="search"
-                    placeholder="Search your tasks…"
-                    value={mineSearch}
-                    onChange={(e) => setMineSearch(e.target.value)}
-                    onFocus={() => setMineSearchFocus(true)}
-                    onBlur={() => setMineSearchFocus(false)}
-                    className="min-w-0 flex-1 text-base sm:text-sm bg-transparent border-0 outline-none placeholder:text-gray-400"
-                    aria-label="Search your tasks"
-                  />
+                      {(
+                        [
+                          { id: 'all' as const, label: 'All', Icon: LayoutGrid },
+                          { id: 'member' as const, label: 'Member', Icon: Users },
+                          { id: 'group' as const, label: 'Group', Icon: Building2 },
+                        ] as const
+                      ).map(({ id, label, Icon }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setMineTaskTypeFilter(id)}
+                          className={`inline-flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors sm:flex-row sm:text-sm ${
+                            mineTaskTypeFilter === id
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                          aria-pressed={mineTaskTypeFilter === id}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Urgency</p>
+                    <select
+                      value={mineUrgencyFilter}
+                      onChange={(e) => setMineUrgencyFilter(e.target.value as 'all' | TaskUrgency)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 shadow-sm"
+                    >
+                      <option value="all">Any urgency</option>
+                      <option value="low">Low</option>
+                      <option value="urgent">Urgent</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-semibold text-gray-900">Search</p>
+                    <div className="relative w-full min-w-0">
+                      <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" aria-hidden />
+                      <input
+                        type="search"
+                        placeholder="Search your tasks…"
+                        value={mineSearch}
+                        onChange={(e) => setMineSearch(e.target.value)}
+                        className="min-h-11 w-full rounded-xl border border-gray-200 bg-white py-3 pl-12 pr-4 text-base shadow-sm outline-none placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 sm:text-sm"
+                        aria-label="Search your tasks"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+              <div className="flex shrink-0 items-center gap-3 border-t border-dashed border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => clearAllMineFilters()}
+                  className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-gray-700 hover:bg-gray-50"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMineFiltersOpen(false)}
+                  className="flex-1 rounded-xl bg-gray-900 px-4 py-3 text-white hover:bg-black"
+                >
+                  Apply
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
           {mineFilterChips.length > 0 ? (
             <FilterResultChips chips={mineFilterChips} onClearAll={clearAllMineFilters} />
           ) : null}
@@ -1656,6 +1886,16 @@ export default function Tasks() {
                           placeholder="Task description"
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none"
                         />
+                        <label className="text-xs text-gray-500 block -mb-2">Urgency</label>
+                        <select
+                          value={editUrgency}
+                          onChange={(e) => setEditUrgency(e.target.value as TaskUrgency)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+                        >
+                          <option value="low">Low</option>
+                          <option value="urgent">Urgent</option>
+                          <option value="high">High</option>
+                        </select>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {!isGroupTask(t) ? (
                             <div className="sm:col-span-2">

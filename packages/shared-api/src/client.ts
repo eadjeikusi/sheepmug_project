@@ -524,6 +524,7 @@ export function createApiClient(options: ApiClientOptions) {
           related_member_ids?: string[];
           /** Checklist rows (server: `{ label, done }[]`). */
           checklist?: { label: string; done?: boolean }[];
+          urgency?: "low" | "urgent" | "high";
         }
       ) => {
         const ids =
@@ -539,6 +540,7 @@ export function createApiClient(options: ApiClientOptions) {
         };
         if (body.description !== undefined) payload.description = body.description;
         if (body.due_at !== undefined) payload.due_at = body.due_at;
+        if (body.urgency) payload.urgency = body.urgency;
         if (body.related_member_ids && body.related_member_ids.length > 0) {
           payload.related_member_ids = body.related_member_ids;
         }
@@ -668,6 +670,7 @@ export function createApiClient(options: ApiClientOptions) {
           description?: string;
           due_at?: string | null;
           checklist?: { label: string; done?: boolean }[];
+          urgency?: "low" | "urgent" | "high";
         }
       ) => {
         const ids =
@@ -692,6 +695,7 @@ export function createApiClient(options: ApiClientOptions) {
             done: item.done === true,
           }));
         }
+        if (body.urgency) payload.urgency = body.urgency;
         return request<{ task?: TaskItem; error?: string }>(
           `/api/groups/${encodeURIComponent(anchorGroupId)}/tasks`,
           {
@@ -848,9 +852,15 @@ export function createApiClient(options: ApiClientOptions) {
     },
 
     tasks: {
-      mine: async (params?: { status?: "open" | "all"; offset?: number; limit?: number }) => {
+      mine: async (params?: {
+        status?: "open" | "all";
+        offset?: number;
+        limit?: number;
+        urgency?: "low" | "urgent" | "high" | "all";
+      }) => {
         const qs = new URLSearchParams();
         if (params?.status === "all") qs.set("status", "all");
+        if (params?.urgency && params.urgency !== "all") qs.set("urgency", params.urgency);
         if (typeof params?.offset === "number" && Number.isFinite(params.offset) && params.offset >= 0) {
           qs.set("offset", String(Math.floor(params.offset)));
         }
@@ -872,6 +882,7 @@ export function createApiClient(options: ApiClientOptions) {
         dueToIso?: string;
         assigneeProfileId?: string;
         createdByProfileId?: string;
+        urgency?: "low" | "urgent" | "high" | "all";
         offset?: number;
         limit?: number;
       }) => {
@@ -885,6 +896,7 @@ export function createApiClient(options: ApiClientOptions) {
         if (params?.assigneeProfileId?.trim()) qs.set("assignee_profile_id", params.assigneeProfileId.trim());
         if (params?.createdByProfileId?.trim())
           qs.set("created_by_profile_id", params.createdByProfileId.trim());
+        if (params?.urgency && params.urgency !== "all") qs.set("urgency", params.urgency);
         if (typeof params?.offset === "number" && Number.isFinite(params.offset) && params.offset >= 0) {
           qs.set("offset", String(Math.floor(params.offset)));
         }
@@ -939,7 +951,46 @@ export function createApiClient(options: ApiClientOptions) {
         return request<{ rows: ReportHistoryTableRow[] }>(`/api/reports/history-table${query ? `?${query}` : ""}`);
       },
       listLeaders: () =>
-        request<{ leaders: Array<{ id: string; first_name?: string | null; last_name?: string | null; email?: string | null; avatar_url?: string | null }> }>("/api/reports/leaders"),
+        request<{
+          leaders: Array<{
+            id: string;
+            first_name?: string | null;
+            last_name?: string | null;
+            email?: string | null;
+            avatar_url?: string | null;
+            group_count?: number;
+          }>;
+        }>("/api/reports/leaders"),
+      leaderDetail: (profileId: string) =>
+        request<{
+          leader: {
+            id: string;
+            first_name?: string | null;
+            last_name?: string | null;
+            email?: string | null;
+            avatar_url?: string | null;
+            group_count: number;
+          };
+          groups: Array<{
+            id: string;
+            name: string;
+            member_count: number;
+            leader_id?: string | null;
+            member_preview?: Array<{ member_id: string; image_url: string | null; initials: string }>;
+          }>;
+          members: Array<{ id: string; first_name: string | null; last_name: string | null; image_url?: string | null }>;
+          tasks?: Array<{
+            id: string;
+            task_type: "member" | "group";
+            title: string;
+            status: string;
+            due_at: string | null;
+            member_id?: string;
+            group_id?: string;
+            members?: Array<{ id: string; first_name: string | null; last_name: string | null }>;
+            groups?: Array<{ id: string; name: string | null }>;
+          }>;
+        }>(`/api/reports/leaders/${encodeURIComponent(profileId)}`),
       getDefinition: (id: string) =>
         request<ReportDefinition>(`/api/reports/definitions/${encodeURIComponent(id)}`),
       createDefinition: (payload: {

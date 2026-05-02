@@ -10,34 +10,36 @@ export function MemberTableBodySkeleton({
   return (
     <>
       {Array.from({ length: rows }, (_, i) => (
-        <tr key={i} className="border-b border-gray-100">
-          <td className="px-6 py-4">
-            <Skeleton className="h-4 w-4 rounded" />
-          </td>
-          <td className="px-6 py-4">
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
-              <Skeleton className="h-4 w-40 max-w-full" />
+        <tr key={i} className="group/skrow border-b border-gray-100">
+          <td className="w-10 px-2 py-3">
+            <div className="flex justify-center opacity-0 transition-opacity duration-150 group-hover/skrow:opacity-100">
+              <Skeleton className="h-[15px] w-[15px] rounded-[3px]" />
             </div>
           </td>
-          <td className="px-6 py-4">
-            <Skeleton className="h-4 w-28" />
+          <td className="w-14 px-2 py-4">
+            <Skeleton className="mx-auto h-10 w-10 rounded-full" />
           </td>
-          <td className="px-6 py-4">
-            <Skeleton className="h-4 w-36 max-w-[12rem]" />
+          <td className="min-w-0 max-w-[200px] px-4 py-4">
+            <Skeleton className="h-4 w-40 max-w-full" />
           </td>
-          <td className="px-6 py-4">
+          <td className="min-w-0 px-4 py-4">
+            <Skeleton className="h-4 w-28 max-w-full" />
+          </td>
+          <td className="min-w-0 w-[1%] max-w-[120px] px-4 py-4 sm:max-w-[140px]">
+            <Skeleton className="h-4 w-full max-w-[7rem]" />
+          </td>
+          <td className="min-w-0 max-w-[200px] px-4 py-4">
             <Skeleton className="h-4 w-32 max-w-[10rem]" />
           </td>
           {!showDeletedMembers ? (
             <>
-              <td className="px-6 py-4">
+              <td className="px-4 py-4">
                 <Skeleton className="h-4 w-24" />
               </td>
-              <td className="px-6 py-4">
+              <td className="px-4 py-4">
                 <Skeleton className="h-6 w-20 rounded-full" />
               </td>
-              <td className="px-6 py-4 text-center">
+              <td className="w-14 px-2 py-4 text-center">
                 <Skeleton className="mx-auto h-8 w-8 rounded-lg" />
               </td>
             </>

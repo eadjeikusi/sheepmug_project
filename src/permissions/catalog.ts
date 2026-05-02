@@ -282,6 +282,13 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
         actionKinds: ["assign"],
       },
       {
+        id: "assign_ministry_leaders",
+        name: "Assign ministry leaders",
+        description: "Set or change the formal ministry leader (leader_id) on a group from the Leaders page or API",
+        implies: ["view_groups", "leaders_profile_page"],
+        actionKinds: ["assign"],
+      },
+      {
         id: "view_group_requests",
         name: "View group join requests",
         description: "See pending ministry join requests (without approving)",
@@ -449,6 +456,13 @@ export const PERMISSION_CATALOG: PermissionCategory[] = [
         id: "report_leaders",
         name: "Leaders report access",
         description: "Create and view leaders reports",
+        implies: ["leaders_profile_page"],
+        actionKinds: ["view"],
+      },
+      {
+        id: "leaders_profile_page",
+        name: "Leaders directory",
+        description: "Open the Leaders list and leader profile pages (tasks and reports still need their own permissions)",
         actionKinds: ["view"],
       },
       {

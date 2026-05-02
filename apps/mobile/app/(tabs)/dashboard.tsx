@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -11,7 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Family, Group, Member, TaskItem } from "@sheepmug/shared-api";
@@ -19,13 +18,12 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useBranch } from "../../contexts/BranchContext";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { usePermissions } from "../../hooks/usePermissions";
+import { canAccessLeadersDirectory } from "@sheepmug/permissions-helpers";
 import { HeaderIconCircleButton } from "../../components/HeaderIconCircle";
 import { MemberInitialAvatar } from "../../components/MemberInitialAvatar";
-import { MemberJoinQrModal } from "../../components/MemberJoinQrModal";
 import { api } from "../../lib/api";
 import { normalizeImageUri } from "../../lib/imageUri";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
-import { getMemberJoinRegisterUrl } from "../../lib/memberJoinRegisterUrl";
 import {
   getDashboardLastSeenCounts,
   getOfflineResourceCache,
@@ -394,7 +392,7 @@ export default function DashboardScreen() {
     "group_assignments"
   );
   const [spotlightLoading, setSpotlightLoading] = useState(false);
-  const [activeTag, setActiveTag] = useState<"members" | "families" | "reports">("members");
+  const [activeTag, setActiveTag] = useState<"members" | "families" | "reports" | "leaders">("members");
   const [lastSeen, setLastSeen] = useState<DashboardLastSeenCounts>({});
   const [groupRequestRows, setGroupRequestRows] = useState<Record<string, unknown>[]>([]);
   const [memberRequestRows, setMemberRequestRows] = useState<Record<string, unknown>[]>([]);
@@ -404,7 +402,6 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [myFamilies, setMyFamilies] = useState<Family[]>([]);
   const [myFamiliesLoading, setMyFamiliesLoading] = useState(false);
-  const [showMemberQrModal, setShowMemberQrModal] = useState(false);
 
   /** Prefer `profiles.first_name` from auth; if empty, use linked member row (same id) from directory — matches DB. */
   const firstName = useMemo(() => {
@@ -493,7 +490,7 @@ export default function DashboardScreen() {
   }, [selectedBranch?.id]);
 
   const canViewMemberRequests = can("view_member_requests") || can("approve_member_requests");
-  const canAddMembers = can("add_members");
+  const canSeeLeaders = canAccessLeadersDirectory(can);
   const canViewGroupRequests = can("view_group_requests") || can("approve_group_requests");
   const canViewTasks = can("view_member_tasks") || can("view_group_tasks");
   const canViewFamilies = can("view_families");
@@ -802,6 +799,16 @@ export default function DashboardScreen() {
           {(
             [
               { id: "members" as const, label: "Members", icon: "people-outline" as const, href: "/(tabs)/members" as const },
+              ...(canSeeLeaders
+                ? [
+                    {
+                      id: "leaders" as const,
+                      label: "Leaders",
+                      icon: "people-circle-outline" as const,
+                      href: "/leaders" as const,
+                    },
+                  ]
+                : []),
               ...(canViewFamilies
                 ? [{ id: "families" as const, label: "Families", icon: "home-outline" as const, href: "/families" as const }]
                 : []),
@@ -818,33 +825,21 @@ export default function DashboardScreen() {
             ] as const
           ).map((tag) => {
             const selected = activeTag === tag.id;
-            const addMemberChip = tag.id === "members" && canAddMembers;
-            const displayLabel = addMemberChip ? "Add Member" : tag.label;
-            const displayIcon = tag.icon;
             return (
               <Pressable
                 key={tag.id}
-                accessibilityLabel={addMemberChip ? "Add member with QR code" : undefined}
                 onPress={() => {
-                  if (addMemberChip) {
-                    if (!getMemberJoinRegisterUrl(selectedBranch?.id, user?.branch_id)) {
-                      Alert.alert("Branch required", "Select a branch first to generate member join QR.");
-                      return;
-                    }
-                    setShowMemberQrModal(true);
-                    return;
-                  }
                   setActiveTag(tag.id);
-                  router.push(tag.href);
+                  router.push(tag.href as Href);
                 }}
                 style={[styles.tagChip, selected && styles.tagChipActive]}
               >
                 <Ionicons
-                  name={displayIcon}
+                  name={tag.icon}
                   size={16}
                   color={selected ? "#ffffff" : colors.textSecondary}
                 />
-                <Text style={[styles.tagChipText, selected && styles.tagChipTextActive]}>{displayLabel}</Text>
+                <Text style={[styles.tagChipText, selected && styles.tagChipTextActive]}>{tag.label}</Text>
               </Pressable>
             );
           })}
@@ -1041,7 +1036,6 @@ export default function DashboardScreen() {
 
       </ScrollView>
 
-      <MemberJoinQrModal visible={showMemberQrModal} onClose={() => setShowMemberQrModal(false)} />
     </SafeAreaView>
   );
 }

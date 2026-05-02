@@ -112,6 +112,50 @@ function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Whole calendar months from earlier day to later day (local), partial trailing month excluded. */
+function calendarMonthsFromTo(earlierStartOfDay: Date, laterStartOfDay: Date): number {
+  let months =
+    (laterStartOfDay.getFullYear() - earlierStartOfDay.getFullYear()) * 12 +
+    (laterStartOfDay.getMonth() - earlierStartOfDay.getMonth());
+  if (laterStartOfDay.getDate() < earlierStartOfDay.getDate()) months -= 1;
+  return Math.max(0, months);
+}
+
+/**
+ * Past-focused relative phrase from a calendar date (e.g. date joined) to today (local).
+ * ≥12 months: "2 years ago" or "1 year, 3 months ago"; otherwise months, weeks, or days.
+ */
+export function formatPastDateRelativePhrase(
+  input: string | Date | null | undefined,
+  referenceDate: Date = new Date(),
+): string {
+  if (input == null || input === '') return '';
+  const parsed = input instanceof Date ? input : parseLocalDateString(String(input));
+  if (!parsed || Number.isNaN(parsed.getTime())) return '';
+  const fromDay = startOfLocalDay(parsed);
+  const today = startOfLocalDay(referenceDate);
+  const diffDays = Math.round((today.getTime() - fromDay.getTime()) / 86400000);
+  if (diffDays < 0) return '';
+  if (diffDays === 0) return 'Today';
+
+  const monthsTotal = calendarMonthsFromTo(fromDay, today);
+
+  if (monthsTotal >= 12) {
+    const y = Math.floor(monthsTotal / 12);
+    const m = monthsTotal % 12;
+    if (m === 0) return `${y} ${y === 1 ? 'year' : 'years'} ago`;
+    return `${y} ${y === 1 ? 'year' : 'years'}, ${m} ${m === 1 ? 'month' : 'months'} ago`;
+  }
+  if (monthsTotal >= 1) {
+    return `${monthsTotal} ${monthsTotal === 1 ? 'month' : 'months'} ago`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+  }
+  const w = Math.floor(diffDays / 7);
+  return `${w} ${w === 1 ? 'week' : 'weeks'} ago`;
+}
+
 /** Whole calendar days from "today" (local) to the target's calendar day. */
 function calendarDaysFromToday(target: Date): number {
   const today = startOfLocalDay(new Date());

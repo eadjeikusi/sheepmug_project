@@ -9,6 +9,16 @@ import {
   parseCountPctCombinedKey,
 } from "./reportPreviewTable";
 
+/**
+ * Raw report row keys omitted from preview, CSV, and PDF — users see names, not UUIDs.
+ * (Filters / API requests still use ids elsewhere.)
+ */
+export const REPORT_EXPORT_OMIT_KEYS = new Set<string>(["event_id", "group_id", "member_id", "leader_id"]);
+
+export function filterReportTableKeys(keys: string[]): string[] {
+  return keys.filter((k) => !REPORT_EXPORT_OMIT_KEYS.has(k));
+}
+
 /** Cell values that are free text in the preview table (title-case per word). */
 const PREVIEW_WORD_CASE_KEYS = new Set<string>([
   "event_name",
@@ -22,10 +32,8 @@ const PREVIEW_WORD_CASE_KEYS = new Set<string>([
 
 export const GROUP_REPORT_COLUMN_LABELS: Record<string, string> = {
   total_attendance: "Total",
-  event_id: "Event ID",
   event_name: "Event name",
   event_type: "Event type",
-  group_id: "Group ID",
   group_name: "Group name",
   member_count: "Member count",
   events_in_range: "Events in range",
@@ -50,7 +58,6 @@ export const MEMBERSHIP_REPORT_COLUMN_LABELS: Record<string, string> = {
   attendance_absent: "Report date range — absent",
   attendance_unsure: "Report date range — unsure",
   attendance_not_marked: "Report date range — not marked",
-  member_id: "Member ID",
   member_name: "Member name",
   status: "Status",
   tasks_pending: "Tasks pending",
@@ -64,13 +71,22 @@ export const MEMBERSHIP_REPORT_COLUMN_LABELS: Record<string, string> = {
 };
 
 export const LEADER_REPORT_COLUMN_LABELS: Record<string, string> = {
-  leader_id: "Leader ID",
-  group_id: "Group ID",
   group_name: "Group name",
   member_count: "Member count",
+  events_in_range: "Events linked to group (in range)",
   group_tasks_pending: "Group tasks pending",
   group_tasks_completed: "Group tasks completed",
   group_tasks_all: "Group tasks all",
+  attendance_total: "Attendance rows (report range, group roster)",
+  attendance_present: "Present (report range)",
+  attendance_absent: "Absent (report range)",
+  attendance_unsure: "Unsure (report range)",
+  attendance_not_marked: "Not marked (report range)",
+  attendance_present_pct: "Present %",
+  attendance_absent_pct: "Absent %",
+  attendance_unsure_pct: "Unsure %",
+  attendance_not_marked_pct: "Not marked %",
+  attendance_rate_pct: "Attendance rate % (report range)",
 };
 
 export function defaultHumanizeReportKey(key: string): string {
@@ -81,10 +97,8 @@ export function defaultHumanizeReportKey(key: string): string {
 }
 
 const GROUP_KEY_ORDER: string[] = [
-  "event_id",
   "event_name",
   "event_type",
-  "group_id",
   "group_name",
   "member_count",
   "events_in_range",
@@ -101,13 +115,22 @@ const GROUP_KEY_ORDER: string[] = [
 ];
 
 const LEADER_KEY_ORDER: string[] = [
-  "leader_id",
-  "group_id",
   "group_name",
   "member_count",
+  "events_in_range",
   "group_tasks_pending",
   "group_tasks_completed",
   "group_tasks_all",
+  "attendance_present",
+  "attendance_absent",
+  "attendance_unsure",
+  "attendance_not_marked",
+  "attendance_total",
+  "attendance_present_pct",
+  "attendance_absent_pct",
+  "attendance_unsure_pct",
+  "attendance_not_marked_pct",
+  "attendance_rate_pct",
 ];
 
 function rankInOrder(key: string, order: string[]): number {
@@ -122,20 +145,21 @@ export function orderKeysForReportExport(
   allKeys: string[],
   reportType: "group" | "membership" | "leader",
 ): string[] {
+  const keys = filterReportTableKeys(allKeys);
   if (reportType === "membership") {
-    return orderPreviewTableColumns("membership", allKeys);
+    return orderPreviewTableColumns("membership", keys);
   }
   if (reportType === "group") {
-    return [...allKeys].sort(
+    return [...keys].sort(
       (a, b) => rankInOrder(a, GROUP_KEY_ORDER) - rankInOrder(b, GROUP_KEY_ORDER) || a.localeCompare(b),
     );
   }
   if (reportType === "leader") {
-    return [...allKeys].sort(
+    return [...keys].sort(
       (a, b) => rankInOrder(a, LEADER_KEY_ORDER) - rankInOrder(b, LEADER_KEY_ORDER) || a.localeCompare(b),
     );
   }
-  return [...allKeys].sort((a, b) => a.localeCompare(b));
+  return [...keys].sort((a, b) => a.localeCompare(b));
 }
 
 /**
@@ -147,7 +171,13 @@ export function getReportTableColumnLabel(
 ): string {
   const ck = parseCountPctCombinedKey(key);
   if (ck) {
-    return humanizeCountPctCombinedHeader(ck, reportType, MEMBERSHIP_REPORT_COLUMN_LABELS);
+    const combinedLabels =
+      reportType === "leader"
+        ? LEADER_REPORT_COLUMN_LABELS
+        : reportType === "membership"
+          ? MEMBERSHIP_REPORT_COLUMN_LABELS
+          : undefined;
+    return humanizeCountPctCombinedHeader(ck, reportType, combinedLabels);
   }
   if (reportType === "group" && GROUP_REPORT_COLUMN_LABELS[key]) {
     return GROUP_REPORT_COLUMN_LABELS[key]!;

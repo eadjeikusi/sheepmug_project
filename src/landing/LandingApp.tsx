@@ -6,12 +6,17 @@ import {
   Bell,
   CalendarCheck,
   GitBranch,
+  Layers,
   ListTodo,
   Menu,
   UserPlus,
   Users,
   X,
+  Zap,
+  Building2,
+  Check,
 } from "lucide-react";
+import { PAID_PLANS, type BillingPlanId } from "../app/config/paidPlans";
 
 const CMS = "/cms";
 const LOGIN = "/cms/login";
@@ -228,65 +233,119 @@ function LeaderTaskFlowCards() {
   );
 }
 
-function SimplePricingCard({
-  plan,
-  price,
-  features,
-  cta,
-  href,
-  tone,
-}: {
-  plan: string;
-  price: string;
-  features: string[];
-  cta: string;
-  href: string;
-  tone: "violet" | "orange";
-}) {
-  const toneStyles =
-    tone === "violet"
-      ? {
-          orb: "bg-[#7b6bff]",
-          orbSoft: "bg-[#cfc8ff]",
-          button: "bg-[#4f46e5] hover:bg-[#4338ca]",
-          check: "text-[#4f46e5]",
-        }
-      : {
-          orb: "bg-[#f59e0b]",
-          orbSoft: "bg-[#fde1b2]",
-          button: "bg-[#f59e0b] hover:bg-[#d97706]",
-          check: "text-[#d97706]",
-        };
+const CORE_FEATURES = [
+  "Member profiles, groups & branches",
+  "Events, attendance & tasks",
+  "Leader permissions & ministry scope",
+  "Desktop app & offline-friendly workflows",
+  "Notifications for your team",
+];
+
+function LandingPricingCards() {
+  const plans: {
+    id: BillingPlanId;
+    icon: ReactNode;
+    featured?: boolean;
+    cta: string;
+    priceSuffix: string;
+  }[] = [
+    {
+      id: "core_monthly",
+      icon: <Zap className="h-5 w-5 text-white" aria-hidden />,
+      cta: "Choose plan",
+      priceSuffix: "/mo",
+    },
+    {
+      id: "core_6months",
+      icon: <Layers className="h-5 w-5 text-[#14532d]" aria-hidden />,
+      featured: true,
+      cta: "Start with 6 months",
+      priceSuffix: "/6 mo",
+    },
+    {
+      id: "core_annual",
+      icon: <Building2 className="h-5 w-5 text-white" aria-hidden />,
+      cta: "Get the annual bundle",
+      priceSuffix: "/yr",
+    },
+  ];
 
   return (
-    <article className="rounded-2xl bg-white p-7 shadow-sm ring-1 ring-black/10">
-      <div className="mb-6 flex justify-center">
-        <div className="relative h-20 w-24">
-          <div className={`absolute inset-x-3 top-7 h-10 rounded-md ${toneStyles.orb} opacity-90`} />
-          <div className={`absolute left-2 top-1 h-9 w-9 rounded-md ${toneStyles.orb}`} />
-          <div className={`absolute right-2 top-1 h-9 w-9 rounded-md ${toneStyles.orbSoft}`} />
-        </div>
-      </div>
+    <div className="mt-12 grid gap-6 lg:grid-cols-3 lg:items-stretch">
+      {plans.map(({ id, icon, featured, cta, priceSuffix }) => {
+        const p = PAID_PLANS[id];
+        const href = `${SIGNUP}?plan=${id}`;
+        return (
+          <article
+            key={id}
+            className={`relative flex flex-col rounded-2xl border p-8 shadow-sm transition hover:shadow-md ${
+              featured
+                ? "border-[#bbf7d0] bg-[#ecfdf5] ring-2 ring-[#86efac]/80 lg:scale-[1.02]"
+                : "border-neutral-200 bg-white"
+            }`}
+          >
+            {featured ? (
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#166534] px-4 py-1 text-xs font-semibold text-white shadow">
+                Best value
+              </span>
+            ) : null}
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                  featured ? "bg-white shadow-sm ring-1 ring-black/5" : id === "core_annual" ? "bg-[#166534]" : "bg-[#22c55e]"
+                }`}
+              >
+                {icon}
+              </div>
+              <div>
+                <h3 className={`font-['Playfair_Display',serif] text-xl font-bold ${featured ? "text-[#14532d]" : "text-[#166534]"}`}>
+                  {p.title}
+                </h3>
+                <p className="mt-1 text-sm text-neutral-600">
+                  {id === "core_monthly" && "For churches getting started month to month."}
+                  {id === "core_6months" && "Six months of full access with clear savings."}
+                  {id === "core_annual" && "Maximum savings for committed teams."}
+                </p>
+              </div>
+            </div>
 
-      <h3 className="text-center font-['Playfair_Display',serif] text-2xl font-bold text-neutral-950">{plan}</h3>
+            <div className="mt-6">
+              <p className="text-4xl font-bold tracking-tight text-neutral-950">
+                GH₵ {p.priceGhs.toLocaleString()}
+                <span className="text-lg font-semibold text-neutral-500">{priceSuffix}</span>
+              </p>
+              {p.savingsLine ? (
+                <p className="mt-2 inline-flex rounded-full border border-[#bbf7d0] bg-white/80 px-3 py-1 text-xs font-medium text-[#166534]">
+                  {p.savingsLine}
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-neutral-500">Billed {p.intervalLabel.toLowerCase()}</p>
+              )}
+            </div>
 
-      <ul className="mt-6 space-y-3 text-[15px] text-neutral-700">
-        {features.map((feature) => (
-          <li key={feature} className="flex items-start gap-2">
-            <span className={`mt-[2px] text-sm ${toneStyles.check}`}>✓</span>
-            <span>{feature}</span>
-          </li>
-        ))}
-      </ul>
+            <ul className="mt-6 flex-1 space-y-2.5 text-[15px] text-neutral-700">
+              {CORE_FEATURES.map((f) => (
+                <li key={f} className="flex items-start gap-2">
+                  <Check className={`mt-0.5 h-4 w-4 shrink-0 ${featured ? "text-[#166534]" : "text-[#22c55e]"}`} aria-hidden />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
 
-      <p className="mt-9 text-center text-4xl font-bold text-neutral-950">{price}</p>
-      <a
-        href={href}
-        className={`mt-6 inline-flex w-full justify-center rounded-full px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white transition ${toneStyles.button}`}
-      >
-        {cta}
-      </a>
-    </article>
+            <a
+              href={href}
+              className={`mt-8 inline-flex w-full justify-center rounded-full px-5 py-3 text-center text-sm font-semibold transition ${
+                featured
+                  ? "bg-[#166534] text-white hover:bg-[#14532d]"
+                  : "border border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-50"
+              }`}
+            >
+              {cta}
+            </a>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
@@ -427,15 +486,9 @@ export function LandingApp() {
           <div className="hidden items-center gap-3 md:flex">
             <a
               href={LOGIN}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-100"
-            >
-              Log in
-            </a>
-            <a
-              href={SIGNUP}
               className="rounded-full bg-[#1A1A1A] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
             >
-              Join now
+              Log in
             </a>
           </div>
 
@@ -468,15 +521,12 @@ export function LandingApp() {
                 Contact
               </NavLink>
               <hr className="border-neutral-200" />
-              <a href={LOGIN} className="font-semibold text-neutral-800" onClick={closeMenu}>
-                Log in
-              </a>
               <a
-                href={SIGNUP}
+                href={LOGIN}
                 className="rounded-full bg-[#1A1A1A] py-3 text-center font-semibold text-white"
                 onClick={closeMenu}
               >
-                Join now
+                Log in
               </a>
             </div>
           </div>
@@ -643,50 +693,16 @@ export function LandingApp() {
           </div>
         </section>
 
-        <section id="pricing" className="relative scroll-mt-24 overflow-hidden py-16 md:py-24">
+        <section id="pricing" className="relative scroll-mt-24 overflow-hidden bg-white py-16 md:py-24">
           <SectionPlayfulDecor tone="coral" />
           <div className="relative z-10 mx-auto max-w-6xl px-4 md:px-6">
-            <h2 className="text-center font-['Playfair_Display',serif] text-3xl font-bold md:text-4xl">Pricing</h2>
+            <h2 className="text-center font-['Playfair_Display',serif] text-3xl font-bold text-[#166534] md:text-4xl">
+              Simple, transparent pricing
+            </h2>
             <p className="mx-auto mt-3 max-w-2xl text-center text-base text-[#666666] md:text-lg">
-              Simple plans for churches. Start free and upgrade when your team needs more.
+              One powerful workspace for members, events, attendance, and tasks—pick the billing rhythm that fits your church.
             </p>
-            <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
-              <SimplePricingCard
-                plan="Core Monthly"
-                price="GHC 400 per month"
-                features={[
-                  "All Core features",
-                  "Full offline version",
-                  "Desktop application",
-                  "Unlimited members",
-                  "Unlimited group leaders",
-                  "Unlimited ministries",
-                  "Prompt notifications for church leaders",
-                ]}
-                cta="Choose Monthly"
-                href={`${SIGNUP}?plan=monthly`}
-                tone="violet"
-              />
-              <SimplePricingCard
-                plan="Core Yearly"
-                price="GHC 4,400 per year"
-                features={[
-                  "All Core Monthly features",
-                  "Pay yearly, get one month free",
-                  "Full offline version",
-                  "Desktop application",
-                  "Unlimited members",
-                  "Unlimited group leaders",
-                  "Unlimited ministries",
-                  "Prompt notifications for church leaders",
-                  "Import and export membership data",
-                  "Monthly group reports",
-                ]}
-                cta="Choose Yearly"
-                href={`${SIGNUP}?plan=yearly`}
-                tone="orange"
-              />
-            </div>
+            <LandingPricingCards />
           </div>
         </section>
 

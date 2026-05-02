@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { displayMemberWords } from "../../lib/memberDisplayFormat";
 import { buildChildrenByParent, rootGroupsInScope, toggleGroupSelection, type ReportGroupRow } from "../../lib/reportGroupTree";
@@ -92,7 +92,12 @@ export function ReportGroupTreeModal({ visible, onClose, groups, selectedIds, on
               </Pressable>
             </View>
             <Text style={styles.hint}>Tap a group to select it and all nested subgroups.</Text>
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            >
               {roots.length === 0 ? <Text style={styles.empty}>No groups in your scope.</Text> : null}
               {roots.map((r) => (
                 <RowNode
@@ -134,6 +139,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: "hidden",
+    ...(Platform.OS === "android" ? { elevation: 24 } : {}),
   },
   header: {
     flexDirection: "row",

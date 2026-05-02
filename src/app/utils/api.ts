@@ -287,6 +287,7 @@ export const groupApi = {
     description?: string;
     due_at?: string | null;
     checklist?: { label: string; done?: boolean }[];
+    urgency?: 'low' | 'urgent' | 'high';
   }) => {
     const ids =
       Array.isArray(data.assignee_profile_ids) && data.assignee_profile_ids.length > 0
@@ -310,6 +311,7 @@ export const groupApi = {
         done: item.done === true,
       }));
     }
+    if (data.urgency) payload.urgency = data.urgency;
     return apiRequest(`/groups/${encodeURIComponent(anchorGroupId)}/tasks`, {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -507,19 +509,61 @@ export const superadminApi = {
     const q = orgId ? `?org_id=${encodeURIComponent(orgId)}` : '';
     return apiRequest(`/superadmin/branches${q}`);
   },
-  users: (params?: { org_id?: string; search?: string }) => {
+  patchBranch: (id: string, body: Record<string, unknown>) =>
+    apiRequest(`/superadmin/branches/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  users: (params?: { org_id?: string; search?: string; superadmin_only?: boolean }) => {
     const q = new URLSearchParams();
     if (params?.org_id) q.set('org_id', params.org_id);
     if (params?.search) q.set('search', params.search);
+    if (params?.superadmin_only) q.set('superadmin_only', 'true');
     const s = q.toString();
     return apiRequest(`/superadmin/users${s ? `?${s}` : ''}`);
   },
+  createAdmin: (body: { first_name: string; last_name: string; email: string; password: string }) =>
+    apiRequest('/superadmin/admins', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   patchUser: (profileId: string, body: { is_active?: boolean }) =>
     apiRequest(`/superadmin/users/${encodeURIComponent(profileId)}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
   growth: () => apiRequest('/superadmin/growth'),
+  paymentConfig: () => apiRequest('/superadmin/payments/config'),
+  patchPaymentConfig: (body: {
+    paystack_secret_key?: string;
+    paystack_public_key?: string;
+    paystack_plan_codes?: Record<string, string>;
+  }) =>
+    apiRequest('/superadmin/payments/config', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+};
+
+// ============================================
+// BILLING (org-scoped)
+// ============================================
+
+export const billingApi = {
+  invoices: () => apiRequest('/billing/invoices'),
+  payments: () => apiRequest('/billing/payments'),
+  subscription: () => apiRequest('/billing/subscription'),
+  paystackInitialize: (body: {
+    subscription_tier?: string;
+    billing_plan_id?: string;
+    callback_url?: string;
+  }) =>
+    apiRequest('/billing/paystack/initialize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  paystackVerify: (reference: string) => apiRequest(`/billing/paystack/verify?reference=${encodeURIComponent(reference)}`),
+  paystackManageLink: () => apiRequest('/billing/paystack/manage-link'),
 };
 
 export const notificationsApi = {

@@ -7,6 +7,13 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (data: SignupData) => Promise<void>;
+  /** Paid signup: returns Paystack URL; no user/session until payment succeeds. */
+  signupCheckout: (data: SignupData) => Promise<{ authorization_url: string; reference: string }>;
+  /** After Paystack redirects to /signup/complete with ?reference= */
+  completeSignupAfterPayment: (reference: string) => Promise<
+    | { kind: 'session' }
+    | { kind: 'needs_login'; email: string; message?: string }
+  >;
   logout: () => void;
   refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
@@ -22,6 +29,8 @@ interface SignupData {
   phone?: string;
   subscriptionTier?: string;
   billingCycle?: string;
+  /** Landing / Paystack SKU: core_monthly | core_6months | core_annual */
+  billingPlanId?: string;
   demoBypass?: boolean;
 }
 
@@ -30,6 +39,8 @@ const TOKEN_KEY = 'token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const USER_KEY = 'user';
 const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+const CMS_BASENAME_RAW = String(import.meta.env.VITE_CMS_BASENAME || '/cms').trim() || '/cms';
+const CMS_PATH_PREFIX = CMS_BASENAME_RAW === '/' ? '' : CMS_BASENAME_RAW.startsWith('/') ? CMS_BASENAME_RAW : `/${CMS_BASENAME_RAW}`;
 
 function apiUrl(path: string): string {
   if (!API_BASE) return path;
@@ -280,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           fullName: `${signupData.firstName} ${signupData.lastName}`,
           subscriptionTier: signupData.subscriptionTier,
           billingCycle: signupData.billingCycle,
+          billingPlanId: signupData.billingPlanId,
           demoBypass: signupData.demoBypass === true,
         }),
         signal: controller.signal
@@ -309,6 +321,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       throw error;
     }
+  };
+
+  const signupCheckout = async (signupData: SignupData) => {
+    const callback_url =
+      typeof window !== 'undefined'
+        ? `${window.location.origin}${CMS_PATH_PREFIX}/signup/complete`
+        : undefined;
+    const response = await fetch(apiUrl('/api/auth/signup-checkout'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: signupData.email,
+        password: signupData.password,
+        organizationName: signupData.organizationName || `${signupData.firstName}'s Organization`,
+        fullName: `${signupData.firstName} ${signupData.lastName}`,
+        subscriptionTier: signupData.subscriptionTier,
+        billingCycle: signupData.billingCycle,
+        billingPlanId: signupData.billingPlanId,
+        ...(callback_url ? { callback_url } : {}),
+      }),
+    });
+    const data = await parseApiBody(response);
+    if (!response.ok) {
+      const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Checkout failed');
+      throw new Error(errorMessage);
+    }
+    const authorization_url =
+      typeof data.authorization_url === 'string' ? data.authorization_url : '';
+    const reference = typeof data.reference === 'string' ? data.reference : '';
+    if (!authorization_url) {
+      throw new Error('Checkout URL missing. Try again.');
+    }
+    return { authorization_url, reference };
+  };
+
+  const completeSignupAfterPayment = async (reference: string) => {
+    const response = await fetch(apiUrl('/api/auth/complete-signup-payment'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference: reference.trim() }),
+    });
+    const data = await parseApiBody(response);
+    if (!response.ok) {
+      const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Could not finish signup');
+      throw new Error(errorMessage);
+    }
+    if (data.needs_login === true && typeof data.email === 'string') {
+      return { kind: 'needs_login' as const, email: data.email, message: typeof data.message === 'string' ? data.message : undefined };
+    }
+    if (typeof data.token === 'string') {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      if (typeof data.refresh_token === 'string' && data.refresh_token.trim()) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
+      }
+      setToken(data.token);
+      if (data.user) {
+        const nextUser = mergeIncomingUser(null, data.user as User);
+        localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+        setUser(nextUser);
+      }
+      return { kind: 'session' as const };
+    }
+    throw new Error('Unexpected response from server.');
   };
 
   const logout = () => {
@@ -359,6 +434,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     login,
     signup,
+    signupCheckout,
+    completeSignupAfterPayment,
     logout,
     refreshUser,
     isAuthenticated: !!user,

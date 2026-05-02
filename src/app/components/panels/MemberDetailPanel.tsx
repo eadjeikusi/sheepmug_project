@@ -29,6 +29,7 @@ import {
   formatLongWeekdayDate,
   formatLongWeekdayDateTime,
   formatCalendarCountdown,
+  formatPastDateRelativePhrase,
 } from '@/utils/dateDisplayFormat';
 import { gateAttendanceRecording, eventStartMsFromRow } from '@sheepmug/shared-api';
 
@@ -1387,19 +1388,29 @@ export default function MemberDetailPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-50"
+            className="fixed inset-0 bg-black/50 z-[120]"
           />
 
-          {/* Side Panel */}
+          {/* Centered profile dialog */}
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 bottom-0 w-full max-w-3xl bg-gray-50 z-50 shadow-2xl overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="member-profile-dialog-title"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[121] flex items-center justify-center p-3 sm:p-6 pointer-events-none"
           >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 14 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 14 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              onClick={(e) => e.stopPropagation()}
+              className="pointer-events-auto flex h-[min(92vh,900px)] max-h-[min(92vh,900px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 shadow-2xl"
+            >
             {/* Header */}
-            <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+            <div className="shrink-0 bg-white border-b border-gray-200">
               <div className="flex items-center justify-between px-8 py-6">
                 <div className="flex items-center space-x-4">
                   <div className="flex flex-col items-center space-y-2">
@@ -1428,7 +1439,9 @@ export default function MemberDetailPanel({
                     />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-semibold text-gray-900">{member.fullName}</h2>
+                    <h2 id="member-profile-dialog-title" className="text-2xl font-semibold text-gray-900">
+                      {member.fullName}
+                    </h2>
                     <p className="text-gray-500 mt-1">{member.email}</p>
                   </div>
                 </div>
@@ -1562,8 +1575,9 @@ export default function MemberDetailPanel({
               </div>
             </div>
 
-            {/* Content */}
-            <div className="px-8 py-6 space-y-6">
+            {/* Content — scroll inside; card height stays fixed when switching tabs */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-8 py-6">
+              <div className="space-y-6">
               {/* Overview Tab */}
               {activeTab === 'overview' && (
                 <>
@@ -1731,7 +1745,11 @@ export default function MemberDetailPanel({
                             triggerClassName="h-auto min-h-[36px] rounded-lg border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-none focus-visible:ring-blue-500"
                           />
                         ) : (
-                          <p className="font-medium text-gray-900">{currentMember.dob || 'N/A'}</p>
+                          <p className="font-medium text-gray-900">
+                            {currentMember.dob
+                              ? formatLongWeekdayDate(currentMember.dob) || currentMember.dob
+                              : 'N/A'}
+                          </p>
                         )}
                       </div>
                       <div>
@@ -1800,7 +1818,22 @@ export default function MemberDetailPanel({
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Date Joined</p>
-                        <p className="font-medium text-gray-900">{currentMember.date_joined || 'N/A'}</p>
+                        {currentMember.date_joined ? (
+                          <div className="space-y-0.5">
+                            <p className="font-medium text-gray-900">
+                              {formatLongWeekdayDate(currentMember.date_joined) ||
+                                currentMember.date_joined}
+                            </p>
+                            {(() => {
+                              const rel = formatPastDateRelativePhrase(currentMember.date_joined);
+                              if (!rel) return null;
+                              const relDisplay = rel === 'Today' ? 'Joined today' : rel;
+                              return <p className="text-sm text-gray-500">{relDisplay}</p>;
+                            })()}
+                          </div>
+                        ) : (
+                          <p className="font-medium text-gray-900">N/A</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3113,7 +3146,9 @@ export default function MemberDetailPanel({
                   </div>
                 </>
               )}
+              </div>
             </div>
+            </motion.div>
           </motion.div>
         </>
       )}

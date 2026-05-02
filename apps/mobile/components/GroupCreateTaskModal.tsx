@@ -146,6 +146,7 @@ export function GroupCreateTaskModal({ visible, onClose, onSuccess, lockedContex
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueYmd, setDueYmd] = useState("");
+  const [urgency, setUrgency] = useState<"low" | "urgent" | "high">("low");
   const [checklistLines, setChecklistLines] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -204,6 +205,7 @@ export function GroupCreateTaskModal({ visible, onClose, onSuccess, lockedContex
     setTitle("");
     setDescription("");
     setDueYmd("");
+    setUrgency("low");
     setChecklistLines([""]);
     setSubmitting(false);
     selectionSeededRef.current = false;
@@ -364,6 +366,7 @@ export function GroupCreateTaskModal({ visible, onClose, onSuccess, lockedContex
         assignee_profile_ids: autoAssigneeIds,
         description: description.trim() || undefined,
         due_at: dueIso,
+        urgency,
         ...(related_group_ids.length > 0 ? { related_group_ids } : {}),
         ...(checklist.length > 0 ? { checklist } : {}),
       });
@@ -490,6 +493,28 @@ export function GroupCreateTaskModal({ visible, onClose, onSuccess, lockedContex
         />
       </View>
       <YmdDateField label="Due date (optional)" value={dueYmd} onChange={setDueYmd} placeholder="" />
+
+      <Text style={styles.sectionLabel}>{displayMemberWords("Urgency")}</Text>
+      <View style={styles.urgencyRow}>
+        {(
+          [
+            { id: "low" as const, label: "Low" },
+            { id: "urgent" as const, label: "Urgent" },
+            { id: "high" as const, label: "High" },
+          ] as const
+        ).map(({ id, label }) => {
+          const on = urgency === id;
+          return (
+            <Pressable
+              key={id}
+              onPress={() => setUrgency(id)}
+              style={[styles.urgencyChip, on && styles.urgencyChipOn]}
+            >
+              <Text style={[styles.urgencyChipText, on && styles.urgencyChipTextOn]}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
       <Text style={styles.sectionLabel}>{displayMemberWords("Checklist (optional)")}</Text>
       {checklistLines.map((line, idx) => (
@@ -718,6 +743,21 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 8,
   },
+  urgencyRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+  urgencyChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: "#f8fafc",
+  },
+  urgencyChipOn: {
+    borderColor: colors.accent,
+    backgroundColor: "rgba(59, 130, 246, 0.12)",
+  },
+  urgencyChipText: { fontSize: type.caption.size, fontWeight: "600", color: colors.textSecondary },
+  urgencyChipTextOn: { color: colors.accent },
   footer: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
   footerBtn: {
     paddingVertical: 12,

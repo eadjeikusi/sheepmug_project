@@ -18,7 +18,7 @@ import {
   DashboardListRowSkeleton,
   DashboardStatIconStackSkeleton,
 } from '@/components/skeletons/data-skeletons';
-import MemberDetailPanel from '../panels/MemberDetailPanel';
+import { useMemberProfileModal } from '@/contexts/MemberProfileModalContext';
 import { displayTitleWords } from '@/utils/displayText';
 import { formatLongWeekdayDateTime, formatCalendarCountdown } from '@/utils/dateDisplayFormat';
 import type { Member } from '@/types';
@@ -160,6 +160,7 @@ export default function Dashboard() {
   const { token, user } = useAuth();
   const { selectedBranch } = useBranch();
   const { can } = usePermissions();
+  const memberProfile = useMemberProfileModal();
 
   const canViewMembers = can('view_members');
   const canViewGroups = can('view_groups');
@@ -177,8 +178,6 @@ export default function Dashboard() {
   const [groupRequestCount, setGroupRequestCount] = useState(0);
   const [recentEvent, setRecentEvent] = useState<DashEvent | null>(null);
   const [attendanceSummary, setAttendanceSummary] = useState<{ present: number; total: number }>({ present: 0, total: 0 });
-  const [viewingMemberDetail, setViewingMemberDetail] = useState<Member | null>(null);
-
   const recentMembers = useMemo(() => allMembers.slice(0, 8), [allMembers]);
 
   const recentEventCountdown = recentEvent?.start_time ? formatCalendarCountdown(recentEvent.start_time) : '';
@@ -472,7 +471,14 @@ export default function Dashboard() {
                       <button
                         key={m.id}
                         type="button"
-                        onClick={() => setViewingMemberDetail(m)}
+                        onClick={() =>
+                          memberProfile.openMember(m, {
+                            familyGroups: [],
+                            allMembers,
+                            onUpdated: (u: Member) =>
+                              setAllMembers((prev) => prev.map((row) => (row.id === u.id ? ({ ...row, ...u } as Member) : row))),
+                          })
+                        }
                         className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
                       >
                         {imageSrc ? (
@@ -562,17 +568,6 @@ export default function Dashboard() {
         </section>
       )}
 
-      <MemberDetailPanel
-        isOpen={!!viewingMemberDetail}
-        onClose={() => setViewingMemberDetail(null)}
-        member={viewingMemberDetail}
-        familyGroups={[]}
-        allMembers={allMembers}
-        onEdit={(updatedMember) => {
-          setAllMembers((prev) => prev.map((m) => (m.id === updatedMember.id ? { ...m, ...updatedMember } : m)));
-          setViewingMemberDetail(updatedMember);
-        }}
-      />
     </div>
   );
 }

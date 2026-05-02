@@ -232,6 +232,7 @@ function RootNavigator() {
         <Stack.Screen name="member-join-requests" options={{ title: "Member join requests" }} />
         <Stack.Screen name="important-dates" options={{ title: "All Important Dates" }} />
         <Stack.Screen name="reports" options={{ title: "Reports", headerShown: true }} />
+        <Stack.Screen name="leaders" options={{ headerShown: false }} />
         <Stack.Screen name="profile-details" options={{ title: "Profile Details" }} />
         <Stack.Screen name="families" options={{ title: "Families" }} />
         <Stack.Screen name="family/[id]" options={{ title: "Family" }} />

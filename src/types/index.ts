@@ -10,7 +10,7 @@ export interface Organization {
   website: string | null;
   timezone: string;
   currency: string;
-  /** DB column (signup uses `free`, etc.) */
+  /** DB column (`basic` / `pro` / `enterprise`; legacy `free` is normalized to `basic` in API). */
   subscription_tier?: string | null;
   subscription_status: 'trial' | 'active' | 'cancelled' | 'expired';
   subscription_plan: string | null;

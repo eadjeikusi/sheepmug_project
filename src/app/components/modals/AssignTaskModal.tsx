@@ -30,6 +30,10 @@ type Props = {
   onSuccess?: () => void;
   /** When true, member list is fixed to initial selection (single-member flows). */
   lockMemberSelection?: boolean;
+  /** Pre-selected leader assignee profile ids (e.g. leader detail page). */
+  initialAssigneeIds?: string[];
+  /** When true, assignee checkboxes are hidden and `initialAssigneeIds` stay fixed. */
+  lockAssignees?: boolean;
 };
 
 export default function AssignTaskModal({
@@ -41,6 +45,8 @@ export default function AssignTaskModal({
   allMembers,
   onSuccess,
   lockMemberSelection = false,
+  initialAssigneeIds,
+  lockAssignees = false,
 }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -50,6 +56,7 @@ export default function AssignTaskModal({
   const [submitting, setSubmitting] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(true);
   const [checklistLines, setChecklistLines] = useState<{ key: string; label: string }[]>([]);
+  const [urgency, setUrgency] = useState<'low' | 'urgent' | 'high'>('low');
   /** Single member id this task is about (POST URL `/api/members/:id/tasks`). */
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
@@ -57,6 +64,8 @@ export default function AssignTaskModal({
   /** Always read latest initial ids without listing them in useEffect deps (avoids re-running on every parent render). */
   const initialMemberIdsRef = useRef(initialSelectedMemberIds);
   initialMemberIdsRef.current = initialSelectedMemberIds;
+  const initialAssigneeIdsRef = useRef<string[] | undefined>(undefined);
+  initialAssigneeIdsRef.current = initialAssigneeIds;
 
   const branchMembers = useMemo(() => {
     const bid = branchId?.trim() || '';
@@ -83,8 +92,10 @@ export default function AssignTaskModal({
     setTitle('');
     setDescription('');
     setDue('');
-    setAssigneeIds([]);
+    const presetAssignees = (initialAssigneeIdsRef.current || []).filter((id) => isMemberDbId(id));
+    setAssigneeIds(presetAssignees);
     setChecklistLines([]);
+    setUrgency('low');
     setChecklistOpen(true);
     setMemberSearch('');
     setSelectedMemberIds(initialSelectedMemberIds.filter(isMemberDbId).slice(0, 1));
@@ -101,7 +112,7 @@ export default function AssignTaskModal({
         setStaff([]);
       }
     })();
-  }, [isOpen, token, branchId]);
+  }, [isOpen, token, branchId, lockAssignees]);
 
   const pickableMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
@@ -131,9 +142,10 @@ export default function AssignTaskModal({
   }, [lockMemberSelection, selectedMemberIds, allMembers]);
 
   const toggleAssignee = useCallback((id: string) => {
+    if (lockAssignees) return;
     if (!id) return;
     setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }, []);
+  }, [lockAssignees]);
 
   const addChecklistLine = () => {
     setChecklistLines((prev) => [...prev, { key: `n-${Date.now()}-${prev.length}`, label: '' }]);
@@ -171,6 +183,7 @@ export default function AssignTaskModal({
       const body: Record<string, unknown> = {
         title: t,
         assignee_profile_ids: assigneeIds,
+        urgency,
       };
       if (description.trim()) body.description = description.trim();
       if (due.trim()) body.due_at = new Date(due).toISOString();
@@ -203,6 +216,7 @@ export default function AssignTaskModal({
     assigneeIds,
     due,
     checklistLines,
+    urgency,
     branchId,
     onClose,
     onSuccess,
@@ -254,6 +268,16 @@ export default function AssignTaskModal({
               splitClassName="rounded-lg border-gray-200 bg-slate-50"
               triggerClassName="text-sm text-gray-900"
             />
+            <label className="text-xs text-gray-500 block mt-3 mb-1">Urgency</label>
+            <select
+              value={urgency}
+              onChange={(e) => setUrgency(e.target.value as 'low' | 'urgent' | 'high')}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-slate-50"
+            >
+              <option value="low">Low</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+            </select>
           </div>
 
           <div>
@@ -302,26 +326,34 @@ export default function AssignTaskModal({
 
           <div>
             <p className="text-xs font-bold text-blue-600 mb-3">Assignees</p>
-            <p className="text-xs text-gray-500 mb-2">Select one or more leaders for this task.</p>
-            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 bg-slate-50">
-              {staff.length === 0 ? (
-                <p className="p-3 text-xs text-gray-500">No staff loaded.</p>
-              ) : (
-                staff.map((s) => (
-                  <label
-                    key={s.id}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-white cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={assigneeIds.includes(s.id)}
-                      onChange={() => toggleAssignee(s.id)}
-                    />
-                    <span>{[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}</span>
-                  </label>
-                ))
-              )}
-            </div>
+            {lockAssignees ? (
+              <p className="text-sm text-gray-800 px-3 py-2 border border-gray-200 rounded-lg bg-slate-100">
+                This task is assigned to the selected leader.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-2">Select one or more leaders for this task.</p>
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 bg-slate-50">
+                  {staff.length === 0 ? (
+                    <p className="p-3 text-xs text-gray-500">No staff loaded.</p>
+                  ) : (
+                    staff.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-white cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={assigneeIds.includes(s.id)}
+                          onChange={() => toggleAssignee(s.id)}
+                        />
+                        <span>{[s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id.slice(0, 8)}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="border border-gray-200 rounded-xl overflow-hidden">

@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -19,7 +19,8 @@ import { HeaderIconCircle, HeaderIconCircleButton } from "./HeaderIconCircle";
 
 export type FormModalVariant = "full" | "compact";
 
-type IonName = ComponentProps<typeof Ionicons>["name"];
+/** Ionicons glyph name (avoid ComponentProps<typeof Ionicons> — breaks under React 19 typings). */
+type IonName = string;
 
 type Props = {
   visible: boolean;
@@ -81,7 +82,7 @@ export function FormModalShell({
               <View style={styles.headerRow}>
               {headerIcon ? (
                 <HeaderIconCircle>
-                  <Ionicons name={headerIcon} size={sizes.headerIcon} color={themedColors.accent} />
+                  <Ionicons name={headerIcon as never} size={sizes.headerIcon} color={themedColors.accent} />
                 </HeaderIconCircle>
               ) : null}
               <View style={styles.headerTextWrap}>

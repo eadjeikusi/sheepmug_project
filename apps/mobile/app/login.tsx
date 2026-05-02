@@ -353,7 +353,7 @@ export default function LoginScreen() {
                     autoCapitalize="none"
                     keyboardType="email-address"
                     value={email}
-                    editable={stage !== "reset"}
+                    editable
                     onChangeText={setEmail}
                     onFocus={() => setEmailFocused(true)}
                     onBlur={() => setEmailFocused(false)}

@@ -133,6 +133,8 @@ export interface TaskItem {
   due_date?: string | null;
   status?: string | null;
   priority?: string | null;
+  /** Follow-up tasks: low | urgent | high */
+  urgency?: "low" | "urgent" | "high" | string | null;
   [key: string]: unknown;
 }
 
@@ -297,13 +299,11 @@ export interface ReportBreakdownPoint {
 }
 
 export interface ReportGroupPoint {
-  group_id: string;
   group_name: string;
   member_count: number;
 }
 
 export interface ReportDrilldownMember {
-  member_id: string;
   member_name: string;
   status: string;
   created_at: string | null;
@@ -333,6 +333,8 @@ export interface ReportFilterPayload {
   /** Browser clock (ISO) so server can align rolling 12m profile metrics with the member UI. */
   client_clock_iso?: string;
   group_ids?: string[];
+  /** When true, group report treats scope as all visible groups; membership expands to all scoped groups. */
+  select_all_groups?: boolean;
   member_ids?: string[];
   member_id?: string;
   leader_id?: string;

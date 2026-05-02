@@ -22,6 +22,8 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated, token } = useAuth();
 
   // Fetch branches from database
+  const SA_ACT_KEY = 'superadmin_act_as';
+
   const fetchBranches = useCallback(async () => {
     if (!token && !user) {
       const mockBranches: Branch[] = [
@@ -41,6 +43,37 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
     setLoading(true);
     try {
+      let actAs: { organization_id?: string; branch_id?: string } | null = null;
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SA_ACT_KEY) : null;
+        if (raw && user?.is_super_admin === true) {
+          actAs = JSON.parse(raw) as { organization_id?: string; branch_id?: string };
+        }
+      } catch {
+        actAs = null;
+      }
+
+      if (actAs?.organization_id && user?.is_super_admin === true) {
+        const r = await fetch(`/api/superadmin/branches?org_id=${encodeURIComponent(actAs.organization_id)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) throw new Error('Failed to load branches for organization');
+        const payload = (await r.json()) as { branches?: Branch[] };
+        const data = (payload.branches || []) as Branch[];
+        setBranches(data);
+        const want = actAs.branch_id;
+        const pick = want ? data.find((b) => b.id === want) : undefined;
+        const branchToSelect = pick || data[0];
+        if (branchToSelect) {
+          setSelectedBranchState(branchToSelect);
+          localStorage.setItem('selectedBranchId', branchToSelect.id);
+        } else {
+          setSelectedBranchState(null);
+        }
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/branches', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -79,7 +112,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [user?.branch_id, token, currentOrganization?.id]); // Added currentOrganization.id to dependencies
+  }, [user?.branch_id, user?.is_super_admin, token, currentOrganization?.id]);
 
   // Load branches when user is available
   useEffect(() => {
@@ -93,14 +126,19 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
   const setSelectedBranch = useCallback(
     (branch: Branch) => {
-      if (user?.is_org_owner !== true && user?.branch_id && branch.id !== user.branch_id) {
+      if (
+        user?.is_super_admin !== true &&
+        user?.is_org_owner !== true &&
+        user?.branch_id &&
+        branch.id !== user.branch_id
+      ) {
         toast.error('Only the organization owner can switch branches.');
         return;
       }
       setSelectedBranchState(branch);
       localStorage.setItem('selectedBranchId', branch.id);
     },
-    [user?.is_org_owner, user?.branch_id]
+    [user?.is_super_admin, user?.is_org_owner, user?.branch_id]
   );
 
   const refreshBranches = async () => {
